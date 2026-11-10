@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>moneytrack — Outlook</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Stardos+Stencil:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../tokens/app.css">
+<script src="../tokens/theme.js" defer></script>
+</head>
+<body>
+<main class="mt-app">
+  <div class="mt-statusbar" aria-hidden="true"><span>09:41</span><span>5G&nbsp;&nbsp;86%</span></div>
+  <div class="mt-topbar"><h1>Outlook</h1><button class="mt-chip" type="button">To 10 Dec</button></div>
+
+  <section class="mt-balance" aria-label="Lowest projected balance">
+    <div class="fig"><span class="cur">GHS</span>&minus;139.40</div>
+    <div style="margin-top:9px;font-size:13.5px;line-height:1.35;color:var(--mt-grade);max-width:32ch">Your lowest point is 25 November, three days before salary lands.</div>
+  </section>
+
+  <section class="mt-ledger" aria-label="Projected balance by day">
+    <div class="mt-label" style="padding-bottom:var(--mt-c3)">Balance, day by day</div>
+    <svg viewBox="0 0 350 150" width="100%" height="150" role="img"
+         aria-label="Projected balance falls from 2,418 cedis on 10 November to minus 139 on 25 November, then recovers to 2,660 after salary on 28 November."
+         style="display:block;margin-bottom:var(--mt-c4);overflow:visible">
+      <line x1="0" y1="112" x2="350" y2="112" stroke="var(--mt-rule-strong)" stroke-width="1"/>
+      <text x="0" y="126" font-size="9" font-weight="600" letter-spacing="1.4" fill="var(--mt-ink-secondary)" font-family="Archivo">ZERO</text>
+      <polyline points="0,51 60,57 110,66 150,74 190,80 215,116 250,120 262,14 350,19"
+                fill="none" stroke="var(--mt-ink)" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="215" cy="116" r="4" fill="var(--mt-grade)"/>
+      <line x1="215" y1="116" x2="215" y2="138" stroke="var(--mt-grade)" stroke-width="1" stroke-dasharray="3 3"/>
+      <text x="196" y="148" font-size="9" font-weight="600" letter-spacing="1.2" fill="var(--mt-grade)" font-family="Archivo">25 NOV</text>
+      <text x="0" y="148" font-size="9" font-weight="600" letter-spacing="1.2" fill="var(--mt-ink-secondary)" font-family="Archivo">TODAY</text>
+      <text x="300" y="148" font-size="9" font-weight="600" letter-spacing="1.2" fill="var(--mt-ink-secondary)" font-family="Archivo">10 DEC</text>
+    </svg>
+
+    <div class="mt-today" style="padding-top:0"><span class="mt-micro">What gets you there</span><i></i></div>
+    <article class="mt-row mt-row--future">
+      <div class="date">25 NOV</div>
+      <div><div class="label">Rent, Spintex</div><div class="sub">GCB Bank &middot; recurring, monthly</div></div>
+      <div class="amt">&minus;1,400.00</div>
+    </article>
+    <article class="mt-row mt-row--future">
+      <div class="date">26 NOV</div>
+      <div><div class="label">DStv subscription</div><div class="sub">MTN MoMo &middot; recurring, monthly</div></div>
+      <div class="amt">&minus;160.00</div>
+    </article>
+    <article class="mt-row mt-row--future">
+      <div class="date">28 NOV</div>
+      <div><div class="label">Salary</div><div class="sub">GCB Bank &middot; recurring, monthly</div></div>
+      <div class="amt in">+4,200.00</div>
+    </article>
+    <p style="font-size:12.5px;color:var(--mt-ink-secondary);padding:var(--mt-c4) 0">
+      Moving rent three days later keeps you above zero. Tap a row to shift it.
+    </p>
+  </section>
+
+  <nav class="mt-nav" aria-label="Sections">
+    <a href="ledger.html"><svg viewBox="0 0 24 24"><path d="M4 19V5m5 14V9m5 10V7m5 12v-6"/></svg>Ledger</a>
+    <a href="outlook.html"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 10h18M8 3v4m8-4v4"/></svg>Outlook</a>
+    <a href="budgets.html"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg>Budgets</a>
+    <a href="states.html"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>You</a>
+  </nav>
+</main>
+</body>
+</html>

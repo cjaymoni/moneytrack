@@ -1,0 +1,126 @@
+/* moneytrack — Cocoa Grade Stencil
+   Design tokens. The single source for colour, type, space, shape and motion.
+   Mirrored in tokens.dart for the Flutter build. */
+
+:root {
+  /* ---- Ground and ink (light: the sunlight scene) ---- */
+  --mt-ground:        #EFE7D7;  /* oat — the page */
+  --mt-surface:       #F7F2E7;  /* raised: nav bar, sheets */
+  --mt-sunk:          #E5DAC3;  /* recessed: fields, pressed */
+  --mt-ink:           #17150F;  /* primary text, figures */
+  --mt-ink-secondary: #4A4438;  /* counterparty, meta */
+  --mt-ink-muted:     #6B6454;  /* date gutter, disabled label */
+  --mt-ink-future:    #655E4E;  /* pending/future rows — quieter, still AA on oat */
+  --mt-rule:          #D1C5AD;  /* hairlines */
+  --mt-rule-strong:   #B6A789;  /* section rules, field borders */
+
+  /* ---- Grade marks. Each colour has exactly one job. ---- */
+  --mt-grade:         #8C3A1E;  /* the stamp, today's rule, over-budget */
+  --mt-income:        #2F5B42;  /* money in, within budget */
+  --mt-await:         #854B0E;  /* awaiting your check — nothing else */
+  --mt-await-wash:    #EADBC2;  /* the review strip's ground */
+  --mt-await-edge:    #C2762B;  /* the review strip's dashed edge */
+  --mt-await-hover:   #E3D2B5;
+  --mt-ink-hover:     #23201A;
+  --mt-grade-hover:   #79311A;
+  --mt-backdrop:      #2A251D;  /* outside the device frame, reference only */
+
+  /* ---- Type ---- */
+  --mt-face:          Archivo, "Helvetica Neue", system-ui, sans-serif;
+  --mt-face-stamp:    "Stardos Stencil", Archivo, sans-serif;  /* stamps only */
+
+  --mt-amount-hero:   54px;  /* the balance */
+  --mt-amount-lg:     34px;  /* sheet totals */
+  --mt-amount:        16px;  /* ledger rows */
+  --mt-title:         19px;
+  --mt-body:          15px;
+  --mt-body-sm:       13.5px;
+  --mt-label:         12px;   /* uppercase, tracked */
+  --mt-micro:         11px;   /* uppercase, tracked hard — the platform floor */
+  --mt-stamp-face:    11px;   /* the stamp carries state: never below the floor */
+
+  --mt-track-label:   0.07em;
+  --mt-track-micro:   0.14em;
+  --mt-track-hero:    -0.035em;
+
+  /* ---- Space: a 4dp cell. Nothing sits off it. ---- */
+  --mt-c1: 4px;  --mt-c2: 8px;  --mt-c3: 12px; --mt-c4: 16px;
+  --mt-c5: 20px; --mt-c6: 24px; --mt-c8: 32px; --mt-c10: 40px;
+  --mt-gutter: 20px;
+
+  /* ---- Touch targets: the platform floors, never below ---- */
+  --mt-target-ios:     44px;  /* HIG */
+  --mt-target-android: 48px;  /* Material 3 */
+  --mt-target:         48px;  /* build to the larger of the two */
+  --mt-target-gap:      8px;  /* minimum separation between adjacent targets */
+
+  /* ---- Shape: stencilled, never pill.
+     These radii are for surfaces the world paints — the review strip, the
+     stamp, sheets. Native CONTROLS take the platform's own shape: Material 3
+     corner tokens on Android, HIG on iOS. The world lends type, palette,
+     density and the stamp. It does not lend control shape. ---- */
+  --mt-r-sm: 2px; --mt-r-md: 3px; --mt-r-lg: 4px;
+  --mt-hairline: 1px;
+
+  /* ---- Depth: offset plus blur, never a halo ---- */
+  --mt-lift-1: 0 1px 2px rgba(23,21,15,.07), 0 2px 8px rgba(23,21,15,.05);
+  --mt-lift-2: 0 2px 4px rgba(23,21,15,.10), 0 6px 18px rgba(23,21,15,.10);
+
+  /* ---- Motion: one authored moment, the stamp ---- */
+  --mt-ease:        cubic-bezier(.2,.8,.25,1);
+  --mt-ease-stamp:  cubic-bezier(.16,1.1,.3,1);
+  --mt-fast:   120ms;
+  --mt-base:   220ms;
+  --mt-stamp:  320ms;
+
+  color-scheme: light dark;
+}
+
+/* ---- Dark: the evening review, roasted rather than inverted ---- */
+:root[data-theme="dark"] {
+  --mt-ground:        #141210;
+  --mt-surface:       #1D1A16;
+  --mt-sunk:          #0E0C0A;
+  --mt-ink:           #F2EADA;
+  --mt-ink-secondary: #BAB1A0;
+  --mt-ink-muted:     #948B7A;
+  --mt-ink-future:    #948B7A;
+  --mt-rule:          #332E26;
+  --mt-rule-strong:   #4A4337;
+  --mt-grade:         #D9704A;
+  --mt-income:        #6FB98E;
+  --mt-await:         #E0A253;
+  --mt-await-wash:    #2A2219;
+  --mt-await-edge:    #B4791F;
+  --mt-await-hover:   #382D20;
+  --mt-ink-hover:     #E4DACA;
+  --mt-grade-hover:   #E98764;
+  --mt-backdrop:      #0A0908;
+  --mt-lift-1: 0 1px 2px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.3);
+  --mt-lift-2: 0 2px 4px rgba(0,0,0,.5), 0 6px 18px rgba(0,0,0,.45);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --mt-ground:        #141210;
+    --mt-surface:       #1D1A16;
+    --mt-sunk:          #0E0C0A;
+    --mt-ink:           #F2EADA;
+    --mt-ink-secondary: #BAB1A0;
+    --mt-ink-muted:     #948B7A;
+    --mt-ink-future:    #948B7A;
+    --mt-rule:          #332E26;
+    --mt-rule-strong:   #4A4337;
+    --mt-grade:         #D9704A;
+    --mt-income:        #6FB98E;
+    --mt-await:         #E0A253;
+    --mt-await-wash:    #2A2219;
+    --mt-await-edge:    #B4791F;
+    --mt-await-hover:   #382D20;
+    --mt-ink-hover:     #E4DACA;
+    --mt-grade-hover:   #E98764;
+    --mt-backdrop:      #0A0908;
+    --mt-lift-1: 0 1px 2px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.3);
+    --mt-lift-2: 0 2px 4px rgba(0,0,0,.5), 0 6px 18px rgba(0,0,0,.45);
+  }
+}

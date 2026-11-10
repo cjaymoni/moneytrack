@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>moneytrack — States</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Stardos+Stencil:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../tokens/app.css">
+<script src="../tokens/theme.js" defer></script>
+</head>
+<body>
+<main class="mt-app">
+  <div class="mt-statusbar" aria-hidden="true"><span>09:41</span><span>5G&nbsp;&nbsp;86%</span></div>
+  <div class="mt-topbar"><h1>States</h1><span class="mt-label">Reference</span></div>
+
+  <section class="mt-sheet">
+    <div class="mt-label" style="padding:var(--mt-c4) 0 var(--mt-c3)">Nothing to review</div>
+    <div style="border:var(--mt-hairline) solid var(--mt-rule);border-radius:var(--mt-r-md);padding:var(--mt-c5) var(--mt-c4);text-align:center">
+      <span class="mt-stampfield" style="width:84px;height:60px;font-size:var(--mt-stamp-face);margin:0 auto var(--mt-c3);border-style:solid;border-color:var(--mt-rule-strong);color:var(--mt-ink-muted)">ALL<br>CLEAR</span>
+      <h2 style="font-size:16px;font-weight:600">Every alert is stamped</h2>
+      <p style="font-size:13px;color:var(--mt-ink-secondary);margin-top:6px">New MoMo alerts land here for a check before they join the ledger.</p>
+    </div>
+
+    <div class="mt-label" style="padding:var(--mt-c6) 0 var(--mt-c3)">No entries yet</div>
+    <div style="border:var(--mt-hairline) solid var(--mt-rule);border-radius:var(--mt-r-md);padding:var(--mt-c5) var(--mt-c4);text-align:center">
+      <h2 style="font-size:16px;font-weight:600">Your ledger starts empty</h2>
+      <p style="font-size:13px;color:var(--mt-ink-secondary);margin:6px 0 var(--mt-c4)">Add what you have in cash and on MoMo, and the rest fills itself in.</p>
+      <button class="mt-btn" type="button">Add your first account</button>
+    </div>
+
+    <div class="mt-label" style="padding:var(--mt-c6) 0 var(--mt-c3)">Loading</div>
+    <div style="border:var(--mt-hairline) solid var(--mt-rule);border-radius:var(--mt-r-md);padding:var(--mt-c4)">
+      <div class="mt-skeleton" style="width:55%"></div>
+      <div class="mt-skeleton" style="width:80%;margin-top:10px"></div>
+      <div class="mt-skeleton" style="width:35%;margin-top:10px"></div>
+    </div>
+
+    <div class="mt-label" style="padding:var(--mt-c6) 0 var(--mt-c3)">A message we could not read</div>
+    <div class="mt-error" style="margin:0">
+      <b>This alert did not match any format</b>
+      From GCB, 09:12 today. Nothing was added and the message stays on your phone.
+      <button class="mt-btn" type="button" style="margin-top:var(--mt-c3);background:none;color:var(--mt-ink);border:1px solid var(--mt-rule-strong)">Send a redacted sample</button>
+    </div>
+
+    <div class="mt-label" style="padding:var(--mt-c6) 0 var(--mt-c3)">Buttons</div>
+    <div style="display:flex;gap:var(--mt-c2);padding-bottom:var(--mt-c8)">
+      <button class="mt-btn mt-btn--grade" type="button" style="flex:1">Stamp it</button>
+      <button class="mt-btn" type="button" style="flex:1" disabled>Stamp it</button>
+    </div>
+  </section>
+
+  <nav class="mt-nav" aria-label="Sections">
+    <a href="ledger.html"><svg viewBox="0 0 24 24"><path d="M4 19V5m5 14V9m5 10V7m5 12v-6"/></svg>Ledger</a>
+    <a href="outlook.html"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 10h18M8 3v4m8-4v4"/></svg>Outlook</a>
+    <a href="budgets.html"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg>Budgets</a>
+    <a href="states.html" aria-current="page"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>You</a>
+  </nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>moneytrack — mobile design</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Stardos+Stencil:wght@700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../tokens/tokens.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--mt-ground);color:var(--mt-ink);font-family:var(--mt-face);padding:48px 32px 80px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:30px;font-weight:600;letter-spacing:-.02em}
+.sub{font-size:15px;color:var(--mt-ink-secondary);margin-top:10px;max-width:62ch;line-height:1.5}
+h2{font-size:var(--mt-micro);font-weight:600;letter-spacing:var(--mt-track-micro);text-transform:uppercase;color:var(--mt-ink-secondary);margin:46px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--mt-rule)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:26px}
+figure{margin:0}
+.frame{border:1px solid var(--mt-rule-strong);border-radius:var(--mt-r-lg);overflow:hidden;background:var(--mt-surface);aspect-ratio:390/844;box-shadow:var(--mt-lift-1)}
+.frame iframe{width:390px;height:844px;border:0;transform-origin:0 0;display:block}
+figcaption{margin-top:10px;font-size:13.5px;font-weight:600}
+figcaption span{display:block;font-weight:400;font-size:12.5px;color:var(--mt-ink-secondary);margin-top:2px}
+a{color:inherit}
+.sw{display:flex;flex-wrap:wrap;gap:12px}
+.chip{border:1px solid var(--mt-rule);border-radius:var(--mt-r-sm);overflow:hidden;width:132px}
+.chip i{display:block;height:48px}
+.chip b{display:block;padding:7px 9px 8px;font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;background:var(--mt-surface)}
+.chip b em{display:block;font-style:normal;font-weight:400;color:var(--mt-ink-secondary);letter-spacing:0;text-transform:none;margin-top:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>moneytrack — mobile</h1>
+  <p class="sub">Cocoa Grade Stencil. Every screen below is the real markup at 390&times;844, running on the shared tokens. Add <code>?theme=dark</code> to any screen&rsquo;s URL for the dark scheme.</p>
+  <p class="sub"><strong>Navigation, sheets and controls here are painted stand-ins</strong>, not a component library. In Flutter they become Material 3 on Android and HIG on iOS &mdash; see <a href="../ADAPTIVE.md">ADAPTIVE.md</a> for the per-component mapping. The world lends type, palette, density and the stamp, and nothing else.</p>
+  <p class="sub"><strong>All figures, merchants and dates are invented sample data</strong> for design purposes. There are no real users and no real transactions.</p>
+
+  <h2>Screens</h2>
+  <div class="grid">
+    <figure><div class="frame"><iframe src="ledger.html" title="Ledger" scrolling="no"></iframe></div><figcaption>Ledger<span>Balance, the review strip, one continuous list through today</span></figcaption></figure>
+    <figure><div class="frame"><iframe src="inbox.html" title="Review" scrolling="no"></iframe></div><figcaption>Review<span>Parsed alerts, and the stamp</span></figcaption></figure>
+    <figure><div class="frame"><iframe src="add.html" title="Add" scrolling="no"></iframe></div><figcaption>New entry<span>Amount, category, done</span></figcaption></figure>
+    <figure><div class="frame"><iframe src="outlook.html" title="Outlook" scrolling="no"></iframe></div><figcaption>Outlook<span>The balance walk, and where it dips below zero</span></figcaption></figure>
+    <figure><div class="frame"><iframe src="budgets.html" title="Budgets" scrolling="no"></iframe></div><figcaption>Budgets<span>Graded tiers rather than a progress pill</span></figcaption></figure>
+    <figure><div class="frame"><iframe src="states.html" title="States" scrolling="no"></iframe></div><figcaption>States<span>Empty, loading, error, disabled</span></figcaption></figure>
+  </div>
+
+  <h2>Dark</h2>
+  <div class="grid">
+    <figure><div class="frame"><iframe src="ledger.html?theme=dark" title="Ledger, dark" scrolling="no"></iframe></div><figcaption>Ledger<span>Roasted, not inverted</span></figcaption></figure>
+    <figure><div class="frame"><iframe src="inbox.html?theme=dark" title="Review, dark" scrolling="no"></iframe></div><figcaption>Review<span>Amber still means one thing only</span></figcaption></figure>
+    <figure><div class="frame"><iframe src="outlook.html?theme=dark" title="Outlook, dark" scrolling="no"></iframe></div><figcaption>Outlook<span>Evening review, the scene it was picked for</span></figcaption></figure>
+  </div>
+
+  <h2>Palette</h2>
+  <div class="sw">
+    <div class="chip"><i style="background:#EFE7D7"></i><b>Ground<em>#EFE7D7</em></b></div>
+    <div class="chip"><i style="background:#F7F2E7"></i><b>Surface<em>#F7F2E7</em></b></div>
+    <div class="chip"><i style="background:#17150F"></i><b>Ink<em>#17150F</em></b></div>
+    <div class="chip"><i style="background:#4A4438"></i><b>Ink 2<em>#4A4438</em></b></div>
+    <div class="chip"><i style="background:#8C3A1E"></i><b>Grade<em>#8C3A1E</em></b></div>
+    <div class="chip"><i style="background:#2F5B42"></i><b>Income<em>#2F5B42</em></b></div>
+    <div class="chip"><i style="background:#854B0E"></i><b>Awaiting<em>#854B0E</em></b></div>
+    <div class="chip"><i style="background:#D1C5AD"></i><b>Rule<em>#D1C5AD</em></b></div>
+  </div>
+</div>
+<script>
+// Scale each 390px screen down to its card width.
+addEventListener('load', function () {
+  document.querySelectorAll('.frame').forEach(function (f) {
+    var s = f.clientWidth / 390;
+    var i = f.querySelector('iframe');
+    i.style.transform = 'scale(' + s + ')';
+    f.style.height = (844 * s) + 'px';
+  });
+});
+</script>
+</body>
+</html>

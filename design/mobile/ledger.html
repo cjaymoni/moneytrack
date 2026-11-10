@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>moneytrack — Ledger</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Stardos+Stencil:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../tokens/app.css">
+<script src="../tokens/theme.js" defer></script>
+</head>
+<body>
+<main class="mt-app">
+  <div class="mt-statusbar" aria-hidden="true"><span>09:41</span><span>5G&nbsp;&nbsp;86%</span></div>
+
+  <div class="mt-topbar">
+    <h1>Ledger</h1>
+    <button class="mt-chip" type="button"><i class="dot"></i>All accounts</button>
+  </div>
+
+  <section class="mt-balance" aria-label="Current balance">
+    <div class="fig"><span class="cur">GHS</span>2,418.60</div>
+    <div class="mt-label meta">Cash, MTN MoMo and GCB &middot; 10 November</div>
+  </section>
+
+  <button class="mt-review" type="button">
+    <span class="mt-stampfield" aria-hidden="true">AWAIT<br>STAMP</span>
+    <span class="copy"><b>2 alerts parsed</b><span>KWAME FUEL STN and one more need your check.</span></span>
+  </button>
+
+  <section class="mt-ledger" aria-label="Transactions">
+    <article class="mt-row">
+      <div class="date">10 NOV</div>
+      <div>
+        <div class="label">Shoprite Accra Mall</div>
+        <div class="sub">MTN MoMo &middot; Groceries <span class="mt-stamp">CHECKED</span></div>
+      </div>
+      <div class="amt">&minus;184.20</div>
+      <div class="mt-measure" style="width:46%"></div>
+    </article>
+    <article class="mt-row">
+      <div class="date">10 NOV</div>
+      <div><div class="label">Trotro, Madina&ndash;Circle</div><div class="sub">Cash &middot; Transport <span class="mt-byhand">By hand</span></div></div>
+      <div class="amt">&minus;5.00</div>
+      <div class="mt-measure" style="width:3%"></div>
+    </article>
+    <article class="mt-row">
+      <div class="date">08 NOV</div>
+      <div><div class="label">Mama Esi Provisions</div><div class="sub">Telecel Cash &middot; Groceries <span class="mt-stamp">CHECKED</span></div></div>
+      <div class="amt">&minus;62.50</div>
+      <div class="mt-measure" style="width:16%"></div>
+    </article>
+    <article class="mt-row">
+      <div class="date">05 NOV</div>
+      <div><div class="label">ECG prepaid top-up</div><div class="sub">MTN MoMo &middot; Utilities <span class="mt-stamp">CHECKED</span></div></div>
+      <div class="amt">&minus;120.00</div>
+      <div class="mt-measure" style="width:30%"></div>
+    </article>
+    <article class="mt-row">
+      <div class="date">01 NOV</div>
+      <div><div class="label">Transfer to GCB</div><div class="sub">MTN MoMo &rarr; GCB Bank &middot; not counted <span class="mt-byhand">By hand</span></div></div>
+      <div class="amt">&minus;500.00</div>
+    </article>
+
+    <div class="mt-today"><span class="mt-micro">Today</span><i></i></div>
+
+    <article class="mt-row mt-row--future">
+      <div class="date">25 NOV</div>
+      <div><div class="label">Rent, Spintex</div><div class="sub">GCB Bank &middot; Housing &middot; recurring</div></div>
+      <div class="amt">&minus;1,400.00</div>
+    </article>
+    <article class="mt-row mt-row--future">
+      <div class="date">28 NOV</div>
+      <div><div class="label">Salary</div><div class="sub">GCB Bank &middot; Income &middot; recurring</div></div>
+      <div class="amt in">+4,200.00</div>
+      <div class="mt-measure in" style="width:100%"></div>
+    </article>
+  </section>
+
+  <nav class="mt-nav" aria-label="Sections">
+    <a href="ledger.html" aria-current="page"><svg viewBox="0 0 24 24"><path d="M4 19V5m5 14V9m5 10V7m5 12v-6"/></svg>Ledger</a>
+    <a href="outlook.html"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 10h18M8 3v4m8-4v4"/></svg>Outlook</a>
+    <a href="budgets.html"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg>Budgets</a>
+    <a href="states.html"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>You</a>
+    <button class="mt-fab" type="button" aria-label="Add a transaction" onclick="location.href='add.html'">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </nav>
+</main>
+</body>
+</html>

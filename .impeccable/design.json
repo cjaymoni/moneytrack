@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-10T00:00:00Z",
+  "title": "Design System: moneytrack",
+  "extensions": {
+    "colorMeta": {
+      "ground": { "role": "neutral", "displayName": "Oat Ground", "canonical": "#EFE7D7", "darkCounterpart": "ground-dark", "tonalRamp": ["#1A1611", "#332C22", "#4D4334", "#6B5F4A", "#8F8264", "#B6A789", "#D1C5AD", "#F7F2E7"] },
+      "surface": { "role": "neutral", "displayName": "Raised Oat", "canonical": "#F7F2E7", "darkCounterpart": "surface-dark", "tonalRamp": ["#1D1A16", "#35302A", "#4F493F", "#6E675A", "#948B7A", "#B6A789", "#E5DAC3", "#F7F2E7"] },
+      "sunk": { "role": "neutral", "displayName": "Sunk Oat", "canonical": "#E5DAC3", "darkCounterpart": "sunk-dark", "tonalRamp": ["#0E0C0A", "#2A251D", "#453E31", "#625948", "#8A7F66", "#B6A789", "#D1C5AD", "#EFE7D7"] },
+      "ink": { "role": "neutral", "displayName": "Stencil Ink", "canonical": "#17150F", "darkCounterpart": "ink-dark", "tonalRamp": ["#17150F", "#2D2920", "#4A4438", "#655E4E", "#948B7A", "#BAB1A0", "#D1C5AD", "#F2EADA"] },
+      "ink-secondary": { "role": "neutral", "displayName": "Counterparty Ink", "canonical": "#4A4438", "tonalRamp": ["#17150F", "#2D2920", "#4A4438", "#655E4E", "#948B7A", "#BAB1A0", "#D1C5AD", "#EFE7D7"] },
+      "ink-muted": { "role": "neutral", "displayName": "Gutter Ink", "canonical": "#6B6454", "tonalRamp": ["#17150F", "#332E26", "#4A4438", "#6B6454", "#948B7A", "#BAB1A0", "#D1C5AD", "#EFE7D7"] },
+      "ink-future": { "role": "neutral", "displayName": "Future Ink", "canonical": "#655E4E", "darkCounterpart": "ink-future-dark", "tonalRamp": ["#17150F", "#332E26", "#4A4438", "#655E4E", "#8A8270", "#B0A796", "#D1C5AD", "#EFE7D7"], "note": "Replaced an opacity:.54 fade on future rows that computed to roughly 3.7:1 on oat and failed AA. A quieter state gets a colour, never a transparency." },
+      "ink-hover": { "role": "neutral", "displayName": "Ink Hover", "canonical": "#23201A", "darkCounterpart": "ink-hover-dark", "tonalRamp": ["#17150F", "#23201A", "#332E26", "#4A4438", "#655E4E", "#8A8270", "#B6A789", "#D1C5AD"] },
+      "rule": { "role": "neutral", "displayName": "Hairline", "canonical": "#D1C5AD", "darkCounterpart": "rule-dark", "tonalRamp": ["#332E26", "#4A4337", "#625948", "#8A7F66", "#B6A789", "#D1C5AD", "#E5DAC3", "#F7F2E7"] },
+      "rule-strong": { "role": "neutral", "displayName": "Strong Rule", "canonical": "#B6A789", "darkCounterpart": "rule-strong-dark", "tonalRamp": ["#332E26", "#4A4337", "#625948", "#8A7F66", "#B6A789", "#D1C5AD", "#E5DAC3", "#F7F2E7"] },
+      "backdrop": { "role": "neutral", "displayName": "Backdrop", "canonical": "#2A251D", "darkCounterpart": "backdrop-dark", "tonalRamp": ["#0A0908", "#141210", "#2A251D", "#453E31", "#625948", "#8A7F66", "#B6A789", "#D1C5AD"], "note": "Outside the device frame in the HTML references only. No role in the app." },
+      "grade": { "role": "primary", "displayName": "Grade Oxblood", "canonical": "#8C3A1E", "darkCounterpart": "grade-dark", "tonalRamp": ["#2A1008", "#451B0C", "#602614", "#79311A", "#8C3A1E", "#B05530", "#D9704A", "#F0BCA6"] },
+      "grade-hover": { "role": "primary", "displayName": "Grade Oxblood Pressed", "canonical": "#79311A", "darkCounterpart": "grade-hover-dark", "tonalRamp": ["#2A1008", "#451B0C", "#602614", "#79311A", "#8C3A1E", "#B05530", "#D9704A", "#F0BCA6"] },
+      "income": { "role": "secondary", "displayName": "Leaf Green", "canonical": "#2F5B42", "darkCounterpart": "income-dark", "tonalRamp": ["#0D1F15", "#17321F", "#22452D", "#2F5B42", "#43795A", "#6FB98E", "#A3D6B8", "#D4EDE0"] },
+      "await": { "role": "tertiary", "displayName": "Tally Amber", "canonical": "#854B0E", "darkCounterpart": "await-dark", "tonalRamp": ["#2A1905", "#44290A", "#5E3A0C", "#854B0E", "#B4791F", "#C2762B", "#E0A253", "#EADBC2"] },
+      "await-wash": { "role": "tertiary", "displayName": "Tally Wash", "canonical": "#EADBC2", "darkCounterpart": "await-wash-dark", "tonalRamp": ["#2A2219", "#453727", "#604D36", "#856B48", "#B4915F", "#C2762B", "#EADBC2", "#F7EFE0"] },
+      "await-edge": { "role": "tertiary", "displayName": "Tally Edge", "canonical": "#C2762B", "darkCounterpart": "await-edge-dark", "tonalRamp": ["#2A1905", "#44290A", "#5E3A0C", "#854B0E", "#B4791F", "#C2762B", "#E0A253", "#F2D9B4"] },
+      "await-hover": { "role": "tertiary", "displayName": "Tally Wash Pressed", "canonical": "#E3D2B5", "darkCounterpart": "await-hover-dark", "tonalRamp": ["#2A2219", "#382D20", "#604D36", "#856B48", "#B4915F", "#C2762B", "#E3D2B5", "#F7EFE0"] }
+    },
+    "typographyMeta": {
+      "amount-hero": { "displayName": "Amount Hero", "purpose": "The balance, the month's spend, the lowest projected balance, the running entry figure. One per screen." },
+      "amount-lg": { "displayName": "Amount Large", "purpose": "Sheet totals." },
+      "amount": { "displayName": "Amount", "purpose": "Ledger row amounts, right-aligned." },
+      "title": { "displayName": "Title", "purpose": "The screen name in the top bar." },
+      "body": { "displayName": "Body", "purpose": "Explanatory prose, held to roughly 30-34ch at phone width." },
+      "body-sm": { "displayName": "Body Small", "purpose": "Review-strip copy, helper text, category chips." },
+      "label": { "displayName": "Label", "purpose": "The tracked stencil register: section labels, chips, segments, buttons." },
+      "micro": { "displayName": "Micro", "purpose": "The hardest-tracked register: the TODAY rule, budget foot lines, navigation labels, the by-hand mark. 11px is the platform floor, not a style choice." },
+      "stamp": { "displayName": "Stamp", "purpose": "Stardos Stencil at the 11px floor. The small undated row stamp and the empty stamp field. Nowhere else." },
+      "stamp-lg": { "displayName": "Stamp Large", "purpose": "Stardos Stencil at 14px. The dated mark pressed at the moment of stamping, on the Review screen." }
+    },
+    "shadows": [
+      { "name": "lift-1", "value": "0 1px 2px rgba(23,21,15,.07), 0 2px 8px rgba(23,21,15,.05)", "purpose": "Gentlest separation, used for framed previews. Rarely needed in-app." },
+      { "name": "lift-2", "value": "0 2px 4px rgba(23,21,15,.10), 0 6px 18px rgba(23,21,15,.10)", "purpose": "The floating primary action control, the only element truly off the page." },
+      { "name": "fab-ring", "value": "0 0 0 6px var(--mt-ground), var(--mt-lift-2)", "purpose": "The floating control's full treatment. A 6px ring in the page's own colour cuts it free of the row beneath, so it reads as floating rather than as a hole punched through an amount. A cut-out, never a tinted glow." },
+      { "name": "lift-1-dark", "value": "0 1px 2px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.3)", "purpose": "Lift 1 re-graded for the roasted dark ground." },
+      { "name": "lift-2-dark", "value": "0 2px 4px rgba(0,0,0,.5), 0 6px 18px rgba(0,0,0,.45)", "purpose": "Lift 2 re-graded for the roasted dark ground." }
+    ],
+    "motion": [
+      { "name": "ease", "value": "cubic-bezier(.2,.8,.25,1)", "purpose": "Default easing for state transitions." },
+      { "name": "ease-stamp", "value": "cubic-bezier(.16,1.1,.3,1)", "purpose": "The stamp press only. Overshoots past its resting angle, then settles." },
+      { "name": "fast", "value": "120ms", "purpose": "Hover and press feedback." },
+      { "name": "base", "value": "220ms", "purpose": "Standard state change." },
+      { "name": "stamp", "value": "320ms", "purpose": "The stamp press, the app's only authored motion moment. Gated behind the system reduce-motion setting." }
+    ],
+    "touchTargets": [
+      { "name": "target-ios", "value": "44px", "purpose": "HIG floor." },
+      { "name": "target-android", "value": "48px", "purpose": "Material 3 floor." },
+      { "name": "target", "value": "48px", "purpose": "Build to the larger of the two and both are satisfied." },
+      { "name": "target-gap", "value": "8px", "purpose": "Minimum separation between adjacent targets." }
+    ],
+    "breakpoints": [
+      { "name": "phone", "value": "390px" },
+      { "name": "framed", "value": "440px" }
+    ],
+    "accessibility": {
+      "floor": "WCAG 2.2 AA, 4.5:1, measured not assumed, in both schemes. Re-verified against the current token file.",
+      "measured": [
+        { "pair": "ink on ground", "ratio": 14.85 },
+        { "pair": "ink-secondary on ground", "ratio": 7.85 },
+        { "pair": "ink-muted on ground", "ratio": 4.78 },
+        { "pair": "ink-future on ground", "ratio": 5.23 },
+        { "pair": "grade on ground", "ratio": 6.24 },
+        { "pair": "income on ground", "ratio": 6.34 },
+        { "pair": "await on await-wash", "ratio": 5.12 },
+        { "pair": "ground on grade (fab, grade button, selected category)", "ratio": 6.24 },
+        { "pair": "ground on ink (primary button, selected segment)", "ratio": 14.85 },
+        { "pair": "ink on surface", "ratio": 16.35 },
+        { "pair": "ink-muted on surface (inactive nav)", "ratio": 5.26 },
+        { "pair": "ink-dark on ground-dark", "ratio": 15.62 },
+        { "pair": "ink-secondary-dark on ground-dark", "ratio": 8.8 },
+        { "pair": "ink-muted-dark on ground-dark", "ratio": 5.55 },
+        { "pair": "ink-future-dark on ground-dark", "ratio": 5.55 },
+        { "pair": "grade-dark on ground-dark", "ratio": 5.67 },
+        { "pair": "income-dark on ground-dark", "ratio": 8.01 },
+        { "pair": "await-dark on await-wash-dark", "ratio": 7.05 },
+        { "pair": "ink-muted-dark on surface-dark (inactive nav)", "ratio": 5.14 }
+      ],
+      "typeFloor": "Nothing that carries state falls below 11px / 11pt / 11sp, including the stamp. Type follows the system size setting on both platforms.",
+      "drivingScenes": [
+        "One-handed on the move: primary actions thumb-reachable, low and right, every control at the 48px target.",
+        "Direct sunlight: light scheme is the default, contrast is held high, and no state is carried by a transparency.",
+        "Low-end small-screen Android: layouts survive narrow widths, motion stays transform-and-opacity cheap.",
+        "Evening sit-down review: the dark scheme, roasted rather than inverted."
+      ]
+    },
+    "platform": {
+      "mode": "adaptive",
+      "authority": "design/ADAPTIVE.md is authoritative for the per-OS mapping (Material 3 on Android, HIG on iOS) and is not duplicated in DESIGN.md.",
+      "note": "The .mt-nav, .mt-fab, .mt-chip, .mt-seg and .mt-btn classes in design/tokens/app.css are painted stand-ins so the HTML references read as real screens. They are not a component library to port to Flutter. Navigation, sheets, dialogs, controls, control shape, back behaviour, gestures and system motion are the platform's own. The world lends type, palette, density and the stamp.",
+      "shapeLimit": "The 2-4px radii in tokens.css apply to surfaces the world paints — the review strip, the stamp, sheets. Controls take Material 3 corner tokens on Android and HIG continuous corners on iOS.",
+      "fonts": "Archivo and Stardos Stencil ship as bundled app assets. The Google Fonts CDN links exist only because the design files are HTML references.",
+      "tokenMirror": "design/tokens/tokens.css is the normative source and is intended to be mirrored into a Dart token file. That mirror does not exist yet; no .dart files are present in the repo."
+    },
+    "artifactStatus": "design/mobile/*.html are HTML design references at 390x844 (ledger, inbox, add, outlook, budgets, states, index). They are not the shipped product, and all figures, merchants and dates in them are invented sample data."
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Full-width committing action in stencil ink. The default for anything that is not the act of stamping. Painted stand-in: on device this is the platform's button.",
+      "html": "<button class=\"ds-btn\">Add your first account</button>",
+      "css": ".ds-btn { display:block; width:100%; padding:15px 0; cursor:pointer; border:0; border-radius:3px; background:#17150F; color:#EFE7D7; font-family:Archivo,'Helvetica Neue',system-ui,sans-serif; font-size:12px; font-weight:700; letter-spacing:0.07em; text-transform:uppercase; } .ds-btn:hover { background:#23201A; } .ds-btn:focus-visible { outline:2px solid #8C3A1E; outline-offset:3px; } .ds-btn:disabled { background:#D1C5AD; color:#6B6454; cursor:not-allowed; }"
+    },
+    {
+      "name": "Grade Button",
+      "kind": "button",
+      "refersTo": "button-grade",
+      "description": "The act of stamping. Oxblood fill, reserved for confirming a parsed transaction.",
+      "html": "<button class=\"ds-btn-grade\">Stamp it</button>",
+      "css": ".ds-btn-grade { display:block; width:100%; padding:15px 0; cursor:pointer; border:0; border-radius:3px; background:#8C3A1E; color:#EFE7D7; font-family:Archivo,'Helvetica Neue',system-ui,sans-serif; font-size:12px; font-weight:700; letter-spacing:0.07em; text-transform:uppercase; } .ds-btn-grade:hover { background:#79311A; } .ds-btn-grade:focus-visible { outline:2px solid #17150F; outline-offset:3px; }"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "The account or month/currency filter in the top bar, at the 44px iOS target floor. Painted stand-in for the platform's own filter control.",
+      "html": "<button class=\"ds-chip\"><i class=\"ds-chip-dot\"></i>All accounts</button>",
+      "css": ".ds-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid #B6A789; border-radius:2px; min-height:44px; padding:6px 12px; background:none; cursor:pointer; font-family:Archivo,'Helvetica Neue',system-ui,sans-serif; font-size:12px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:#4A4438; } .ds-chip:hover { background:#E5DAC3; } .ds-chip:focus-visible { outline:2px solid #8C3A1E; outline-offset:1px; } .ds-chip-dot { width:7px; height:7px; border-radius:50%; background:#2F5B42; }"
+    },
+    {
+      "name": "Category Chip",
+      "kind": "chip",
+      "refersTo": "category-chip",
+      "description": "Category selection in the entry sheet and the review inbox, at the 48px target with an 8px gap to its neighbour. Selected fills oxblood.",
+      "html": "<div class=\"ds-cats\"><button class=\"ds-cat\" aria-pressed=\"true\">Transport</button><button class=\"ds-cat\" aria-pressed=\"false\">Groceries</button><button class=\"ds-cat\" disabled>Rent &mdash; recurring</button></div>",
+      "css": ".ds-cats { display:flex; flex-wrap:wrap; gap:8px; } .ds-cat { min-height:48px; padding:8px 14px; cursor:pointer; font-family:Archivo,'Helvetica Neue',system-ui,sans-serif; border:1px solid #B6A789; border-radius:2px; background:none; color:#17150F; font-size:13.5px; font-weight:500; } .ds-cat[aria-pressed=\"true\"] { background:#8C3A1E; border-color:#8C3A1E; color:#EFE7D7; } .ds-cat:disabled { opacity:.4; cursor:not-allowed; } .ds-cat:focus-visible { outline:2px solid #8C3A1E; outline-offset:2px; }"
+    },
+    {
+      "name": "Direction Segments",
+      "kind": "custom",
+      "refersTo": "segment",
+      "description": "Out / In / Transfer in the entry sheet, at the 48px target with the 8px target gap. Painted stand-in for the platform's segmented control.",
+      "html": "<div class=\"ds-segs\" role=\"group\" aria-label=\"Direction\"><button class=\"ds-seg\" aria-pressed=\"true\">Out</button><button class=\"ds-seg\" aria-pressed=\"false\">In</button><button class=\"ds-seg\" aria-pressed=\"false\">Transfer</button></div>",
+      "css": ".ds-segs { display:flex; gap:8px; } .ds-seg { flex:1; min-height:48px; padding:9px 0; text-align:center; cursor:pointer; border:1px solid #B6A789; border-radius:2px; background:none; font-family:Archivo,'Helvetica Neue',system-ui,sans-serif; color:#4A4438; font-size:12px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; } .ds-seg[aria-pressed=\"true\"] { background:#17150F; color:#EFE7D7; border-color:#17150F; } .ds-seg:focus-visible { outline:2px solid #8C3A1E; outline-offset:2px; }"
+    },
+    {
+      "name": "Ledger Row with Verification Mark",
+      "kind": "custom",
+      "refersTo": "amount",
+      "description": "Date gutter, label, counterparty, right-aligned tabular amount, and a hairline magnitude bar so the list is its own chart. Every past row declares how it got there: a stamp if a parser produced it and a person checked it, By hand if a person typed it. Future rows use Future Ink, not an opacity.",
+      "html": "<article class=\"ds-row\"><div class=\"ds-row-date\">10 NOV</div><div><div class=\"ds-row-label\">Shoprite Accra Mall</div><div class=\"ds-row-sub\">MTN MoMo &middot; Groceries <span class=\"ds-stamp\">CHECKED</span></div></div><div class=\"ds-row-amt\">&minus;184.20</div><div class=\"ds-measure\" style=\"width:46%\"></div></article><article class=\"ds-row\"><div class=\"ds-row-date\">10 NOV</div><div><div class=\"ds-row-label\">Trotro, Madina&ndash;Circle</div><div class=\"ds-row-sub\">Cash &middot; Transport <span class=\"ds-byhand\">By hand</span></div></div><div class=\"ds-row-amt\">&minus;5.00</div><div class=\"ds-measure\" style=\"width:3%\"></div></article><article class=\"ds-row ds-row-future\"><div class=\"ds-row-date\">28 NOV</div><div><div class=\"ds-row-label\">Salary</div><div class=\"ds-row-sub\">GCB Bank &middot; Income &middot; recurring</div></div><div class=\"ds-row-amt ds-in\">+4,200.00</div></article>",
+      "css": ".ds-row { display:grid; grid-template-columns:46px 1fr auto; gap:12px; align-items:baseline; padding:12px 0 8px; border-top:1px solid #D1C5AD; font-family:Archivo,'Helvetica Neue',system-ui,sans-serif; color:#17150F; font-variant-numeric:tabular-nums; } .ds-row:first-child { border-top:0; } .ds-row-date { font-size:11px; font-weight:600; letter-spacing:.04em; white-space:nowrap; color:#6B6454; padding-top:3px; } .ds-row-label { font-size:14.5px; font-weight:500; letter-spacing:-.005em; } .ds-row-sub { font-size:11.5px; color:#4A4438; margin-top:3px; letter-spacing:.02em; } .ds-row-amt { font-size:16px; font-weight:600; letter-spacing:-.02em; text-align:right; white-space:nowrap; } .ds-row-amt.ds-in { color:#2F5B42; } .ds-measure { grid-column:2 / 4; height:2px; margin-top:4px; border-radius:1px; min-width:7px; background:#17150F; opacity:.16; } .ds-row-future .ds-row-date, .ds-row-future .ds-row-label, .ds-row-future .ds-row-amt { color:#655E4E; } .ds-row-future .ds-row-amt.ds-in { color:#2F5B42; opacity:.82; } .ds-stamp { display:inline-grid; place-items:center; text-align:center; border:1px solid #8C3A1E; border-radius:2px; padding:2px 6px 3px; margin-left:8px; font-family:'Stardos Stencil',Archivo,sans-serif; font-size:11px; line-height:1.2; letter-spacing:.08em; color:#8C3A1E; transform:rotate(-6deg); opacity:.8; } .ds-byhand { display:inline-block; margin-left:8px; font-size:11px; font-weight:500; letter-spacing:0.07em; text-transform:uppercase; color:#6B6454; }"
+    },
+    {
+      "name": "Review Strip",
+      "kind": "card",
+      "refersTo": "review-strip",
+      "description": "The only amber on the Ledger: a dashed strip carrying an empty stamp field and the count of parsed alerts awaiting a check. When nothing is waiting, there is no amber on the screen.",
+      "html": "<button class=\"ds-review\"><span class=\"ds-stampfield\" aria-hidden=\"true\">AWAIT<br>STAMP</span><span class=\"ds-review-copy\"><b>2 alerts parsed</b><span>KWAME FUEL STN and one more need your check.</span></span></button>",
+      "css": ".ds-review { display:flex; align-items:center; gap:12px; padding:12px; text-align:left; width:100%; background:#EADBC2; border:1.5px dashed #C2762B; border-radius:3px; font-family:Archivo,'Helvetica Neue',system-ui,sans-serif; color:#17150F; cursor:pointer; transition:background 120ms cubic-bezier(.2,.8,.25,1); } .ds-review:hover { background:#E3D2B5; } .ds-review:focus-visible { outline:2px solid #8C3A1E; outline-offset:2px; } .ds-review-copy { flex:1; font-size:13.5px; line-height:1.35; } .ds-review-copy b { display:block; font-weight:700; } .ds-review-copy > span { color:#4A4438; } .ds-stampfield { width:66px; height:46px; flex:none; display:grid; place-items:center; border:1.5px dashed #C2762B; border-radius:2px; font-family:'Stardos Stencil',Archivo,sans-serif; font-size:11px; line-height:1.2; letter-spacing:.06em; color:#854B0E; text-align:center; }"
+    },
+    {
+      "name": "The Verification Pair",
+      "kind": "custom",
+      "refersTo": "stamp",
+      "description": "The signature system. Dashed field = nobody has looked yet. Stamp = parser-sourced and checked by a person, undated because the date gutter already says it. By hand = entered by a person, which is already a human act. Every row wears one of the three.",
+      "html": "<div class=\"ds-verify\"><span class=\"ds-vf-field\">AWAIT<br>STAMP</span><span class=\"ds-vf-stamp\">CHECKED</span><span class=\"ds-vf-byhand\">By hand</span></div>",
+      "css": ".ds-verify { display:flex; align-items:center; gap:28px; padding:16px 8px; font-family:Archivo,'Helvetica Neue',system-ui,sans-serif; } .ds-vf-field { width:66px; height:46px; display:grid; place-items:center; border:1.5px dashed #C2762B; border-radius:2px; font-family:'Stardos Stencil',Archivo,sans-serif; font-size:11px; line-height:1.2; letter-spacing:.06em; color:#854B0E; text-align:center; } .ds-vf-stamp { display:inline-grid; place-items:center; text-align:center; border:1px solid #8C3A1E; border-radius:2px; padding:2px 6px 3px; font-family:'Stardos Stencil',Archivo,sans-serif; font-size:11px; line-height:1.2; letter-spacing:.08em; color:#8C3A1E; transform:rotate(-6deg); opacity:.8; } .ds-vf-byhand { font-size:11px; font-weight:500; letter-spacing:0.07em; text-transform:uppercase; color:#6B6454; }"
+    },
+    {
+      "name": "The Stamp Press",
+      "kind": "custom",
+      "refersTo": "stamp-lg",
+      "description": "The app's only authored motion. At the moment of stamping, on the Review screen, the large dated mark presses in: arrives rotated and oversized and blurred, lands past its resting angle, settles. Gated behind prefers-reduced-motion; once the row joins the ledger it wears the small undated form.",
+      "html": "<div class=\"ds-press-demo\"><span class=\"ds-stamp-lg ds-stamp-press\">CHECKED<br>10 NOV</span></div>",
+      "css": ".ds-press-demo { padding:24px 16px; font-family:Archivo,sans-serif; } .ds-stamp-lg { display:inline-grid; place-items:center; text-align:center; border:2px solid #8C3A1E; border-radius:2px; padding:6px 11px 7px; font-family:'Stardos Stencil',Archivo,sans-serif; font-size:14px; line-height:1.2; letter-spacing:.08em; color:#8C3A1E; transform:rotate(-7deg); opacity:.8; } @media (prefers-reduced-motion: no-preference) { .ds-stamp-press { animation: ds-press 320ms cubic-bezier(.16,1.1,.3,1) both; } } @keyframes ds-press { 0% { opacity:0; transform:rotate(-14deg) scale(1.9); filter:blur(1.5px); } 60% { opacity:1; transform:rotate(-5deg) scale(.97); filter:blur(0); } 100% { opacity:.88; transform:rotate(-6deg) scale(1); } }"
+    },
+    {
+      "name": "Graded Budget Tiers",
+      "kind": "custom",
+      "refersTo": "amount",
+      "description": "Budget state in the grading grammar, not a progress bar. Equal cells fill in ink up to a drawn 2px oxblood cap boundary; overspend appears as fixed-width oxblood cells past it, so 123% of cap cannot render the same as exactly 100%. The foot line adds pace and duration rather than restating the figures above.",
+      "html": "<div class=\"ds-grade-row\"><div class=\"ds-grade-head\"><span class=\"ds-grade-n\">Groceries</span><span class=\"ds-grade-v\">431 / 500</span></div><div class=\"ds-tiers\"><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier\"></i><i class=\"ds-tier\"></i><i class=\"ds-cap\"></i></div><div class=\"ds-grade-foot\"><span class=\"ds-micro\">69 left, 10 days to go</span><span class=\"ds-micro\">On pace</span></div></div><div class=\"ds-grade-row\"><div class=\"ds-grade-head\"><span class=\"ds-grade-n\">Transport</span><span class=\"ds-grade-v\" style=\"color:#8C3A1E\">246 / 200</span></div><div class=\"ds-tiers\"><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-tier ds-on\"></i><i class=\"ds-cap\"></i><i class=\"ds-tier ds-over\"></i><i class=\"ds-tier ds-over\"></i><i class=\"ds-tier ds-over-part\"></i></div><div class=\"ds-grade-foot\"><span class=\"ds-micro\" style=\"color:#8C3A1E\">Over by 46 since 06 Nov</span><span class=\"ds-micro\" style=\"color:#8C3A1E\">123% of cap</span></div></div>",
+      "css": ".ds-grade-row { padding:16px 0; border-top:1px solid #D1C5AD; font-family:Archivo,'Helvetica Neue',system-ui,sans-serif; color:#17150F; font-variant-numeric:tabular-nums; } .ds-grade-head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; } .ds-grade-n { font-size:15.5px; font-weight:600; } .ds-grade-v { font-size:15px; font-weight:600; letter-spacing:-.015em; } .ds-tiers { display:flex; align-items:stretch; gap:3px; margin-top:12px; } .ds-tier { flex:1; height:14px; background:#D1C5AD; border-radius:1px; } .ds-tier.ds-on { background:#17150F; } .ds-cap { flex:none; width:2px; background:#8C3A1E; border-radius:1px; margin:0 2px; } .ds-tier.ds-over { background:#8C3A1E; flex:0 0 14px; } .ds-tier.ds-over-part { background:#8C3A1E; flex:0 0 7px; border-radius:1px; height:14px; } .ds-grade-foot { display:flex; justify-content:space-between; margin-top:8px; } .ds-micro { font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:#4A4438; }"
+    },
+    {
+      "name": "Bottom Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Four destinations on a raised oat bar. Painted stand-in: in Flutter this is the Material 3 navigation bar or the HIG tab bar, with Material Symbols or SF Symbols respectively. What this system owns is the colour, the icon weight and the micro label register.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Sections\"><a href=\"#\" aria-current=\"page\"><svg viewBox=\"0 0 24 24\"><path d=\"M4 19V5m5 14V9m5 10V7m5 12v-6\"/></svg>Ledger</a><a href=\"#\"><svg viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"5\" width=\"18\" height=\"15\" rx=\"2\"/><path d=\"M3 10h18M8 3v4m8-4v4\"/></svg>Outlook</a><a href=\"#\"><svg viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 7v5l3.5 2\"/></svg>Budgets</a><a href=\"#\"><svg viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"8\" r=\"3.5\"/><path d=\"M5 20a7 7 0 0 1 14 0\"/></svg>You</a></nav>",
+      "css": ".ds-nav { display:flex; background:#F7F2E7; border-top:1px solid #D1C5AD; padding:9px 8px 12px; font-family:Archivo,'Helvetica Neue',system-ui,sans-serif; } .ds-nav a { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; text-decoration:none; color:#6B6454; font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; } .ds-nav a[aria-current=\"page\"] { color:#17150F; } .ds-nav a:hover { color:#4A4438; } .ds-nav a:focus-visible { outline:2px solid #8C3A1E; outline-offset:2px; border-radius:2px; } .ds-nav svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }"
+    },
+    {
+      "name": "Primary Action Control",
+      "kind": "button",
+      "refersTo": "fab",
+      "description": "The add action, low and right for one-handed reach, wearing a 6px ground-coloured ring so it reads as floating rather than punching through the row beneath. Painted stand-in: a Material 3 FAB on Android, a navigation-bar or sheet primary action on iOS.",
+      "html": "<div class=\"ds-fab-wrap\"><button class=\"ds-fab\" aria-label=\"New entry\"><svg viewBox=\"0 0 24 24\"><path d=\"M12 5v14M5 12h14\"/></svg></button></div>",
+      "css": ".ds-fab-wrap { padding:20px; background:#EFE7D7; display:inline-block; } .ds-fab { width:56px; height:56px; border:0; border-radius:3px; background:#8C3A1E; color:#EFE7D7; display:grid; place-items:center; cursor:pointer; box-shadow:0 0 0 6px #EFE7D7, 0 2px 4px rgba(23,21,15,.10), 0 6px 18px rgba(23,21,15,.10); transition:transform 120ms cubic-bezier(.2,.8,.25,1); } .ds-fab svg { width:25px; height:25px; fill:none; stroke:currentColor; stroke-width:2.1; stroke-linecap:round; stroke-linejoin:round; } .ds-fab:hover { transform:translateY(-1px); } .ds-fab:active { transform:translateY(1px); } .ds-fab:focus-visible { outline:2px solid #17150F; outline-offset:3px; }"
+    },
+    {
+      "name": "Amount Entry Figure",
+      "kind": "input",
+      "refersTo": "amount-hero",
+      "description": "There is no boxed text input in this system. Amount entry is the figure itself on the oat ground, with an oxblood caret beside it.",
+      "html": "<div class=\"ds-entryfig\" aria-label=\"Amount, 5 cedis\"><span class=\"ds-cur\">GHS</span>5<span class=\"ds-caret\" aria-hidden=\"true\"></span></div>",
+      "css": ".ds-entryfig { display:flex; align-items:baseline; gap:8px; font-family:Archivo,'Helvetica Neue',system-ui,sans-serif; font-variant-numeric:tabular-nums; color:#17150F; font-size:54px; font-weight:600; letter-spacing:-0.035em; padding:24px 0 8px; } .ds-cur { font-size:22px; font-weight:600; letter-spacing:0; color:#4A4438; } .ds-caret { display:inline-block; width:3px; height:46px; background:#8C3A1E; margin-left:2px; } @media (prefers-reduced-motion: no-preference) { .ds-caret { animation:ds-blink 1.1s steps(1,end) infinite; } } @keyframes ds-blink { 50% { opacity:0; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Cocoa Grade Stencil",
+    "overview": "The world is taken from Ghana's cocoa grading and bagging line: oat jute under near-black stencil ink, grade marks pressed in oxblood, everything ruled on a hard cell. It lends this app four things and nothing else — the type register, the palette, the density, and one signature move. It does not lend navigation, control shape, sheet behaviour, gestures or system motion. Everything a cocoa shed does not need, this app does not have.\n\nThe thesis the build defends is that the act of checking should be visible. A money app's default arrangement — gradient hero balance, carousel of account cards, donut of categories — shows a total and hides which rows a human has actually verified. Here the screen is one continuous ledger running through today into future pending rows; the only coloured object above it is the strip saying machine guesses are still waiting for you; and every settled row declares how it got there, either with a pressed stamp or with a by-hand mark. Hierarchy comes from scale contrast alone: monumental tabular figures set against small uppercase labels tracked open, with no weight tricks, no boxes, no cards stacked for emphasis.\n\nThe light scheme is the default because the confirmed usage scene is direct Ghanaian sunlight. That one fact drove the whole palette: oat ground rather than white, near-black ink rather than grey, and no state carried by a transparency. Every text and mark pair is measured against its own background and held above WCAG AA 4.5:1 in both schemes — the quietest pair in the system, the date gutter on oat, sits at 4.78:1, and future rows get their own ink colour (5.23:1) rather than a faded one. Dark is the evening sit-down review: roasted, warm-black, not an inversion.",
+    "keyCharacteristics": [
+      "Oat ground (#EFE7D7), never white; near-black stencil ink, never grey body text.",
+      "Monumental tabular figures against small uppercase labels tracked +0.07em — scale contrast is the only hierarchy device.",
+      "One continuous ledger through a ruled oxblood TODAY line, not a dashboard of tiles.",
+      "Every past row declares its verification state: a pressed stamp or a by-hand mark.",
+      "A 4dp cell grid nothing sits off, and platform touch-target floors nothing falls under.",
+      "One colour, one job: oxblood, leaf green, tally amber each mean exactly one thing.",
+      "One authored motion moment in the whole app: the stamp pressing."
+    ],
+    "rules": [
+      { "name": "The One Job Rule", "body": "Oxblood is the stamp, today's rule and the cap boundary with everything past it. Green is money in and within-budget. Amber means awaiting your check and nothing else. A colour never does a second job, and no new accent is added to cover a new meaning — find the meaning a shape can carry instead.", "section": "colors" },
+      { "name": "The Sunlight Floor Rule", "body": "Light is the default scheme because the screen fights daylight. Every text or mark against its own background is measured and held above 4.5:1 before it ships. A value is never lowered to make a layout work.", "section": "colors" },
+      { "name": "The Colour-Not-Opacity Rule", "body": "A quieter state gets its own token, not a transparency on a louder one. Future rows use Future Ink because the faded version of ink computed to about 3.7:1 on oat and failed. Opacity is for decoration — the magnitude bar, the TODAY rule's hairline — never for text.", "section": "colors" },
+      { "name": "The Monochrome Rule", "body": "Meaning is never carried by colour alone. Income is green and signed; expense is ink and carries a minus. Over-budget is oxblood and sits past a drawn boundary. Checked is a stamp; hand-entered is a word. Read any screen in greyscale and nothing is lost.", "section": "colors" },
+      { "name": "The Stencil-In-The-Stamp Rule", "body": "Stardos Stencil appears nowhere except inside a stamp or a stamp field. Not in headings, not in the balance, not in the logo. Its rarity is the whole reason the stamp reads as a mark rather than as styling.", "section": "typography" },
+      { "name": "The 11px Floor Rule", "body": "Nothing that carries state is set below 11px — including the stamp, which is why the stamp face is its own token rather than whatever size happens to fit the row. Type follows the system size setting on both platforms; a mark that shrinks out of legibility is a mark that stopped working.", "section": "typography" },
+      { "name": "The Scale-Contrast Rule", "body": "Hierarchy comes from the gap between a monumental figure and a small tracked label. No decorative weight jumps, no coloured headings, no boxes drawn around text to promote it.", "section": "typography" },
+      { "name": "The Tabular Rule", "body": "Every figure, everywhere, is tabular. Amounts are right-aligned so decimal points stack.", "section": "typography" },
+      { "name": "The 4dp Cell Rule", "body": "Every margin, padding and gap resolves to a step on the cell scale. If a value needs to be 13px, the layout is wrong, not the scale.", "section": "layout" },
+      { "name": "The Target Floor Rule", "body": "No interactive control is smaller than 48x48, and no two adjacent ones sit closer than 8px. Visual compactness never buys itself out of a hit area; shrink the padding's appearance, not the target.", "section": "layout" },
+      { "name": "The One Scroll Rule", "body": "A screen has exactly one scrolling region. Chrome, balance and the review strip are fixed; nested scrollers and horizontal carousels do not exist here.", "section": "layout" },
+      { "name": "The No-Halo Rule", "body": "A shadow has an offset. A symmetrical blur with no offset, a coloured glow, or a spread-only ring is not depth in this world. The one spread in the system is the ground ring, and it is a cut-out, not a glow: it is the page colour, never a tint.", "section": "elevation" },
+      { "name": "The Flat-At-Rest Rule", "body": "Rows, cards, sheets and the navigation bar carry no shadow. Separation is a hairline or a tonal step. Only the floating action control lifts.", "section": "elevation" },
+      { "name": "The Dashed-Means-Unverified Rule", "body": "A dashed border is reserved for a thing the user has not yet checked. Never use dashes as decoration, as an empty-state flourish, or as a dividing line.", "section": "shapes" },
+      { "name": "The Painted-Surfaces-Only Rule", "body": "The 2-4px radii apply to what the world paints. A control's corner belongs to the platform.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do give every past row a verification mark: a stamp if a parser produced it and a person checked it, \"By hand\" if a person typed it.",
+      "Do set every figure in tabular numerals and right-align amounts so decimals stack.",
+      "Do build hierarchy from scale contrast — a 54px figure against a 12px tracked uppercase label — rather than from weight, colour or enclosure.",
+      "Do keep each mark to its single job: oxblood for the stamp, today's rule and the cap boundary; green for money in and within-budget; amber for awaiting your check.",
+      "Do give a quieter state its own colour token, the way future rows use Future Ink.",
+      "Do reserve the dashed 1.5px edge for anything unverified, and switch it to a solid stamp the moment it is checked.",
+      "Do resolve every spacing value to the 4dp cell scale, with a 20px gutter on every screen, and size every control to the 48px target with an 8px gap to its neighbour.",
+      "Do keep anything that carries state at 11px or above, including the stamp.",
+      "Do measure each new text-on-background pair and keep it above 4.5:1 in both schemes before shipping it.",
+      "Do draw magnitude into the row itself (the 2px bar) rather than adding a separate chart.",
+      "Do read design/ADAPTIVE.md before building any screen, and use the platform's own navigation, sheets, dialogs, controls, shapes, back behaviour and transition motion, painted with these tokens."
+    ],
+    "donts": [
+      "Don't use Stardos Stencil outside a stamp or a stamp field.",
+      "Don't reimplement .mt-nav, .mt-fab, .mt-chip, .mt-seg or .mt-btn as custom Flutter widgets — they are painted stand-ins for native controls in these HTML references.",
+      "Don't apply the 2-4px radii to a native control; a control's corner belongs to the platform.",
+      "Don't fade text to signal a quieter state. An opacity on type is how the old future row failed AA.",
+      "Don't put a date on the small row stamp; the date gutter already carries it. The dated form is the large mark, at the moment of stamping.",
+      "Don't add a progress bar, ring, donut or percentage-as-fill anywhere — budget state is graded tiers against a drawn cap, and category magnitude is the in-row bar.",
+      "Don't let a budget at 123% of cap render the same as one at exactly 100%.",
+      "Don't repeat in a foot line what the figures directly above it already say.",
+      "Don't introduce a gradient, a hero wash, an account carousel or a tile dashboard; the ledger is one continuous list through today.",
+      "Don't give a colour a second meaning or add a fourth accent. If a new state needs expressing, find a shape or a word for it.",
+      "Don't use a shadow without an offset, or a coloured spread; depth is tonal steps and hairlines, and the only spread in the system is the ground-coloured ring that cuts the floating control free.",
+      "Don't carry meaning in colour alone — every state must survive greyscale.",
+      "Don't add a second animated moment. The stamp press is the app's only authored motion; everything else is the platform's.",
+      "Don't write a hex literal into a component. Every colour in app.css resolves to a token, hover and backdrop values included, and new work keeps it that way."
+    ]
+  }
+}
