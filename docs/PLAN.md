@@ -25,22 +25,25 @@ amounts are plain floats in one implicit currency.
 
 ## Shape
 
-One Flutter codebase for all three clients, a shared pure-Dart core holding every rule and
-calculation, SQLite on each device as the working store, a thin sync server with Postgres
-behind it.
+A Rust core and server, a Flutter UI. Every rule and calculation lives in one Rust crate,
+compiled into the apps via `flutter_rust_bridge`, into the web client as WASM, and linked
+directly into the server — so client and server cannot disagree about a balance. SQLite on each
+device as the working store, Postgres behind the server.
 
-Flutter over Rust/Tauri despite credvault-rs: Tauri's mobile support is still rough, the SMS
-work needs a Kotlin plugin either way, and Flutter already builds Android, iOS, macOS,
-Windows, Linux and web from one tree.
+Flutter rather than Tauri mobile or React Native for the UI, and Rust rather than Dart for the
+rules. The reasoning, the rejected alternatives and the costs are in
+[ARCHITECTURE.md](ARCHITECTURE.md); the short version is that the sync product needs one
+implementation of the ledger, and the hardest Android work is better travelled in Flutter.
 
-### Packages
+### Layout
 
-- `core/` — pure Dart, no I/O. Money, currency, categorisation, budgets, balance walk,
-  recurrence expansion, duplicate detection. Unit-tested without a database or a screen.
-- `data/` — SQLite (drift), repositories, sync client.
-- `app/` — Flutter UI, all platforms.
-- `ingest_android/` — Kotlin plugin: SMS read + broadcast receiver.
-- `server/` — sync API and Postgres.
+- `crates/core/` — pure Rust, no I/O, no clock, no DB. Money, categorisation, balance walk,
+  recurrence, dedup, budgets, parsers. Where every rule lives.
+- `crates/server/` — Axum, Postgres, auth, sync, rule packs. Links `core` directly.
+- `crates/bridge/` — the `flutter_rust_bridge` surface, and nothing else.
+- `app/` — Flutter UI for all platforms, drift/SQLite storage, sync client, Kotlin SMS plugin.
+- `packs/` — versioned rule packs: SMS patterns and default categories, shipped as data.
+- `site/` — static marketing site, not Flutter.
 
 ## Data model
 
