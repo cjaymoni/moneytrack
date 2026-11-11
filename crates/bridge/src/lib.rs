@@ -65,8 +65,9 @@ pub mod zone;
 /// The allow is attached here rather than at the crate root, which is what lets the six
 /// modules above forbid unsafe outright and the test crates forbid it at their own roots.
 /// What is left on plain `deny` is this file, where a crate-root `forbid` would conflict
-/// with the allow below. Every other crate root in the workspace, `mt-core`'s and this
-/// crate's test crates among them, forbids it outright.
+/// with the allow below. Every other crate root in the workspace — both libraries' test
+/// crates among them — forbids it outright, and the whole policy is written out beside
+/// the lint it governs, in the workspace `Cargo.toml`.
 ///
 /// The clippy denials are listed one by one rather than as a group, because all six of the
 /// workspace's live in the `restriction` set that `clippy::all` does not cover. Each is

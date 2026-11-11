@@ -165,13 +165,14 @@ Dart can switch on exhaustively. **No opaque pointers**: not one handle crosses,
 property the whole boundary was shaped around. The Rust doc comments come through onto the
 Dart side, so the rule about what `raw_text` may never do is readable from Flutter.
 
-One cost, paid knowingly. The generated glue is FFI and uses `unsafe`, and `forbid` cannot be
-switched off by an inner `allow` — so a crate holding that glue cannot forbid unsafe at its
-root. The workspace therefore denies rather than forbids, and `forbid` is applied one level
-in, where it still bites: `mt-core` forbids it in its own source and in each of its ten test
-crates, `mt_bridge` forbids it on each of its six hand-written modules and on each of its
-three test crates, and the generated module is the single `allow`. What stays on `deny` is the residue — crate roots, and anything added
-later that forgets to seal itself — where an `allow` can still override it.
+One cost, paid knowingly. The generated glue is FFI and uses `unsafe`, and `forbid` cannot
+be switched off by an inner `allow` — so a crate holding that glue cannot forbid unsafe at
+its root. The workspace therefore denies rather than forbids, and `forbid` is applied one
+level in, where it still bites: fourteen of the workspace's fifteen crate roots forbid it
+outright, as do `mt_bridge`'s six hand-written modules. The exception is
+`crates/bridge/src/lib.rs` itself, which stays on `deny` so the generated module it holds
+can carry the single `allow`. The policy is written out in full in the workspace
+`Cargo.toml`, beside the lint it governs.
 
 ---
 

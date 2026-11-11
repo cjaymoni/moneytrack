@@ -21,15 +21,23 @@ regex = { version = "1.13.1", default-features = false, features = ["std", "perf
 time = { version = "0.3.41", features = ["serde", "serde-well-known", "serde-human-readable", "macros", "formatting", "parsing"] }
 
 [workspace.lints.rust]
-# `deny` here rather than `forbid`, and the difference is deliberate. A crate that holds
-# the `flutter_rust_bridge` glue cannot forbid unsafe at its root, because FFI is unsafe by
-# nature and `forbid` cannot be switched off for the generated module.
+# The unsafe policy, stated here once. The other two places that mention it — the module
+# doc in `crates/bridge/src/lib.rs` and §3 of docs/ARCHITECTURE.md — describe their own
+# corner of it and point back at this.
 #
-# So `forbid` is applied one level in, where it still means something: `mt-core` forbids it
-# for the whole crate, `mt_bridge` forbids it on each hand-written module and on each test
-# crate, and the generated module is the single `allow`. What this line governs is the
-# residue — crate roots and anything added later — where an `allow` can still override it.
-# A new module that matters should carry its own `forbid`.
+# `deny` rather than `forbid`, because a crate holding the `flutter_rust_bridge` glue
+# cannot forbid unsafe at its root: FFI is unsafe by nature, and `forbid` cannot be
+# switched off for the generated module.
+#
+# So `forbid` is applied one level in, where it still means something. Of the fifteen crate
+# roots in this workspace — two libraries and thirteen integration tests — fourteen forbid
+# unsafe outright, and `mt_bridge`'s six hand-written modules forbid it individually. The
+# single exception is `crates/bridge/src/lib.rs`, which cannot, and the single `allow` is
+# the generated module it holds.
+#
+# What this line governs, then, is that one root and anything added later that forgets to
+# seal itself, where an `allow` can still override it. A new crate root or a new module in
+# the bridge should carry its own `forbid`.
 unsafe_code = "deny"
 missing_docs = "warn"
 # `frb_expand` is set by flutter_rust_bridge's own macro expansion and by nothing here, so
