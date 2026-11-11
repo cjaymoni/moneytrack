@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 serde.workspace = true
+regex.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 time.workspace = true

@@ -2,3 +2,6 @@
 .impeccable/mocks/
 .impeccable/review/
 .impeccable/config.local.json
+
+# Rust build output.
+/target/
