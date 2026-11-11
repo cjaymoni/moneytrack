@@ -1,7 +1,9 @@
 //! The rows, as they cross the bridge.
 //!
 //! One struct per core row, with the same fields in the same order and the four scalars in
-//! their wire spelling (see [`crate::scalar`]). Nothing here holds a borrow, a handle or a
+//! their wire spelling (see [`crate::scalar`]), plus the parameter types the api takes —
+//! [`MatchRulesDto`] is not a row, but it converts and validates like one, so it lives with
+//! the conversions rather than in the published surface. Nothing here holds a borrow, a handle or a
 //! lifetime: values cross, handles do not.
 //!
 //! Every conversion into the core validates. A row arriving from Dart has been through a
@@ -495,7 +497,8 @@ impl MatchRulesDto {
     ///
     /// Validated like every other value entering this crate, and for the same reason:
     /// none of these crashes anything, each just moves the answer. A negative window
-    /// reports nothing at all. A close window wider than the window it sits inside scores
+    /// reports nothing the scoring path would have found — a shared reference is matched
+    /// before the window is consulted, so that much still comes back. A close window wider than the window it sits inside scores
     /// every in-window pair as close, so it reports more, not fewer. And a report
     /// threshold above [`BPS_SCALE`] is past the top of the scale and could not be met by
     /// anything. [`BPS_SCALE`] itself stays usable, and reads as "only a match on the

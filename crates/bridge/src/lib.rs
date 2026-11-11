@@ -11,7 +11,7 @@
 //!   expansion, the categorisation ladder, duplicate scoring, and the two refusals that
 //!   belong on a save path.
 //! - [`dto`] — one struct per core row, in the wire spellings the sync protocol already
-//!   commits to.
+//!   commits to, plus the parameter types the api takes.
 //! - [`enums`] — the core's enums mirrored, so Dart gets sealed enums and a new variant is
 //!   a compile error on both sides rather than a silent `default:` branch.
 //! - [`scalar`] — ids, money, instants and dates, and how each is spelled.

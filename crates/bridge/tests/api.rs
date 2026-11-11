@@ -578,16 +578,16 @@ fn thresholds_that_do_not_make_sense_are_refused_rather_than_quietly_narrowing_t
         report_at_or_above_bps: 5_000,
     };
 
-    assert!(matches!(
-        score_duplicates(Vec::new(), Vec::new(), Some(negative)).unwrap_err(),
-        BridgeError::OutOfRange { ref field, .. } if field == "match_rules.window_seconds"
-    ));
     let unreachable_threshold = MatchRulesDto {
         window_seconds: 3_600,
         close_window_seconds: 60,
         report_at_or_above_bps: 10_001,
     };
 
+    assert!(matches!(
+        score_duplicates(Vec::new(), Vec::new(), Some(negative)).unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. } if field == "match_rules.window_seconds"
+    ));
     assert!(matches!(
         score_duplicates(Vec::new(), Vec::new(), Some(inverted)).unwrap_err(),
         BridgeError::OutOfRange { ref field, .. } if field == "match_rules.close_window_seconds"
@@ -600,6 +600,40 @@ fn thresholds_that_do_not_make_sense_are_refused_rather_than_quietly_narrowing_t
         BridgeError::OutOfRange { ref field, .. }
             if field == "match_rules.report_at_or_above_bps"
     ));
+}
+
+#[test]
+fn the_top_of_the_scale_reports_only_a_reference_match() {
+    let wallet = account(1, 0);
+    let mut existing = transaction(2, &wallet, Direction::Out, 12_000, NOW);
+    existing.external_id = Some("MP261110.0912.A54321".to_owned());
+    existing.counterparty = Some("Melcom".to_owned());
+
+    let mut same_reference = candidate(12_000, NOW);
+    same_reference.account_id = Some(wallet.id.clone());
+    same_reference.external_id = existing.external_id.clone();
+    let mut merely_alike = candidate(12_000, NOW);
+    merely_alike.account_id = Some(wallet.id.clone());
+
+    // The accepted end of the bound, and the setting it exists for: nothing the scoring
+    // path can reach clears 10_000, and a reference match never consults the threshold. A
+    // bound written as `>=` would take this away and no other test would notice.
+    let reference_only = MatchRulesDto {
+        window_seconds: 86_400,
+        close_window_seconds: 3_600,
+        report_at_or_above_bps: 10_000,
+    };
+
+    let reports = score_duplicates(
+        vec![same_reference, merely_alike],
+        vec![existing],
+        Some(reference_only),
+    )
+    .unwrap();
+
+    assert_eq!(reports[0].suspects.len(), 1);
+    assert!(reports[0].suspects[0].is_certain);
+    assert!(reports[1].suspects.is_empty());
 }
 
 // ------------------------------------------------------------------- the weekly cadence ---
