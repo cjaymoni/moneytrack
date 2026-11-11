@@ -205,3 +205,20 @@ mirror! {
         SameLabel,
     }
 }
+
+/// Which rung of the categorisation ladder produced a category.
+///
+/// Not a mirror: the core carries the rule or row that decided it inside the variant, and
+/// this crate splits that into a `source_id` beside the basis rather than crossing the
+/// bridge as an enum with a payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum VerdictBasis {
+    /// The source named the category itself.
+    Explicit,
+    /// A stored pattern matched; the source id is the rule.
+    Rule,
+    /// Copied from one of the user's own earlier rows; the source id is that row.
+    History,
+    /// Nothing matched.
+    Unmatched,
+}

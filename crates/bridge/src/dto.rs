@@ -505,6 +505,10 @@ impl MatchRulesDto {
     /// institution's own reference": scored suspects clamp one below it, and a reference
     /// match ignores the threshold entirely.
     ///
+    /// The core itself takes any `u16` here; the bridge is the narrower of the two on
+    /// purpose, because a threshold past the scale is a caller mistake rather than a
+    /// setting, and this is the layer where callers are checked.
+    ///
     /// # Errors
     /// [`BridgeError::OutOfRange`] naming the threshold at fault.
     pub fn to_core(&self) -> Result<dedup::MatchRules, BridgeError> {

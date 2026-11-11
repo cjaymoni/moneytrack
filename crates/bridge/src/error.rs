@@ -62,6 +62,18 @@ pub enum BridgeError {
         reason: String,
     },
 
+    /// A call would have reckoned a local date outside the window its zone table claims.
+    ///
+    /// Not a malformed value: a table that stops short answers from its base offset and
+    /// looks right, so the refusal is the only way the mistake is ever visible.
+    #[error("the zone table does not cover {field}, which reaches {needed}")]
+    ZoneCoverage {
+        /// The window the call needed.
+        field: String,
+        /// The end of it that falls outside the table.
+        needed: String,
+    },
+
     /// A value outside the range its field allows.
     #[error("{field} is out of range: {value}")]
     OutOfRange {

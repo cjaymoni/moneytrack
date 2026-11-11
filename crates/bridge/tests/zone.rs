@@ -85,6 +85,8 @@ fn transitions_out_of_order_are_sorted_rather_than_trusted() {
     // otherwise answer with the wrong offset and never say so.
     let shuffled = ZoneDto {
         base_offset_seconds: 0,
+        covers_from: Some("2026-01-01T00:00:00Z".to_owned()),
+        covers_through: Some("2026-12-31T23:59:59Z".to_owned()),
         transitions: vec![
             ZoneTransitionDto {
                 at: "2026-10-25T01:00:00Z".to_owned(),
@@ -125,6 +127,8 @@ fn a_day_whose_midnight_is_skipped_still_begins_somewhere_inside_itself() {
     // The clocks jump at local midnight: 1 November never has a 00:00 at all.
     let zone = ZoneDto {
         base_offset_seconds: 0,
+        covers_from: None,
+        covers_through: None,
         transitions: vec![ZoneTransitionDto {
             at: "2026-11-01T00:00:00Z".to_owned(),
             offset_seconds: 3_600,
@@ -144,6 +148,8 @@ fn a_day_whose_midnight_happens_twice_begins_at_one_of_them() {
     // The clocks fall back through local midnight: 00:00 on 1 November happens twice.
     let zone = ZoneDto {
         base_offset_seconds: 3_600,
+        covers_from: None,
+        covers_through: None,
         transitions: vec![ZoneTransitionDto {
             at: "2026-11-01T00:00:00Z".to_owned(),
             offset_seconds: 0,
@@ -187,6 +193,8 @@ fn an_offset_beyond_the_calendar_is_refused_rather_than_wrapped() {
 fn a_transition_instant_that_does_not_parse_is_refused() {
     let broken = ZoneDto {
         base_offset_seconds: 0,
+        covers_from: None,
+        covers_through: None,
         transitions: vec![ZoneTransitionDto {
             at: "last Sunday in March".to_owned(),
             offset_seconds: 3_600,
@@ -196,5 +204,86 @@ fn a_transition_instant_that_does_not_parse_is_refused() {
     assert!(matches!(
         broken.to_table().unwrap_err(),
         BridgeError::InvalidTimestamp { ref field, .. } if field == "zone.transition.at"
+    ));
+}
+
+// ------------------------------------------------------------- what the table admits to ---
+
+#[test]
+fn a_table_that_claims_a_window_is_held_to_it() {
+    let zone = london().to_table().unwrap();
+
+    assert!(
+        zone.check_covers(
+            "a 2026 question",
+            datetime!(2026-06-01 00:00:00 UTC),
+            datetime!(2026-06-30 00:00:00 UTC)
+        )
+        .is_ok()
+    );
+
+    match zone.check_covers(
+        "a 2027 question",
+        datetime!(2027-01-05 00:00:00 UTC),
+        datetime!(2027-02-05 00:00:00 UTC),
+    ) {
+        Err(BridgeError::ZoneCoverage { field, needed }) => {
+            assert_eq!(field, "a 2027 question");
+            // The end that broke the claim: the near end is inside the window, the far
+            // one is past it, and the message names the one actually out of bounds.
+            assert!(
+                needed.starts_with("2027-02-05"),
+                "unhelpful bound: {needed}"
+            );
+        }
+        other => panic!("expected a coverage refusal, got {other:?}"),
+    }
+
+    // Either end can be the one that breaks it.
+    assert!(matches!(
+        zone.check_covers(
+            "a question running off the end",
+            datetime!(2026-12-01 00:00:00 UTC),
+            datetime!(2027-01-02 00:00:00 UTC)
+        ),
+        Err(BridgeError::ZoneCoverage { ref needed, .. }) if needed.starts_with("2027-01-02")
+    ));
+    assert!(matches!(
+        zone.check_covers(
+            "a question starting before the table",
+            datetime!(2025-12-30 00:00:00 UTC),
+            datetime!(2026-02-01 00:00:00 UTC)
+        ),
+        Err(BridgeError::ZoneCoverage { ref needed, .. }) if needed.starts_with("2025-12-30")
+    ));
+}
+
+#[test]
+fn a_zone_that_never_shifts_claims_no_window_and_answers_everything() {
+    let zone = accra().to_table().unwrap();
+
+    // Nothing to be wrong about: there are no transitions to be missing.
+    assert!(
+        zone.check_covers(
+            "any question at all",
+            datetime!(1990-01-01 00:00:00 UTC),
+            datetime!(2199-01-01 00:00:00 UTC)
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_window_that_ends_before_it_starts_is_refused() {
+    let backwards = ZoneDto {
+        base_offset_seconds: 0,
+        transitions: Vec::new(),
+        covers_from: Some("2026-12-31T00:00:00Z".to_owned()),
+        covers_through: Some("2026-01-01T00:00:00Z".to_owned()),
+    };
+
+    assert!(matches!(
+        backwards.to_table().unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. } if field == "zone.covers_through"
     ));
 }

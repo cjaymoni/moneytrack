@@ -10,7 +10,7 @@
 //! transitions at all.
 
 use mt_core::zone::Zone;
-use time::{Date, OffsetDateTime, Time, UtcOffset};
+use time::{Date, Duration, OffsetDateTime, Time, UtcOffset};
 
 use crate::error::BridgeError;
 use crate::scalar;
@@ -24,7 +24,7 @@ pub struct ZoneTransitionDto {
     pub offset_seconds: i32,
 }
 
-/// A time zone, as a base offset plus the changes to it.
+/// A time zone, as a base offset plus the changes to it, and the window it is right for.
 ///
 /// Supply transitions covering the window being asked about, in any order. Outside the
 /// range supplied the base offset stands, so a zone that never shifts needs no transitions
@@ -32,25 +32,36 @@ pub struct ZoneTransitionDto {
 ///
 /// `base_offset_seconds` is the offset in force *before the first transition*, which is not
 /// the same as the offset in force now. Handing over "the current offset" with a truncated
-/// transition list is the one way to get silently wrong answers out of this type, and Rust
-/// cannot detect it: a table that stops short looks exactly like a zone that stopped
-/// shifting. The Dart side owns that correctness, and the outlook screen pays for it in
-/// bills landing in the wrong month.
+/// transition list would otherwise be the one way to get silently wrong answers out of this
+/// type: a table that stops short looks exactly like a zone that stopped shifting, and no
+/// amount of care in Rust can tell the two apart.
+///
+/// Which is what `covers_from` and `covers_through` are for. State the window the table was
+/// built for, and every call that reckons a local date outside it is refused rather than
+/// answered from the base offset. Leaving them unset makes no claim and skips the check —
+/// honest only for a zone with no shifts at all, which is why [`ZoneDto::fixed`] is the one
+/// constructor that does it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZoneDto {
     /// The offset in force before the first transition, in seconds east of UTC.
     pub base_offset_seconds: i32,
     /// Every change to it.
     pub transitions: Vec<ZoneTransitionDto>,
+    /// First instant this table is known to be right for, RFC 3339. Unset makes no claim.
+    pub covers_from: Option<String>,
+    /// Last instant this table is known to be right for, RFC 3339. Unset makes no claim.
+    pub covers_through: Option<String>,
 }
 
 impl ZoneDto {
-    /// A fixed-offset zone.
+    /// A zone that never shifts, which is therefore right for every instant there is.
     #[must_use]
     pub fn fixed(offset_seconds: i32) -> Self {
         Self {
             base_offset_seconds: offset_seconds,
             transitions: Vec::new(),
+            covers_from: None,
+            covers_through: None,
         }
     }
 
@@ -71,9 +82,23 @@ impl ZoneDto {
         // through Dart, and a table out of order would silently answer with the wrong
         // offset instead of failing.
         transitions.sort_by_key(|(at, _)| *at);
+        let covers_from = scalar::optional_instant("zone.covers_from", self.covers_from.as_ref())?;
+        let covers_through =
+            scalar::optional_instant("zone.covers_through", self.covers_through.as_ref())?;
+        if let (Some(from), Some(through)) = (covers_from, covers_through)
+            && from > through
+        {
+            return Err(BridgeError::OutOfRange {
+                field: "zone.covers_through".to_owned(),
+                value: self.covers_through.clone().unwrap_or_default(),
+            });
+        }
+
         Ok(ZoneTable {
             base: offset("zone.base_offset_seconds", self.base_offset_seconds)?,
             transitions,
+            covers_from,
+            covers_through,
         })
     }
 }
@@ -92,6 +117,47 @@ pub struct ZoneTable {
     base: UtcOffset,
     /// Ascending by instant.
     transitions: Vec<(OffsetDateTime, UtcOffset)>,
+    covers_from: Option<OffsetDateTime>,
+    covers_through: Option<OffsetDateTime>,
+}
+
+/// How far either side of a local date an answer about it can reach.
+///
+/// A local date becomes an instant at the zone's own offset, which [`UtcOffset`] allows up
+/// to just under 26 hours either way. Callers check coverage with this margin so a window
+/// that only just reaches a date is not accepted for a question about it.
+pub const COVERAGE_MARGIN: Duration = Duration::hours(26);
+
+impl ZoneTable {
+    /// Refuses a question whose answer would be read from outside the stated window.
+    ///
+    /// A table claiming no window answers everything, which is the fixed-offset case. One
+    /// that claims a window is held to it: past the edge the base offset silently stands
+    /// in, and the symptom is a bill counted against the wrong month rather than anything
+    /// that looks like an error.
+    ///
+    /// # Errors
+    /// [`BridgeError::ZoneCoverage`] naming the end that falls outside.
+    pub fn check_covers(
+        &self,
+        field: &str,
+        from: OffsetDateTime,
+        through: OffsetDateTime,
+    ) -> Result<(), BridgeError> {
+        let outside = |bound: OffsetDateTime| -> Result<(), BridgeError> {
+            Err(BridgeError::ZoneCoverage {
+                field: field.to_owned(),
+                needed: scalar::format_instant("zone.coverage", bound)?,
+            })
+        };
+        if self.covers_from.is_some_and(|covered| from < covered) {
+            return outside(from);
+        }
+        if self.covers_through.is_some_and(|covered| through > covered) {
+            return outside(through);
+        }
+        Ok(())
+    }
 }
 
 impl Zone for ZoneTable {

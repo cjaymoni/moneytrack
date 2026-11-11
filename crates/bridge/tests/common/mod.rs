@@ -175,9 +175,14 @@ pub fn accra() -> ZoneDto {
 
 /// A zone that shifts, for the cases Accra cannot exercise: London in 2026, where the
 /// clocks go forward on 29 March and back on 25 October.
+///
+/// Built for 2026 and says so, so a question about 2027 is refused rather than answered
+/// from the base offset.
 pub fn london() -> ZoneDto {
     ZoneDto {
         base_offset_seconds: 0,
+        covers_from: Some("2026-01-01T00:00:00Z".to_owned()),
+        covers_through: Some("2026-12-31T23:59:59Z".to_owned()),
         transitions: vec![
             ZoneTransitionDto {
                 at: "2026-03-29T01:00:00Z".to_owned(),

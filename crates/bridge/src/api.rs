@@ -18,10 +18,10 @@ use crate::dto::{
     AccountDto, BudgetDto, CandidateDto, CategoryDto, CategoryRuleDto, MatchRulesDto,
     RecurringRuleDto, TransactionDto, batch, transactions_to_core,
 };
-use crate::enums::{BalanceBasis, BudgetLevel, DuplicateSignal};
+use crate::enums::{BalanceBasis, BudgetLevel, DuplicateSignal, RecurrenceScope, VerdictBasis};
 use crate::error::BridgeError;
 use crate::scalar::{self, MoneyDto};
-use crate::zone::ZoneDto;
+use crate::zone::{COVERAGE_MARGIN, ZoneDto};
 
 /// One row of a balance walk: what moved the balance, and where it stood afterwards.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,19 +104,6 @@ pub struct GenerationDto {
     pub rows: Vec<TransactionDto>,
     /// The value to write back to the template's `generated_through`, `YYYY-MM-DD`.
     pub generated_through: String,
-}
-
-/// Which rung of the ladder produced a category.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VerdictBasis {
-    /// The source named the category itself.
-    Explicit,
-    /// A stored pattern matched; `source_id` is the rule.
-    Rule,
-    /// Copied from one of the user's own earlier rows; `source_id` is that row.
-    History,
-    /// Nothing matched.
-    Unmatched,
 }
 
 /// The ladder's verdict, and anything it had to skip to reach it.
@@ -286,7 +273,8 @@ pub fn period_flows(
 /// reversed date range is caught there, by the row's own validation, before evaluation is
 /// reached. [`BridgeError::Rule`] is the overflow path only. Either way one bad budget
 /// stops the set rather than being skipped: a store handing out rows that cannot be
-/// trusted is not a screen to render three quarters of.
+/// trusted is not a screen to render three quarters of. [`BridgeError::ZoneCoverage`] if
+/// the zone table does not cover the periods being counted.
 pub fn evaluate_budgets(
     budgets: Vec<BudgetDto>,
     categories: Vec<CategoryDto>,
@@ -300,6 +288,28 @@ pub fn evaluate_budgets(
     let rows = transactions_to_core(&transactions)?;
     let on = scalar::date("on", &on)?;
     let table = zone.to_table()?;
+
+    // The instants this evaluation will ask the zone about: the day asked for, each
+    // period a budget is actually running over — `period_containing` clips to the
+    // budget's own lifetime, so this is exact rather than a guess at the widest cadence —
+    // and every row's own booked_at, whose local date decides the period it falls in.
+    let mut earliest = on.midnight().assume_utc();
+    let mut latest = earliest;
+    for budget in &budgets {
+        if let Some(period) = budget::period_containing(budget, on) {
+            earliest = earliest.min(period.starts_on.midnight().assume_utc());
+            latest = latest.max(period.ends_on.midnight().assume_utc());
+        }
+    }
+    for row in &rows {
+        earliest = earliest.min(row.booked_at);
+        latest = latest.max(row.booked_at);
+    }
+    table.check_covers(
+        "the budget period",
+        earliest - COVERAGE_MARGIN,
+        latest + COVERAGE_MARGIN,
+    )?;
 
     let statuses = budget::evaluate_all(&budgets, &categories, &rows, on, basis.into(), &table)
         .map_err(|reason| BridgeError::rule("budget", reason))?;
@@ -329,7 +339,8 @@ pub fn evaluate_budgets(
 /// machine — `now` is passed in, and the zone comes from the caller's table.
 ///
 /// # Errors
-/// [`BridgeError`] for a value that will not convert, or [`BridgeError::Rule`] if the
+/// [`BridgeError`] for a value that will not convert, [`BridgeError::ZoneCoverage`] if the
+/// zone table does not cover the window being generated, or [`BridgeError::Rule`] if the
 /// template does not validate or the window holds more occurrences than the core will
 /// generate in one call.
 pub fn expand_recurrence(
@@ -342,6 +353,14 @@ pub fn expand_recurrence(
     let through = scalar::date("through", &through)?;
     let now = scalar::instant("now", &now)?;
     let table = zone.to_table()?;
+
+    // Generation turns every local date from the template's start to the end of the window
+    // into an instant at local midnight, so the table has to be right for all of it.
+    table.check_covers(
+        "the generation window",
+        rule.starts_on.midnight().assume_utc() - COVERAGE_MARGIN,
+        through.midnight().assume_utc() + COVERAGE_MARGIN,
+    )?;
 
     let generation = recurrence::generate(&rule, through, now, &table, || Uuid::now_v7().into())
         .map_err(|reason| BridgeError::rule("recurrence", reason))?;
@@ -450,6 +469,33 @@ pub fn score_duplicates(
                 .collect(),
         })
         .collect())
+}
+
+/// The instances of a template an edit applies to.
+///
+/// "Change the rent" means one of four quite different things, and every recurring
+/// feature that gets this wrong got it wrong by choosing one of them silently. The scope
+/// is asked at edit time and answered here; `pivot` is the instance the user has open.
+/// Soft-deleted rows are left out, because an edit should not resurrect something removed.
+///
+/// # Errors
+/// [`BridgeError`] for a value that will not convert.
+pub fn instances_in_scope(
+    rule: RecurringRuleDto,
+    scope: RecurrenceScope,
+    pivot: String,
+    instances: Vec<TransactionDto>,
+) -> Result<Vec<String>, BridgeError> {
+    let rule = rule.to_core()?;
+    let pivot = scalar::instant("pivot", &pivot)?;
+    let instances = transactions_to_core(&instances)?;
+
+    Ok(
+        recurrence::instances_for_edit(&rule, scope.into(), pivot, &instances)
+            .into_iter()
+            .map(|transaction| transaction.id.to_string())
+            .collect(),
+    )
 }
 
 /// Refuses a transfer whose two legs do not agree.

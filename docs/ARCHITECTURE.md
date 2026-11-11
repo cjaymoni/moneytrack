@@ -133,6 +133,8 @@ pub fn evaluate_budgets(.., on: String, basis: BalanceBasis, zone: ZoneDto)
 pub fn expand_recurrence(rule: RecurringRuleDto, through: String, now: String, zone: ZoneDto)
     -> Result<GenerationDto, BridgeError>;
 pub fn categorise_candidate(..) -> Result<CategorisationDto, BridgeError>;
+pub fn instances_in_scope(rule: RecurringRuleDto, scope: RecurrenceScope, ..)
+    -> Result<Vec<String>, BridgeError>;      // this | future | past | all, asked not guessed
 pub fn score_duplicates(..) -> Result<Vec<DuplicateReportDto>, BridgeError>;
 pub fn compile_rules(..) -> Result<(), BridgeError>;      // refuse a bad pattern at save time
 pub fn validate_transfer(..) -> Result<(), BridgeError>;  // refuse legs that disagree
@@ -146,7 +148,9 @@ client that may be a release ahead, so the boundary validates and names the fiel
 computing a plausible wrong number. Ids, instants and dates cross as text in the spellings
 the sync wire already commits to, and money crosses as minor units plus a code — never as a
 decimal string, never as a double. And the zone crosses as a table of offsets the platform
-supplies, because the core refuses to carry tzdata and the handset already has it.
+supplies, because the core refuses to carry tzdata and the handset already has it — with the
+window that table was built for, so a question reaching past it is refused rather than
+answered from the base offset and quietly put in the wrong month.
 
 Note what is absent: no `save`, no `fetch`, no `sync`. Those are Dart's. The clock is Dart's
 too — `now` is an argument — with one exception, `expand_recurrence`, which mints a UUIDv7

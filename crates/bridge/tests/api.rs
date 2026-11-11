@@ -11,17 +11,18 @@
 mod common;
 
 use common::{
-    NOW, TODAY, account, accra, budget, candidate, category, money, recurring, rule, transaction,
-    uuid,
+    NOW, TODAY, account, accra, budget, candidate, category, london, money, recurring, rule,
+    transaction, uuid,
 };
 use mt_bridge::api::{
-    VerdictBasis, account_balances, categorise_candidate, compile_rules, currency_totals,
-    evaluate_budgets, expand_recurrence, parse_amount, period_flows, score_duplicates,
+    account_balances, categorise_candidate, compile_rules, currency_totals, evaluate_budgets,
+    expand_recurrence, instances_in_scope, parse_amount, period_flows, score_duplicates,
     validate_transfer, walk_balance,
 };
 use mt_bridge::dto::MatchRulesDto;
 use mt_bridge::enums::{
-    BalanceBasis, BudgetLevel, Direction, DuplicateSignal, RecurrenceFreq, TxStatus,
+    BalanceBasis, BudgetLevel, Direction, DuplicateSignal, RecurrenceFreq, RecurrenceScope,
+    TxStatus, VerdictBasis,
 };
 use mt_bridge::error::BridgeError;
 
@@ -804,4 +805,113 @@ fn an_amount_bigger_than_any_row_may_carry_is_refused_without_quoting_it() {
         }
         other => panic!("expected a refused amount, got {other:?}"),
     }
+}
+
+// --------------------------------------------------------- what the zone table admits to ---
+
+#[test]
+fn a_question_outside_the_zone_tables_window_is_refused_rather_than_guessed() {
+    // The London table is built for 2026 and says so. Asking it about 2027 would otherwise
+    // be answered from the base offset — right half the year, wrong the other half, and
+    // silent either way.
+    let next_year = evaluate_budgets(
+        vec![budget(4, 50_000, None)],
+        Vec::new(),
+        Vec::new(),
+        "2027-06-15".to_owned(),
+        BalanceBasis::Confirmed,
+        london(),
+    )
+    .unwrap_err();
+    assert!(matches!(next_year, BridgeError::ZoneCoverage { .. }));
+
+    let wallet = account(1, 500_000);
+    let beyond = expand_recurrence(
+        recurring(2, &wallet, 120_000),
+        "2027-12-31".to_owned(),
+        NOW.to_owned(),
+        london(),
+    )
+    .unwrap_err();
+    assert!(matches!(beyond, BridgeError::ZoneCoverage { .. }));
+}
+
+#[test]
+fn a_question_inside_the_window_is_answered_normally() {
+    let wallet = account(1, 500_000);
+
+    let generation = expand_recurrence(
+        recurring(2, &wallet, 120_000),
+        "2026-12-15".to_owned(),
+        NOW.to_owned(),
+        london(),
+    )
+    .unwrap();
+
+    // Same template as the Accra tests, reckoned in a zone that shifts: November is GMT and
+    // the rows still land at local midnight.
+    assert_eq!(
+        generation
+            .rows
+            .iter()
+            .map(|row| row.booked_at.as_str())
+            .collect::<Vec<_>>(),
+        vec!["2026-11-15T00:00:00Z", "2026-12-15T00:00:00Z"]
+    );
+}
+
+// ------------------------------------------------------------------ editing a recurrence ---
+
+#[test]
+fn an_edit_reaches_the_instances_its_scope_names() {
+    let wallet = account(1, 500_000);
+    let rent = recurring(2, &wallet, 120_000);
+    let instance = |n: u128, booked_at: &str| mt_bridge::dto::TransactionDto {
+        recurring_id: Some(rent.id.clone()),
+        ..transaction(n, &wallet, Direction::Out, 120_000, booked_at)
+    };
+    let october = instance(10, "2026-10-15T00:00:00Z");
+    let november = instance(11, "2026-11-15T00:00:00Z");
+    let december = instance(12, "2026-12-15T00:00:00Z");
+    let rows = vec![october, november.clone(), december];
+    let pivot = november.booked_at.clone();
+
+    let selected =
+        |scope| instances_in_scope(rent.clone(), scope, pivot.clone(), rows.clone()).unwrap();
+
+    // The four answers "change the rent" can mean, each asked for rather than guessed.
+    assert_eq!(selected(RecurrenceScope::This), vec![uuid(11)]);
+    assert_eq!(selected(RecurrenceScope::Future), vec![uuid(11), uuid(12)]);
+    assert_eq!(selected(RecurrenceScope::Past), vec![uuid(10), uuid(11)]);
+    assert_eq!(
+        selected(RecurrenceScope::All),
+        vec![uuid(10), uuid(11), uuid(12)]
+    );
+}
+
+#[test]
+fn an_edit_does_not_reach_a_deleted_instance_or_another_templates_rows() {
+    let wallet = account(1, 500_000);
+    let rent = recurring(2, &wallet, 120_000);
+    let mut deleted = mt_bridge::dto::TransactionDto {
+        recurring_id: Some(rent.id.clone()),
+        ..transaction(10, &wallet, Direction::Out, 120_000, "2026-10-15T00:00:00Z")
+    };
+    deleted.sync.deleted_at = Some("2026-11-11T00:00:00Z".to_owned());
+    let other_template = mt_bridge::dto::TransactionDto {
+        recurring_id: Some(uuid(0xbb)),
+        ..transaction(11, &wallet, Direction::Out, 120_000, "2026-10-15T00:00:00Z")
+    };
+    let standalone = transaction(12, &wallet, Direction::Out, 120_000, "2026-10-15T00:00:00Z");
+
+    let selected = instances_in_scope(
+        rent,
+        RecurrenceScope::All,
+        NOW.to_owned(),
+        vec![deleted, other_template, standalone],
+    )
+    .unwrap();
+
+    // An edit should not resurrect something removed, nor reach another template's rows.
+    assert!(selected.is_empty());
 }
