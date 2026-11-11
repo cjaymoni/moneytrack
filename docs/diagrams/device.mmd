@@ -1,0 +1,55 @@
+erDiagram
+    inbox_items {
+        uuid   id                      PK
+        text   source                  "sms | csv | ofx | receipt"
+        ts     received_at
+        text   origin_ref              "allow-listed sender, or file name"
+        text   fingerprint             "unique -- never offer the same alert twice"
+        uuid   account_id              FK
+        text   direction
+        bigint amount_minor
+        char3  currency
+        ts     booked_at
+        text   label
+        text   counterparty
+        uuid   category_id             FK
+        int    category_confidence_bps "10000 = the source said so"
+        text   external_id
+        bigint reported_balance_minor  "what the alert claimed"
+        text   status                  "pending | accepted | rejected | merged"
+        uuid   transaction_id          FK "set iff accepted"
+        uuid   duplicate_of            FK "set iff merged"
+    }
+
+    sms_senders {
+        text sender  PK "checked BEFORE a body is read into memory"
+        text label
+        bool enabled
+        text origin  "user | pack"
+    }
+
+    unparsed_counts {
+        text sender       PK "a tally, never the message"
+        date on_date      PK
+        int  pack_version PK
+        int  tally
+    }
+
+    sync_state {
+        int  id             PK "exactly one row"
+        text device_id
+        int  pulled_through "highest server_seq seen"
+        ts   last_pull_at
+        ts   last_push_at
+        int  pack_version
+    }
+
+    settings {
+        text key   PK "default account, reporting currency, theme"
+        text value
+    }
+
+    accounts     ||--o{ inbox_items : "proposed for"
+    categories   |o--o{ inbox_items : "proposed as"
+    transactions |o--o| inbox_items : "became, on accept"
+    transactions |o--o| inbox_items : "merged into, on duplicate"

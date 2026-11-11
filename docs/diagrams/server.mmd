@@ -1,0 +1,62 @@
+erDiagram
+    users {
+        uuid id                PK
+        text email             "unique while live"
+        text password_hash     "argon2id"
+        int  sync_seq          "per-user counter; locked until commit"
+        ts   email_verified_at
+        ts   deleted_at        "frees the address for re-use"
+    }
+
+    devices {
+        uuid id             PK
+        uuid user_id        PK "part of the key, not just a column"
+        text name
+        text platform       "android | ios | macos | windows | linux | web"
+        int  pulled_through "server's half of the watermark"
+        ts   last_seen_at
+        ts   revoked_at
+    }
+
+    refresh_tokens {
+        uuid  id           PK
+        uuid  user_id      FK
+        uuid  device_id    FK
+        bytea token_hash   "SHA-256; the token itself is never stored"
+        ts    expires_at
+        ts    revoked_at
+        uuid  rotated_from "reuse of a rotated token means theft"
+    }
+
+    rule_packs {
+        uuid  id           PK
+        int   version      "unique per channel"
+        text  channel      "stable | beta"
+        jsonb manifest     "patterns and categories, validated before publish"
+        bytea signature    "detached; clients verify before applying"
+        ts    published_at
+    }
+
+    redacted_samples {
+        uuid id            PK
+        text sender
+        text redacted_body "digits and names stripped ON THE DEVICE"
+        text app_version
+        int  pack_version
+        ts   resolved_at
+    }
+
+    ledger_tables {
+        uuid   user_id    PK "accounts, categories, category_rules,"
+        uuid   id         PK "recurring, transactions, budgets, attachments"
+        bigint server_seq "stamped by trigger on INSERT *and* UPDATE"
+        ts     updated_at "last-write-wins tiebreak"
+        ts     deleted_at "soft, so a delete is not resurrected"
+        uuid   device_id  "last writer"
+    }
+
+    users ||--o{ devices        : "signs in from"
+    users ||--o{ refresh_tokens : "holds sessions"
+    users ||--o{ ledger_tables  : "owns every row of"
+    devices ||--o{ refresh_tokens : "issued to"
+    refresh_tokens |o--o| refresh_tokens : "rotated_from"

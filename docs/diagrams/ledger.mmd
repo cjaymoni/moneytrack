@@ -1,0 +1,110 @@
+erDiagram
+    accounts {
+        uuid   id                    PK "UUIDv7, device-generated"
+        text   name                  "1..64 chars"
+        text   kind                  "cash | momo | bank | card"
+        char3  currency              "one currency per account, fixed"
+        bigint opening_balance_minor "the walk starts here"
+        ts     archived_at           "hidden, not deleted"
+        bigint server_seq            "per-user, stamped in commit order"
+        bool   dirty                 "device only -- not yet pushed"
+    }
+
+    categories {
+        uuid id        PK
+        text name      "1..64 chars"
+        uuid parent_id FK "one level of nesting"
+        text kind      "income | expense"
+        text icon
+        bool is_system "shipped by a rule pack"
+    }
+
+    category_rules {
+        uuid id            PK
+        text pattern       "data, not code; rejected loudly at save"
+        text matched_field "label | counterparty | raw_text"
+        uuid category_id   FK
+        int  priority      "lowest first, ties break on id"
+        bool is_regex
+        bool enabled
+        text origin        "user | pack"
+        uuid pack_id       "set iff origin = pack"
+    }
+
+    transactions {
+        uuid   id           PK
+        uuid   account_id   FK
+        text   direction    "in | out -- carries the sign"
+        bigint amount_minor "never negative"
+        char3  currency     "kept for ever"
+        ts     booked_at    "may be in the future"
+        uuid   category_id  FK "null on a transfer leg"
+        text   label
+        text   counterparty
+        text   note
+        text   status       "pending | confirmed"
+        text   source       "manual | sms | csv | ofx | receipt | recurring | adjustment"
+        text   source_ref
+        text   external_id  "unique per account"
+        uuid   recurring_id FK
+        uuid   transfer_id  "shared by the two legs"
+        bigint server_seq   "per-user, stamped in commit order"
+        bool   dirty        "device only -- not yet pushed"
+    }
+
+    recurring {
+        uuid   id                PK
+        text   name
+        uuid   account_id        FK
+        text   direction
+        bigint amount_minor
+        char3  currency
+        uuid   category_id       FK
+        text   label
+        text   freq              "daily | weekly | monthly | yearly"
+        int    interval          ">= 1"
+        int    by_month_day      "1..31, clamps in short months"
+        int    by_weekday        "0..6, Monday = 0"
+        date   starts_on
+        date   ends_on
+        date   generated_through "makes generation idempotent"
+        text   timezone          "cadence reckoned locally"
+    }
+
+    budgets {
+        uuid   id          PK
+        uuid   category_id FK "null caps all spending"
+        text   period      "weekly | monthly | yearly"
+        bigint cap_minor   "> 0"
+        char3  currency    "a cedi cap and a dollar cap are two budgets"
+        date   starts_on
+        date   ends_on
+        int    warn_at_bps "8000 = warn at 80%"
+    }
+
+    attachments {
+        uuid   id             PK
+        uuid   transaction_id FK
+        text   relative_path  "never absolute"
+        text   media_type
+        bigint byte_size
+        char64 sha256
+    }
+
+    fx_rates {
+        char3  base    PK "reporting only"
+        char3  quote   PK
+        bigint rate_e8 "rate x 100,000,000 -- never a float"
+        date   as_of   PK "the rate for the transaction's own date"
+    }
+
+    accounts     ||--o{ transactions   : "holds"
+    accounts     ||--o{ recurring      : "generates into"
+    categories   |o--o{ transactions   : "classifies"
+    categories   |o--o{ recurring      : "classifies"
+    categories   ||--o{ category_rules : "assigned by"
+    categories   |o--o{ budgets        : "capped by"
+    categories   |o--o{ categories     : "parent of"
+    recurring    |o--o{ transactions   : "generates"
+    transactions ||--o{ attachments    : "evidenced by"
+    transactions }o--o| transactions   : "paired by transfer_id"
