@@ -4,7 +4,9 @@
 
 mod common;
 
-use common::{ACCRA, FAR_EAST, FAR_WEST, NOW, Shifting, id, midnight, recurring, transaction};
+use common::{
+    ACCRA, FAR_EAST, FAR_WEST, NOW, Shifting, id, midnight, minus_ten, recurring, transaction,
+};
 use mt_core::enums::{Direction, RecurrenceFreq, RecurrenceScope, TxSource, TxStatus};
 use mt_core::ids::TxId;
 use mt_core::model::{RecurringRule, Transaction};
@@ -12,8 +14,9 @@ use mt_core::recurrence::{
     Generation, MAX_GENERATED_PER_CALL, RecurrenceError, generate, instances_for_edit, occurrences,
     scope_selects,
 };
+use mt_core::zone::Zone;
 use time::macros::{date, datetime};
-use time::{Date, Duration, OffsetDateTime, UtcOffset};
+use time::{Date, Duration};
 use uuid::Uuid;
 
 /// Ids handed out in sequence, so a generated row can be named in an assertion.
@@ -617,7 +620,14 @@ fn the_same_holds_east_of_greenwich() {
 }
 
 #[test]
-fn a_bill_due_after_a_zone_shifts_uses_the_offset_in_force_that_day() {
+fn a_bill_due_after_a_zone_shifts_still_lands_on_the_day_it_was_asked_for() {
+    // The zone jumps forward at midnight on 1 November, so local 1 November has no 00:00 at
+    // all — the clocks go straight from 31 October 23:59 to 1 November 01:00. The bill still
+    // has to land on the first, so its instant is the jump itself.
+    //
+    // What this must not do is book an instant that reads back as 31 October. That is what
+    // taking the offset from the date alone produced, and it put November's rent in
+    // October's budget while both modules' own tests passed.
     let rule = RecurringRule {
         freq: RecurrenceFreq::Monthly,
         interval: 1,
@@ -626,25 +636,22 @@ fn a_bill_due_after_a_zone_shifts_uses_the_offset_in_force_that_day() {
         starts_on: date!(2026 - 10 - 01),
         ..recurring()
     };
-    let zone = Shifting {
-        before: FAR_WEST,
-        after: match UtcOffset::from_hms(-10, 0, 0) {
-            Ok(offset) => offset,
-            Err(_) => FAR_WEST,
-        },
-        shifts_on: date!(2026 - 11 - 01),
-    };
+    let zone = Shifting::at_midnight(FAR_WEST, minus_ten(), date!(2026 - 11 - 01));
 
     let run = generate(&rule, date!(2026 - 11 - 30), NOW, zone, counter()).unwrap();
-    let booked: Vec<OffsetDateTime> = run.rows.iter().map(|row| row.booked_at).collect();
+    let landed: Vec<Date> = run
+        .rows
+        .iter()
+        .map(|row| zone.local_date(row.booked_at))
+        .collect();
 
-    // October's bill on the old offset, November's on the new one. Both are local midnight
-    // on the first, which is what the user asked for; neither is the same instant.
+    assert_eq!(landed, vec![date!(2026 - 10 - 01), date!(2026 - 11 - 01)]);
+    // October is an ordinary day on the old offset; November is the transition instant.
     assert_eq!(
-        booked,
+        run.rows.iter().map(|row| row.booked_at).collect::<Vec<_>>(),
         vec![
             datetime!(2026-10-01 11:00:00 UTC),
-            datetime!(2026-11-01 10:00:00 UTC),
+            datetime!(2026-11-01 11:00:00 UTC),
         ]
     );
 }

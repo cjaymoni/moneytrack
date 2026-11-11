@@ -6,7 +6,8 @@ mod common;
 
 use common::{GHS, NOW, USD, candidate, id, transaction};
 use mt_core::dedup::{
-    DuplicateIndex, MatchRules, SCORE_CERTAIN, SCORE_WORTH_REVIEWING, Signal, suspects,
+    DuplicateIndex, MatchRules, SCORE_CERTAIN, SCORE_EXTERNAL_ID_UNPLACED, SCORE_WORTH_REVIEWING,
+    Signal, suspects,
 };
 use mt_core::enums::Direction;
 use mt_core::ids::AccountId;
@@ -409,10 +410,61 @@ fn a_reference_is_decisive_only_once_the_parser_knows_which_account_it_is_in() {
         ..parsed(Some(account), 12_500, NOW, Some("SHOPRITE"))
     };
 
-    // With no account to go on it falls through to the scored path, where the thirty-day gap
-    // puts it outside the window entirely.
-    assert!(suspects(&account_unknown, &rows, &MatchRules::default()).is_empty());
+    // Knowing the account makes it decisive. Not knowing it must not throw the evidence
+    // away: the reference is the strongest signal the system gets, and the scored path would
+    // discard this pair outright on the thirty-day gap.
+    let unplaced = suspects(&account_unknown, &rows, &MatchRules::default());
+    assert_eq!(unplaced.len(), 1);
+    assert!(!unplaced[0].is_certain());
+    assert_eq!(unplaced[0].score_bps, SCORE_EXTERNAL_ID_UNPLACED);
+    assert_eq!(unplaced[0].signals, vec![Signal::SameExternalId]);
+
     assert!(suspects(&account_known, &rows, &MatchRules::default())[0].is_certain());
+}
+
+#[test]
+fn an_unplaced_reference_still_outranks_anything_the_parsed_fields_can_agree_on() {
+    // A reference from the bank beats a label and a date that happen to line up, so when
+    // both are on offer the reference is the one the inbox puts first.
+    let account = id();
+    let rows = vec![
+        Transaction {
+            external_id: Some("MP260312.1431.A94821".to_owned()),
+            ..existing(account, 12_500, NOW - Duration::days(30), Some("SOMETHING"))
+        },
+        existing(account, 12_500, NOW, Some("SHOPRITE")),
+    ];
+    let candidate = Candidate {
+        external_id: Some("MP260312.1431.A94821".to_owned()),
+        ..parsed(None, 12_500, NOW, Some("SHOPRITE"))
+    };
+
+    let found = suspects(&candidate, &rows, &MatchRules::default());
+
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].transaction, rows[0].id);
+    assert_eq!(found[0].score_bps, SCORE_EXTERNAL_ID_UNPLACED);
+}
+
+#[test]
+fn a_reference_match_is_offered_however_high_the_threshold_is_set() {
+    // It is not a guess that can be tuned out; a caller raising the bar was raising it
+    // against the scored signals.
+    let account = id();
+    let rows = vec![Transaction {
+        external_id: Some("MP260312.1431.A94821".to_owned()),
+        ..existing(account, 12_500, NOW, Some("SHOPRITE"))
+    }];
+    let candidate = Candidate {
+        external_id: Some("MP260312.1431.A94821".to_owned()),
+        ..parsed(Some(account), 12_500, NOW, Some("SHOPRITE"))
+    };
+    let strict = MatchRules {
+        report_at_or_above: u16::MAX,
+        ..MatchRules::default()
+    };
+
+    assert_eq!(suspects(&candidate, &rows, &strict).len(), 1);
 }
 
 #[test]

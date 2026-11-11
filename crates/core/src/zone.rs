@@ -19,7 +19,7 @@
 //! A zone that never shifts — Ghana's among them — answers both with the same constant, and
 //! the blanket implementation for [`UtcOffset`] does exactly that.
 
-use time::{Date, OffsetDateTime, Time, UtcOffset};
+use time::{Date, Duration, OffsetDateTime, Time, UtcOffset};
 
 /// What the rules in this crate need to know about the user's time zone.
 ///
@@ -33,9 +33,15 @@ pub trait Zone {
 
     /// The offset in force on a local date, at the start of that date.
     ///
-    /// On the day a zone shifts, a date covers more than one offset. Returning the one in
-    /// force at the start of the day is the convention here, which keeps a bill generated
-    /// for "the first of the month" landing on the first of the month.
+    /// On the day a zone shifts, a date covers more than one offset; this one is asked for
+    /// the first of them. Two local dates a year have no single answer, and an implementor
+    /// should not agonise over them — [`Zone::start_of_day`] re-resolves against the instant
+    /// and corrects whatever this returns:
+    ///
+    /// - **Midnight skipped.** The clocks jump from 23:59 to 01:00, so 00:00 never happens.
+    ///   Return either neighbouring offset.
+    /// - **Midnight repeated.** The clocks fall back through 00:00, so it happens twice.
+    ///   Return either; the later one is used.
     fn offset_for_date(&self, date: Date) -> UtcOffset;
 
     /// The local date an instant falls on.
@@ -44,18 +50,52 @@ pub trait Zone {
     }
 
     /// The instant a local date begins.
+    ///
+    /// Guarantees `zone.local_date(zone.start_of_day(d)) == d`. That round trip is the one
+    /// property the rest of the crate leans on, and it is not free: [`recurrence`] builds an
+    /// instant from a local date and [`budget`] reads a local date back out of it, so a zone
+    /// where the two disagree puts a generated bill in the wrong month.
+    ///
+    /// Taking the offset from the date alone is what breaks it. On the day a zone shifts,
+    /// the offset in force at local midnight may not be the one that produces local
+    /// midnight, so this resolves from the date, re-resolves against the instant that
+    /// produced, and keeps the answer that reads back as the date asked for.
+    ///
+    /// [`recurrence`]: crate::recurrence
+    /// [`budget`]: crate::budget
     fn start_of_day(&self, date: Date) -> OffsetDateTime {
-        date.with_time(Time::MIDNIGHT)
-            .assume_offset(self.offset_for_date(date))
+        let naive = date.with_time(Time::MIDNIGHT);
+        let from_date = naive.assume_offset(self.offset_for_date(date));
+        let from_instant = naive.assume_offset(self.offset_for_instant(from_date));
+        if self.local_date(from_instant) == date {
+            return from_instant;
+        }
+        if self.local_date(from_date) == date {
+            return from_date;
+        }
+        // Neither reads back: the clocks jumped over midnight, so this date has no 00:00 at
+        // all. Its first instant is the jump itself, which is the later of the two.
+        from_date.max(from_instant)
     }
 
-    /// The last representable instant of a local date.
+    /// The last instant of a local date.
     ///
     /// Used for the far end of an inclusive window, so a purchase at 23:59 falls inside the
     /// day it looks like it falls inside.
+    ///
+    /// Defined as a nanosecond before the next day begins rather than as 23:59:59.999 on
+    /// this one. The two differ whenever the zone shifts during the day: reckoning the end
+    /// of the day at the offset in force at its *start* loses the last hour of an autumn
+    /// day, and a store query built from it would then skip purchases that
+    /// [`Zone::local_date`] agrees are inside the window.
     fn end_of_day(&self, date: Date) -> OffsetDateTime {
-        date.with_time(Time::MAX)
-            .assume_offset(self.offset_for_date(date))
+        match date.next_day() {
+            Some(next) => self.start_of_day(next) - Duration::nanoseconds(1),
+            // The end of the representable calendar; there is no next day to work back from.
+            None => date
+                .with_time(Time::MAX)
+                .assume_offset(self.offset_for_date(date)),
+        }
     }
 }
 

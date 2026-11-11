@@ -42,6 +42,15 @@ pub const SCORE_SAME_LABEL: u16 = 500;
 /// Everything above this is *shown*. Nothing is merged.
 pub const SCORE_WORTH_REVIEWING: u16 = 6_000;
 
+/// The score an institution's own reference reaches when the candidate's account is not
+/// known, so it cannot be confirmed to be the same account's reference.
+///
+/// Above anything the parsed-field weights can reach, because a matching reference is
+/// stronger evidence than any amount of agreement between a guessed label and a guessed
+/// date — but short of certain, because a per-account sequence number from another
+/// institution looks exactly like this.
+pub const SCORE_EXTERNAL_ID_UNPLACED: u16 = SCORE_CERTAIN - 1;
+
 /// The score only an institution's own reference, matching on both sides, can reach.
 ///
 /// The weights above deliberately cannot sum this high: no amount of agreement between a
@@ -56,8 +65,11 @@ const _: () = assert!(
         + SCORE_CLOSE_IN_TIME
         + SCORE_SAME_COUNTERPARTY
         + SCORE_SAME_LABEL
-        < SCORE_CERTAIN
+        < SCORE_EXTERNAL_ID_UNPLACED
 );
+// Keeps the sum above a true maximum: the two counterparty weights are exclusive, so the
+// assert only bounds the total while the one it names is the larger of them.
+const _: () = assert!(SCORE_OVERLAPPING_COUNTERPARTY <= SCORE_SAME_COUNTERPARTY);
 
 /// How far apart two records of the same event may be.
 pub const DEFAULT_WINDOW: Duration = Duration::days(2);
@@ -77,6 +89,10 @@ pub struct MatchRules {
     pub close_window: Duration,
     /// Suspicions scoring below this are not reported at all. A suspicion scoring exactly
     /// this much is reported.
+    ///
+    /// A match on the institution's own reference ignores this: it is not a guess that can
+    /// be tuned out, and a caller that raised the bar was raising it against the scored
+    /// signals.
     pub report_at_or_above: u16,
 }
 
@@ -138,13 +154,18 @@ impl Suspect {
 #[derive(Debug, Default)]
 pub struct DuplicateIndex<'a> {
     by_amount: HashMap<(Currency, i64), Vec<&'a Transaction>>,
-    /// Keyed by account as well as reference, because that is the uniqueness both schemas
-    /// actually enforce — `UNIQUE (account_id, external_id)`. Two institutions numbering
-    /// their own statement lines from one are not describing the same purchase.
+    /// Keyed by the reference alone, with the account checked at lookup time.
+    ///
+    /// The account matters — both schemas enforce `UNIQUE (account_id, external_id)`, so two
+    /// institutions numbering their own statement lines from one are not describing the same
+    /// purchase — but it decides how strong the match is, not whether to look. A parser that
+    /// could not work out the account still has the strongest evidence the system gets, and
+    /// throwing it away because a weaker signal is missing is how a real duplicate goes
+    /// unnoticed.
     ///
     /// A `Vec` rather than one row, because the ledger may already hold two rows carrying
     /// the same reference, and that is exactly the state the user needs shown to them.
-    by_external_id: HashMap<(AccountId, String), Vec<&'a Transaction>>,
+    by_external_id: HashMap<String, Vec<&'a Transaction>>,
 }
 
 impl<'a> DuplicateIndex<'a> {
@@ -172,7 +193,7 @@ impl<'a> DuplicateIndex<'a> {
                 if !external_id.is_empty() {
                     index
                         .by_external_id
-                        .entry((transaction.account_id, external_id.to_owned()))
+                        .entry(external_id.to_owned())
                         .or_default()
                         .push(transaction);
                 }
@@ -228,32 +249,43 @@ impl<'a> DuplicateIndex<'a> {
         suspects
     }
 
-    /// The decisive case: the institution gave both records the same reference, in the same
-    /// account.
+    /// The strongest case: the institution gave both records the same reference.
     ///
-    /// A candidate whose account the parser could not work out falls through to the scored
-    /// path instead, where not knowing the account is already a missing signal rather than a
-    /// licence to match any account that happens to use the same numbering.
+    /// Certain when the candidate names the account the row is in, because that is the
+    /// uniqueness the store enforces. Strong but not certain when the parser could not work
+    /// the account out — the reference is still the best evidence available, so the pair goes
+    /// in front of the user; it just does not arrive pre-ticked.
+    ///
+    /// A reference matching a row in a *different* account, when the candidate's account is
+    /// known to be another one, is not a match at all: per-account sequence numbers collide
+    /// constantly and that is not evidence of anything.
     fn by_external_id_match(&self, candidate: &Candidate) -> Vec<Suspect> {
-        let (Some(account_id), Some(external_id)) =
-            (candidate.account_id, candidate.external_id.as_deref())
-        else {
+        let Some(external_id) = candidate.external_id.as_deref() else {
             return Vec::new();
         };
         let external_id = external_id.trim();
         if external_id.is_empty() {
             return Vec::new();
         }
-        let mut found: Vec<Suspect> = self
+        let rows = self
             .by_external_id
-            .get(&(account_id, external_id.to_owned()))
+            .get(external_id)
             .map(Vec::as_slice)
-            .unwrap_or_default()
+            .unwrap_or_default();
+
+        let mut found: Vec<Suspect> = rows
             .iter()
-            .map(|existing| Suspect {
-                transaction: existing.id,
-                score_bps: SCORE_CERTAIN,
-                signals: vec![Signal::SameExternalId],
+            .filter_map(|existing| {
+                let score_bps = match candidate.account_id {
+                    Some(account_id) if account_id == existing.account_id => SCORE_CERTAIN,
+                    Some(_) => return None,
+                    None => SCORE_EXTERNAL_ID_UNPLACED,
+                };
+                Some(Suspect {
+                    transaction: existing.id,
+                    score_bps,
+                    signals: vec![Signal::SameExternalId],
+                })
             })
             .collect();
         found.sort_unstable_by_key(|suspect| suspect.transaction);

@@ -30,13 +30,20 @@ use time::{Date, Duration, OffsetDateTime};
 /// A budget could not be evaluated.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BudgetError {
-    /// The budget itself does not validate, so there is no sound answer to give.
+    /// The budget cannot be evaluated as it stands.
     ///
     /// A cap of zero or less is the case that matters: without this, spending nothing
     /// against it reports `Over`, and the user is told they have blown a budget that does
     /// not exist. A corrupt row arriving over sync must fail loudly, not confidently.
-    #[error("the budget is not valid: {0}")]
-    Invalid(#[from] ValidationError),
+    #[error("budget {budget} cannot be evaluated: {source}")]
+    Invalid {
+        /// The budget at fault. Named, like every other variant here, because the user may
+        /// have a dozen caps and the message has to say which one to go and look at.
+        budget: BudgetId,
+        /// What is wrong with it.
+        #[source]
+        source: ValidationError,
+    },
 
     /// Totalling the period's spending left `i64` minor units.
     #[error("spending against budget {budget} overflowed i64 minor units: {source}")]
@@ -262,7 +269,7 @@ where
     I: IntoIterator<Item = &'a Transaction>,
     Z: Zone,
 {
-    budget.validate()?;
+    check_evaluable(budget)?;
     let Some(period) = period_containing(budget, on) else {
         return Ok(None);
     };
@@ -312,6 +319,31 @@ where
     }))
 }
 
+/// What evaluation itself depends on, which is less than the whole row.
+///
+/// Deliberately not [`Budget::validate`]. That also checks the sync stamps, and a budget
+/// with a perfectly usable cap but a clock skew from another device would then take every
+/// other cap off the user's screen with it — [`evaluate_all`] stops at the first error. A
+/// skewed timestamp is a problem for the sync layer; it does not make a cedi cap
+/// unevaluable. Full validation belongs where the row is written.
+fn check_evaluable(budget: &Budget) -> Result<(), BudgetError> {
+    let invalid = |source| BudgetError::Invalid {
+        budget: budget.id,
+        source,
+    };
+    if budget.cap.minor() <= 0 {
+        return Err(invalid(ValidationError::NotPositive {
+            field: "budget.cap",
+        }));
+    }
+    if budget.ends_on.is_some_and(|end| end < budget.starts_on) {
+        return Err(invalid(ValidationError::EndsBeforeStart {
+            field: "budget",
+        }));
+    }
+    Ok(())
+}
+
 /// Spending as basis points of the cap, in integers throughout.
 ///
 /// `i128` for the multiply: a cap near [`crate::model::MAX_AMOUNT_MINOR`] times ten thousand
@@ -336,7 +368,10 @@ fn used_basis_points(spent: Money, cap: Money) -> u16 {
 /// saved. If that ever stops being true, this is the function to change, not [`evaluate`].
 ///
 /// # Errors
-/// As [`evaluate`], naming the first budget that fails.
+/// As [`evaluate`], naming the first budget that fails. One unevaluable budget stops the
+/// whole set, which is the right trade for the only thing that reaches it — a cap of zero or
+/// a reversed date range means the store is handing out rows that cannot be trusted, and
+/// showing the rest as if nothing were wrong would be worse than showing nothing.
 pub fn evaluate_all<Z>(
     budgets: &[Budget],
     categories: &[Category],

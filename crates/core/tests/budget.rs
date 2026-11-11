@@ -5,19 +5,23 @@
 mod common;
 
 use common::{
-    ACCRA, FAR_EAST, FAR_WEST, GHS, Shifting, USD, budget, category, id, midnight, transaction,
+    ACCRA, FAR_EAST, FAR_WEST, GHS, Shifting, USD, budget, category, id, midnight, minus_ten,
+    recurring, transaction,
 };
 use mt_core::budget::{
     BudgetError, CategoryTree, Level, Status, evaluate, evaluate_all, period_bounds,
     period_containing,
 };
-use mt_core::enums::{BudgetPeriod, Direction, TxStatus};
+use mt_core::enums::{BudgetPeriod, Direction, RecurrenceFreq, TxStatus};
 use mt_core::ids::CategoryId;
+use mt_core::ids::TxId;
 use mt_core::ledger::BalanceBasis;
-use mt_core::model::{Budget, Category, Transaction};
+use mt_core::model::{Budget, Category, RecurringRule, Transaction};
 use mt_core::money::Money;
+use mt_core::recurrence::generate;
 use time::macros::{date, datetime};
-use time::{Date, UtcOffset};
+use time::{Date, Duration};
+use uuid::Uuid;
 
 /// A monthly cedi cap on one category, warning at 80%.
 fn monthly_cap(category_id: Option<CategoryId>, cap_minor: i64) -> Budget {
@@ -573,14 +577,7 @@ fn a_zone_that_shifts_on_the_first_of_the_month_still_counts_the_row_in_the_righ
     // offset. Resolving the offset from the *UTC* date hands back -10 and dates the row 1
     // November, moving it into the wrong month with nothing on screen to explain it.
     let budget = monthly_cap(None, 50_000);
-    let zone = Shifting {
-        before: FAR_WEST,
-        after: match UtcOffset::from_hms(-10, 0, 0) {
-            Ok(offset) => offset,
-            Err(_) => FAR_WEST,
-        },
-        shifts_on: date!(2026 - 11 - 01),
-    };
+    let zone = Shifting::at_midnight(FAR_WEST, minus_ten(), date!(2026 - 11 - 01));
     let row = Transaction {
         booked_at: datetime!(2026-11-01 10:30:00 UTC),
         ..spend(None, 12_000, date!(2026 - 01 - 01))
@@ -643,7 +640,50 @@ fn a_budget_with_a_cap_of_nothing_is_refused_rather_than_reported_as_blown() {
             BalanceBasis::Confirmed,
             ACCRA,
         ),
-        Err(BudgetError::Invalid(_))
+        Err(BudgetError::Invalid { budget, .. }) if budget == broken.id
+    ));
+}
+
+#[test]
+fn a_clock_skew_from_another_device_does_not_take_every_other_cap_off_the_screen() {
+    // `Budget::validate` would refuse this row for its sync stamps. Evaluation does not care
+    // about them: the cap is usable, and one device's skewed clock must not blank a user's
+    // whole budgets screen.
+    let mut skewed = monthly_cap(None, 50_000);
+    skewed.sync.updated_at = skewed.sync.created_at - Duration::days(1);
+    let healthy = monthly_cap(Some(id()), 30_000);
+
+    let statuses = evaluate_all(
+        &[skewed, healthy],
+        &[],
+        &[],
+        date!(2026 - 03 - 15),
+        BalanceBasis::Confirmed,
+        ACCRA,
+    )
+    .unwrap();
+
+    assert_eq!(statuses.len(), 2);
+}
+
+#[test]
+fn a_budget_whose_dates_run_backwards_is_refused_by_name() {
+    let backwards = Budget {
+        starts_on: date!(2026 - 06 - 01),
+        ends_on: Some(date!(2026 - 01 - 01)),
+        ..monthly_cap(None, 50_000)
+    };
+
+    assert!(matches!(
+        evaluate_all(
+            std::slice::from_ref(&backwards),
+            &[],
+            &[],
+            date!(2026 - 03 - 15),
+            BalanceBasis::Confirmed,
+            ACCRA,
+        ),
+        Err(BudgetError::Invalid { budget, .. }) if budget == backwards.id
     ));
 }
 
@@ -683,4 +723,74 @@ fn the_edges_of_a_weekly_block_fall_where_they_should() {
     assert_eq!(last_day.ends_on, date!(2026 - 03 - 10));
     assert_eq!(next_block.starts_on, date!(2026 - 03 - 11));
     assert_eq!(next_block.ends_on, date!(2026 - 03 - 17));
+}
+
+#[test]
+fn a_bill_generated_for_the_first_of_the_month_is_counted_in_that_month() {
+    // The two modules have to agree, and nothing else in the suite makes them. `recurrence`
+    // turns a local date into an instant; `budget` turns that instant back into a local
+    // date. Under a zone that jumps over midnight these disagreed, so November's rent was
+    // generated for 1 November and counted against October's cap.
+    let zone = Shifting::at_midnight(FAR_WEST, minus_ten(), date!(2026 - 11 - 01));
+    let account = id();
+    let rule = RecurringRule {
+        account_id: account,
+        freq: RecurrenceFreq::Monthly,
+        interval: 1,
+        by_month_day: Some(1),
+        by_weekday: None,
+        starts_on: date!(2026 - 11 - 01),
+        amount: Money::new(150_000, GHS),
+        ..recurring()
+    };
+    let budget = Budget {
+        cap: Money::new(200_000, GHS),
+        ..monthly_cap(None, 200_000)
+    };
+
+    let mut next = 0u128;
+    let generated = generate(
+        &rule,
+        date!(2026 - 11 - 30),
+        midnight(date!(2026 - 10 - 01)),
+        zone,
+        || {
+            next += 1;
+            TxId::from_uuid(Uuid::from_u128(next))
+        },
+    )
+    .unwrap();
+    let rows: Vec<Transaction> = generated
+        .rows
+        .into_iter()
+        .map(|row| Transaction {
+            account_id: account,
+            ..row
+        })
+        .collect();
+
+    let november = evaluate(
+        &budget,
+        &CategoryTree::default(),
+        &rows,
+        date!(2026 - 11 - 15),
+        BalanceBasis::Projected,
+        zone,
+    )
+    .unwrap()
+    .unwrap();
+    let october = evaluate(
+        &budget,
+        &CategoryTree::default(),
+        &rows,
+        date!(2026 - 10 - 15),
+        BalanceBasis::Projected,
+        zone,
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(november.spent, Money::new(150_000, GHS));
+    assert_eq!(october.spent, Money::new(0, GHS));
 }

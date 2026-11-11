@@ -242,30 +242,66 @@ pub const FAR_EAST: UtcOffset = match UtcOffset::from_hms(14, 0, 0) {
     Err(_) => UtcOffset::UTC,
 };
 
-/// A zone that shifts its offset on a given local date, the way a real one does in spring
-/// and autumn — and, for several real zones, on the first of a month.
+/// Ten hours behind: the far side of a one-hour shift from [`FAR_WEST`].
+pub fn minus_ten() -> UtcOffset {
+    match UtcOffset::from_hms(-10, 0, 0) {
+        Ok(offset) => offset,
+        Err(_) => FAR_WEST,
+    }
+}
+
+/// A zone that shifts its offset once, at a given local time on a given local date — the way
+/// a real one does in spring and autumn.
 ///
 /// This is the case where asking "what offset applies on this date" and "what offset applied
-/// at this instant" give different answers, which is why [`Zone`] has two methods.
+/// at this instant" give different answers, which is why [`Zone`] has two methods. The hour
+/// matters as much as the date: a zone shifting forward at midnight has no 00:00 at all on
+/// the day it shifts, while one shifting at 02:00 has an ordinary midnight and a day that is
+/// an hour short or an hour long at the far end.
 #[derive(Debug, Clone, Copy)]
 pub struct Shifting {
-    /// In force up to, but not including, `shifts_on`.
+    /// In force until the shift.
     pub before: UtcOffset,
-    /// In force from `shifts_on` onwards.
+    /// In force from the shift onwards.
     pub after: UtcOffset,
-    /// The first local date on the new offset.
+    /// The local date the shift happens on.
     pub shifts_on: Date,
+    /// The local time, reckoned on the old offset, that the shift happens at.
+    pub shifts_at: Time,
+}
+
+impl Shifting {
+    /// Shifting at local midnight, which is where a date-keyed lookup goes wrong.
+    pub fn at_midnight(before: UtcOffset, after: UtcOffset, shifts_on: Date) -> Self {
+        Self {
+            before,
+            after,
+            shifts_on,
+            shifts_at: Time::MIDNIGHT,
+        }
+    }
+
+    /// Shifting at two in the morning, as most zones that observe daylight saving do.
+    pub fn at_two_am(before: UtcOffset, after: UtcOffset, shifts_on: Date) -> Self {
+        Self {
+            before,
+            after,
+            shifts_on,
+            shifts_at: time::macros::time!(02:00:00),
+        }
+    }
+
+    /// The instant the offset changes.
+    fn boundary(&self) -> OffsetDateTime {
+        self.shifts_on
+            .with_time(self.shifts_at)
+            .assume_offset(self.before)
+    }
 }
 
 impl Zone for Shifting {
     fn offset_for_instant(&self, at: OffsetDateTime) -> UtcOffset {
-        // Resolved against the instant the shift happens, which is local midnight on
-        // `shifts_on` reckoned in the old offset.
-        let boundary = self
-            .shifts_on
-            .with_time(Time::MIDNIGHT)
-            .assume_offset(self.before);
-        if at < boundary {
+        if at < self.boundary() {
             self.before
         } else {
             self.after
@@ -273,10 +309,17 @@ impl Zone for Shifting {
     }
 
     fn offset_for_date(&self, date: Date) -> UtcOffset {
-        if date < self.shifts_on {
-            self.before
-        } else {
+        // The offset in force at the *start* of the local date. On the shift date itself
+        // that is still the old one, unless the shift happens at midnight.
+        let shifted_by_then = match date.cmp(&self.shifts_on) {
+            core::cmp::Ordering::Less => false,
+            core::cmp::Ordering::Equal => self.shifts_at == Time::MIDNIGHT,
+            core::cmp::Ordering::Greater => true,
+        };
+        if shifted_by_then {
             self.after
+        } else {
+            self.before
         }
     }
 }

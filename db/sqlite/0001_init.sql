@@ -162,10 +162,19 @@ CREATE INDEX transactions_dirty ON transactions (updated_at) WHERE dirty = 1;
 -- Stops a re-imported statement creating a second copy of every row.
 CREATE UNIQUE INDEX transactions_external ON transactions (account_id, external_id)
     WHERE external_id IS NOT NULL AND deleted_at IS NULL;
--- A recurring template fires at most once per instant. Generation is idempotent through the
--- template's `generated_through` watermark, but that only holds if the rows and the new
--- watermark are written in one transaction; this is the backstop for the case where they are
--- not, which would otherwise show the user next month's rent two or three times over.
+-- A recurring template fires at most once per instant. Two things rest on this.
+--
+-- One: generation is idempotent through the template's `generated_through` watermark, but
+-- only if the rows and the new watermark are written in one transaction. This is the backstop
+-- for when they are not, which would otherwise show the user next month's rent twice over.
+--
+-- Two: editing one instance of a series identifies it by template and instant, so the pair
+-- has to be unique for "change just this one" to mean anything.
+--
+-- It does not refuse anything generation produces — every cadence yields strictly increasing
+-- dates. It does refuse a user dragging December's instance onto a date January's already
+-- occupies, so the edit path must catch the violation and say which instance is in the way,
+-- rather than surfacing a constraint error.
 CREATE UNIQUE INDEX transactions_recurring_instance ON transactions (recurring_id, booked_at)
     WHERE recurring_id IS NOT NULL AND deleted_at IS NULL;
 
