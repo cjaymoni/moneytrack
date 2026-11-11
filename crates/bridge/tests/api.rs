@@ -19,7 +19,9 @@ use mt_bridge::api::{
     currency_totals, evaluate_budgets, expand_recurrence, parse_amount, period_flows,
     score_duplicates, validate_transfer, walk_balance,
 };
-use mt_bridge::enums::{BalanceBasis, BudgetLevel, Direction, DuplicateSignal, TxStatus};
+use mt_bridge::enums::{
+    BalanceBasis, BudgetLevel, Direction, DuplicateSignal, RecurrenceFreq, TxStatus,
+};
 use mt_bridge::error::BridgeError;
 
 // --------------------------------------------------------------------------- the walk ---
@@ -128,10 +130,11 @@ fn balances_come_back_per_account_and_totals_per_currency() {
 #[test]
 fn flows_drop_both_legs_of_a_transfer() {
     let wallet = account(1, 0);
-    let mut out_leg = transaction(2, &wallet, Direction::Out, 5_000, NOW);
+    let mut bank = account(9, 0);
+    bank.name = "Bank".to_owned();
+    let mut out_leg = transaction(2, &bank, Direction::Out, 5_000, NOW);
     let mut in_leg = transaction(3, &wallet, Direction::In, 5_000, NOW);
     out_leg.transfer_id = Some(uuid(0xaa));
-    out_leg.category_id = None;
     in_leg.transfer_id = Some(uuid(0xaa));
     let salary = transaction(4, &wallet, Direction::In, 200_000, NOW);
     let lunch = transaction(5, &wallet, Direction::Out, 3_000, NOW);
@@ -459,4 +462,279 @@ fn typed_text_becomes_minor_units_without_ever_being_a_float() {
         parse_amount("12.50".to_owned(), "cedi".to_owned()).unwrap_err(),
         BridgeError::InvalidCurrency { .. }
     ));
+}
+
+// ------------------------------------------------------- what the rules refuse to guess ---
+
+#[test]
+fn a_row_in_another_currency_is_refused_rather_than_counted_at_face_value() {
+    let wallet = account(1, 10_000);
+    let mut dollars = transaction(2, &wallet, Direction::Out, 1_000, NOW);
+    dollars.amount.currency = "USD".to_owned();
+
+    let error = walk_balance(wallet, vec![dollars], BalanceBasis::Confirmed).unwrap_err();
+
+    match error {
+        BridgeError::Rule { rule, reason } => {
+            assert_eq!(rule, "walk");
+            assert!(reason.contains("USD"), "reason names no currency: {reason}");
+        }
+        other => panic!("expected a refused walk, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_row_whose_account_was_not_supplied_is_an_error_not_a_missing_balance() {
+    let wallet = account(1, 10_000);
+    let unsupplied = account(9, 0);
+    let orphan = transaction(2, &unsupplied, Direction::Out, 1_000, NOW);
+
+    let error = account_balances(
+        vec![wallet.clone()],
+        vec![orphan.clone()],
+        BalanceBasis::Confirmed,
+    )
+    .unwrap_err();
+    assert!(matches!(error, BridgeError::Rule { ref rule, .. } if rule == "balances"));
+
+    let error = currency_totals(vec![wallet], vec![orphan], BalanceBasis::Confirmed).unwrap_err();
+    assert!(matches!(error, BridgeError::Rule { ref rule, .. } if rule == "totals"));
+}
+
+#[test]
+fn a_budget_that_cannot_be_evaluated_stops_the_set() {
+    // A cap of zero means the store is handing out rows that cannot be trusted. Showing the
+    // other budgets as if nothing were wrong would be worse than showing none.
+    let unusable = mt_bridge::dto::BudgetDto {
+        cap: money(0),
+        ..budget(4, 0, None)
+    };
+
+    let error = evaluate_budgets(
+        vec![unusable, budget(5, 50_000, None)],
+        Vec::new(),
+        Vec::new(),
+        TODAY.to_owned(),
+        BalanceBasis::Confirmed,
+        accra(),
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, BridgeError::InvalidRow { ref row, .. } if row == "budget"));
+}
+
+#[test]
+fn a_malformed_date_or_currency_is_refused_at_the_call_itself() {
+    let bad_date = evaluate_budgets(
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        "today".to_owned(),
+        BalanceBasis::Confirmed,
+        accra(),
+    )
+    .unwrap_err();
+    assert!(matches!(bad_date, BridgeError::InvalidDate { ref field, .. } if field == "on"));
+
+    let bad_currency =
+        period_flows("cedi".to_owned(), Vec::new(), BalanceBasis::Confirmed).unwrap_err();
+    assert!(matches!(bad_currency, BridgeError::InvalidCurrency { .. }));
+
+    let wallet = account(1, 0);
+    let bad_through = expand_recurrence(
+        recurring(2, &wallet, 120_000),
+        "31/12/2026".to_owned(),
+        NOW.to_owned(),
+        accra(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(bad_through, BridgeError::InvalidDate { ref field, .. } if field == "through")
+    );
+
+    let bad_now = expand_recurrence(
+        recurring(2, &wallet, 120_000),
+        "2026-12-31".to_owned(),
+        "half past nine".to_owned(),
+        accra(),
+    )
+    .unwrap_err();
+    assert!(matches!(bad_now, BridgeError::InvalidTimestamp { ref field, .. } if field == "now"));
+}
+
+#[test]
+fn thresholds_that_do_not_make_sense_are_refused_rather_than_quietly_narrowing_the_search() {
+    let negative = MatchRulesDto {
+        window_seconds: -3_600,
+        close_window_seconds: 60,
+        report_at_or_above_bps: 5_000,
+    };
+    let inverted = MatchRulesDto {
+        window_seconds: 60,
+        close_window_seconds: 3_600,
+        report_at_or_above_bps: 5_000,
+    };
+
+    assert!(matches!(
+        score_duplicates(Vec::new(), Vec::new(), Some(negative)).unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. } if field == "match_rules.window_seconds"
+    ));
+    assert!(matches!(
+        score_duplicates(Vec::new(), Vec::new(), Some(inverted)).unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. } if field == "match_rules.close_window_seconds"
+    ));
+}
+
+// ------------------------------------------------------------------- the weekly cadence ---
+
+#[test]
+fn a_weekly_template_fires_on_the_weekday_it_names_counting_monday_as_zero() {
+    let wallet = account(1, 500_000);
+    let monday = mt_bridge::dto::RecurringRuleDto {
+        freq: RecurrenceFreq::Weekly,
+        by_month_day: None,
+        by_weekday: Some(0),
+        starts_on: "2026-11-02".to_owned(),
+        ..recurring(2, &wallet, 5_000)
+    };
+
+    let generation =
+        expand_recurrence(monday, "2026-11-16".to_owned(), NOW.to_owned(), accra()).unwrap();
+
+    // 2 November 2026 is a Monday. A one-based reading of this field would put every one of
+    // these a day late, for ever, with nothing on screen to say so.
+    let booked: Vec<&str> = generation
+        .rows
+        .iter()
+        .map(|row| row.booked_at.as_str())
+        .collect();
+    assert_eq!(
+        booked,
+        vec![
+            "2026-11-02T00:00:00Z",
+            "2026-11-09T00:00:00Z",
+            "2026-11-16T00:00:00Z"
+        ]
+    );
+}
+
+#[test]
+fn sunday_is_reachable_and_seven_is_not_a_day() {
+    let wallet = account(1, 500_000);
+    let template = |weekday: u8| mt_bridge::dto::RecurringRuleDto {
+        freq: RecurrenceFreq::Weekly,
+        by_month_day: None,
+        by_weekday: Some(weekday),
+        starts_on: "2026-11-02".to_owned(),
+        ..recurring(2, &wallet, 5_000)
+    };
+
+    let sunday = expand_recurrence(
+        template(6),
+        "2026-11-08".to_owned(),
+        NOW.to_owned(),
+        accra(),
+    )
+    .unwrap();
+    assert_eq!(
+        sunday
+            .rows
+            .iter()
+            .map(|row| row.booked_at.as_str())
+            .collect::<Vec<_>>(),
+        vec!["2026-11-08T00:00:00Z"],
+        "6 is Sunday, so the week is covered"
+    );
+
+    assert!(matches!(
+        expand_recurrence(
+            template(7),
+            "2026-11-08".to_owned(),
+            NOW.to_owned(),
+            accra()
+        )
+        .unwrap_err(),
+        BridgeError::InvalidRow { ref row, .. } if row == "recurring"
+    ));
+}
+
+// ------------------------------------------------- the rungs and signals left uncovered ---
+
+#[test]
+fn a_category_named_by_the_source_wins_before_any_pattern_is_tried() {
+    let groceries = category(2, "Groceries");
+    let transport = category(5, "Transport");
+    let stated = mt_bridge::dto::CandidateDto {
+        category_id: Some(transport.id.clone()),
+        ..candidate(12_000, NOW)
+    };
+
+    let verdict = categorise_candidate(
+        stated,
+        vec![rule(3, "melcom", &groceries)],
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(verdict.category_id, Some(uuid(5)));
+    assert_eq!(verdict.basis, VerdictBasis::Explicit);
+    assert_eq!(verdict.source_id, None);
+}
+
+#[test]
+fn a_shared_reference_from_the_bank_is_certain_and_everything_else_is_not() {
+    let wallet = account(1, 0);
+    let mut existing = transaction(2, &wallet, Direction::Out, 12_000, NOW);
+    existing.external_id = Some("MP261110.0912.A54321".to_owned());
+    existing.counterparty = Some("Melcom".to_owned());
+
+    let mut same_reference = candidate(12_000, NOW);
+    same_reference.account_id = Some(wallet.id.clone());
+    same_reference.external_id = existing.external_id.clone();
+    let mut merely_alike = candidate(12_000, NOW);
+    merely_alike.account_id = Some(wallet.id.clone());
+
+    let reports =
+        score_duplicates(vec![same_reference, merely_alike], vec![existing], None).unwrap();
+
+    assert!(reports[0].suspects[0].is_certain);
+    assert!(
+        reports[0].suspects[0]
+            .signals
+            .contains(&DuplicateSignal::SameExternalId)
+    );
+    // Even this licenses a pre-ticked box, never a silent merge — so it is still reported
+    // as a suspect rather than acted on.
+    assert_eq!(reports[0].suspects.len(), 1);
+    assert!(!reports[1].suspects[0].is_certain);
+}
+
+#[test]
+fn an_amount_bigger_than_any_row_may_carry_is_refused_without_quoting_it() {
+    // Inside i64, outside what a row may carry: the guard this function adds, not the
+    // core's overflow check.
+    let error = parse_amount("10000000000000.01".to_owned(), "GHS".to_owned()).unwrap_err();
+
+    match error {
+        BridgeError::OutOfRange { field, value } => {
+            assert_eq!(field, "amount");
+            assert!(
+                !value.contains("10000000000000"),
+                "the rejection quotes what was typed: {value}"
+            );
+        }
+        other => panic!("expected an out-of-range amount, got {other:?}"),
+    }
+
+    // The same applies to ordinary typos: the reason says what is wrong, not what it was.
+    match parse_amount("12.555".to_owned(), "GHS".to_owned()).unwrap_err() {
+        BridgeError::OutOfRange { value, .. } => {
+            assert!(
+                !value.contains("12.555"),
+                "the rejection quotes the input: {value}"
+            );
+        }
+        other => panic!("expected an out-of-range amount, got {other:?}"),
+    }
 }

@@ -24,9 +24,20 @@
 //! here by one call, so the server — which links `mt-core` directly and never sees this
 //! crate — cannot disagree with a handset about someone's balance.
 //!
-//! The `flutter_rust_bridge` annotations are not here yet either: the generated glue lands
-//! when the Flutter app does, and this crate is written to the shape that codegen accepts —
-//! no lifetimes, no generics and no borrows in any published signature.
+//! ## The codegen contract
+//!
+//! The `flutter_rust_bridge` annotations are not here yet: the generated glue lands when the
+//! Flutter app does. What is settled is which part of this crate codegen reads.
+//!
+//! **`api.rs` is the input, and the DTO and enum types it names come with it.** Those
+//! signatures hold the shape codegen accepts — no lifetimes, no generics, no borrows, and
+//! no `mt-core` type anywhere in them.
+//!
+//! The rest is Rust-side plumbing and must be kept out of the scanned set, by `rust_input`
+//! or by `#[frb(ignore)]`. The conversions are public because the integration tests call
+//! them, not because Dart should: `scalar::id` is generic, and every `to_core` returns an
+//! `mt-core` value. Letting codegen near them would produce opaque pointers — handles
+//! crossing the bridge, which is the one thing this crate exists to prevent.
 
 pub mod api;
 pub mod dto;

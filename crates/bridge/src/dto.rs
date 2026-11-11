@@ -328,7 +328,10 @@ pub struct RecurringRuleDto {
     pub interval: u16,
     /// Day of month, 1..=31, for a monthly or yearly template.
     pub by_month_day: Option<u8>,
-    /// Day of week, 1 (Monday) to 7, for a weekly template.
+    /// Day of week for a weekly template, Monday = 0, through 6 for Sunday.
+    ///
+    /// Zero-based, like the core and both schemas. The temptation to make it one-based for
+    /// Dart is the sort of convenience that puts every weekly bill a day late for ever.
     pub by_weekday: Option<u8>,
     /// First local date it fires, `YYYY-MM-DD`.
     pub starts_on: String,
@@ -483,5 +486,16 @@ impl CandidateDto {
 /// # Errors
 /// [`BridgeError`] from the first row that fails.
 pub fn transactions_to_core(rows: &[TransactionDto]) -> Result<Vec<Transaction>, BridgeError> {
-    rows.iter().map(TransactionDto::to_core).collect()
+    batch(rows, TransactionDto::to_core)
+}
+
+/// Converts a batch of any row type, failing on the first that will not convert.
+///
+/// One place, so "a bad row stops the batch" is a rule rather than a habit repeated at
+/// every call site.
+pub(crate) fn batch<Row, Core>(
+    rows: &[Row],
+    convert: impl Fn(&Row) -> Result<Core, BridgeError>,
+) -> Result<Vec<Core>, BridgeError> {
+    rows.iter().map(convert).collect()
 }

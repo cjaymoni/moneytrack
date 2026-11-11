@@ -29,6 +29,13 @@ pub struct ZoneTransitionDto {
 /// Supply transitions covering the window being asked about, in any order. Outside the
 /// range supplied the base offset stands, so a zone that never shifts needs no transitions
 /// and a zone that does needs only the ones near the dates in play.
+///
+/// `base_offset_seconds` is the offset in force *before the first transition*, which is not
+/// the same as the offset in force now. Handing over "the current offset" with a truncated
+/// transition list is the one way to get silently wrong answers out of this type, and Rust
+/// cannot detect it: a table that stops short looks exactly like a zone that stopped
+/// shifting. The Dart side owns that correctness, and the outlook screen pays for it in
+/// bills landing in the wrong month.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZoneDto {
     /// The offset in force before the first transition, in seconds east of UTC.

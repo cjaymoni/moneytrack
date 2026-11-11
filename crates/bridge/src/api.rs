@@ -9,14 +9,15 @@
 //! that matters: the same inputs give the same answer on a handset, in a browser and on the
 //! server, which is the whole reason the rules live in Rust rather than being written twice.
 
-use mt_core::money::{Currency, Money};
+use mt_core::model::MAX_AMOUNT_MINOR;
+use mt_core::money::{Currency, Money, MoneyError};
 use mt_core::{budget, categorise, dedup, ledger, recurrence};
 use time::Duration;
 use uuid::Uuid;
 
 use crate::dto::{
     AccountDto, BudgetDto, CandidateDto, CategoryDto, CategoryRuleDto, RecurringRuleDto,
-    TransactionDto, transactions_to_core,
+    TransactionDto, batch, transactions_to_core,
 };
 use crate::enums::{BalanceBasis, BudgetLevel, DuplicateSignal};
 use crate::error::BridgeError;
@@ -170,13 +171,34 @@ pub struct MatchRulesDto {
     pub report_at_or_above_bps: u16,
 }
 
-impl From<MatchRulesDto> for dedup::MatchRules {
-    fn from(rules: MatchRulesDto) -> Self {
-        Self {
-            window: Duration::seconds(rules.window_seconds),
-            close_window: Duration::seconds(rules.close_window_seconds),
-            report_at_or_above: rules.report_at_or_above_bps,
+impl MatchRulesDto {
+    /// Checks the thresholds and converts them.
+    ///
+    /// Validated like every other value entering this crate, and for the same reason. A
+    /// negative window, or a close window wider than the window it sits inside, does not
+    /// crash anything — it quietly reports fewer duplicates, which is the dropped row this
+    /// crate is organised against wearing a different hat.
+    ///
+    /// # Errors
+    /// [`BridgeError::OutOfRange`] naming the threshold at fault.
+    pub fn to_core(&self) -> Result<dedup::MatchRules, BridgeError> {
+        if self.window_seconds < 0 {
+            return Err(BridgeError::OutOfRange {
+                field: "match_rules.window_seconds".to_owned(),
+                value: self.window_seconds.to_string(),
+            });
         }
+        if self.close_window_seconds < 0 || self.close_window_seconds > self.window_seconds {
+            return Err(BridgeError::OutOfRange {
+                field: "match_rules.close_window_seconds".to_owned(),
+                value: self.close_window_seconds.to_string(),
+            });
+        }
+        Ok(dedup::MatchRules {
+            window: Duration::seconds(self.window_seconds),
+            close_window: Duration::seconds(self.close_window_seconds),
+            report_at_or_above: self.report_at_or_above_bps,
+        })
     }
 }
 
@@ -240,10 +262,7 @@ pub fn account_balances(
     transactions: Vec<TransactionDto>,
     basis: BalanceBasis,
 ) -> Result<Vec<AccountBalanceDto>, BridgeError> {
-    let accounts = accounts
-        .iter()
-        .map(AccountDto::to_core)
-        .collect::<Result<Vec<_>, _>>()?;
+    let accounts = batch(&accounts, AccountDto::to_core)?;
     let rows = transactions_to_core(&transactions)?;
     let balances = ledger::balances_by_account(&accounts, &rows, basis.into())
         .map_err(|reason| BridgeError::rule("balances", reason))?;
@@ -269,10 +288,7 @@ pub fn currency_totals(
     transactions: Vec<TransactionDto>,
     basis: BalanceBasis,
 ) -> Result<Vec<MoneyDto>, BridgeError> {
-    let accounts = accounts
-        .iter()
-        .map(AccountDto::to_core)
-        .collect::<Result<Vec<_>, _>>()?;
+    let accounts = batch(&accounts, AccountDto::to_core)?;
     let rows = transactions_to_core(&transactions)?;
     let totals = ledger::totals_by_currency(&accounts, &rows, basis.into())
         .map_err(|reason| BridgeError::rule("totals", reason))?;
@@ -320,14 +336,8 @@ pub fn evaluate_budgets(
     basis: BalanceBasis,
     zone: ZoneDto,
 ) -> Result<Vec<BudgetStatusDto>, BridgeError> {
-    let budgets = budgets
-        .iter()
-        .map(BudgetDto::to_core)
-        .collect::<Result<Vec<_>, _>>()?;
-    let categories = categories
-        .iter()
-        .map(CategoryDto::to_core)
-        .collect::<Result<Vec<_>, _>>()?;
+    let budgets = batch(&budgets, BudgetDto::to_core)?;
+    let categories = batch(&categories, CategoryDto::to_core)?;
     let rows = transactions_to_core(&transactions)?;
     let on = scalar::date("on", &on)?;
     let table = zone.to_table()?;
@@ -389,7 +399,7 @@ pub fn expand_recurrence(
 
 /// Runs the four-rung ladder over one candidate.
 ///
-/// `raw_text` is the message body, and it is borrowed for the length of this call and
+/// `raw_text` is the message body, and it lives for the length of this call and is then
 /// dropped: nothing stores it, nothing returns it, and no rule here may send it anywhere.
 /// That is a policy commitment as much as a design one — see the SMS section of PLAN.md.
 ///
@@ -402,10 +412,7 @@ pub fn categorise_candidate(
     raw_text: Option<String>,
 ) -> Result<CategorisationDto, BridgeError> {
     let candidate = candidate.to_core()?;
-    let rules = rules
-        .iter()
-        .map(CategoryRuleDto::to_core)
-        .collect::<Result<Vec<_>, _>>()?;
+    let rules = batch(&rules, CategoryRuleDto::to_core)?;
     let history = transactions_to_core(&history)?;
 
     let (compiled, skipped) = categorise::RuleSet::compile_lenient(&rules);
@@ -441,10 +448,7 @@ pub fn categorise_candidate(
 /// # Errors
 /// [`BridgeError::Rule`] naming the first rule that will not compile.
 pub fn compile_rules(rules: Vec<CategoryRuleDto>) -> Result<(), BridgeError> {
-    let rules = rules
-        .iter()
-        .map(CategoryRuleDto::to_core)
-        .collect::<Result<Vec<_>, _>>()?;
+    let rules = batch(&rules, CategoryRuleDto::to_core)?;
     categorise::RuleSet::compile(&rules)
         .map(|_| ())
         .map_err(|reason| BridgeError::rule("category_rule", reason))
@@ -457,18 +461,19 @@ pub fn compile_rules(rules: Vec<CategoryRuleDto>) -> Result<(), BridgeError> {
 /// than quadratic.
 ///
 /// # Errors
-/// [`BridgeError`] for a row that will not convert.
+/// [`BridgeError`] for a row that will not convert, or [`BridgeError::OutOfRange`] for
+/// thresholds that do not make sense.
 pub fn score_duplicates(
     candidates: Vec<CandidateDto>,
     existing: Vec<TransactionDto>,
     rules: Option<MatchRulesDto>,
 ) -> Result<Vec<DuplicateReportDto>, BridgeError> {
-    let candidates = candidates
-        .iter()
-        .map(CandidateDto::to_core)
-        .collect::<Result<Vec<_>, _>>()?;
+    let candidates = batch(&candidates, CandidateDto::to_core)?;
     let existing = transactions_to_core(&existing)?;
-    let rules = rules.map_or_else(dedup::MatchRules::default, Into::into);
+    let rules = match rules {
+        Some(rules) => rules.to_core()?,
+        None => dedup::MatchRules::default(),
+    };
     let index = dedup::DuplicateIndex::build(&existing);
 
     Ok(candidates
@@ -509,14 +514,30 @@ pub fn validate_transfer(legs: Vec<TransactionDto>) -> Result<(), BridgeError> {
 /// has.
 ///
 /// # Errors
-/// [`BridgeError::InvalidCurrency`] for an unusable code, [`BridgeError::OutOfRange`] with
-/// the core's reason for text that is not a plain decimal amount.
+/// [`BridgeError::InvalidCurrency`] for an unusable code, or [`BridgeError::OutOfRange`]
+/// saying why the text is not an amount. The rejection never quotes what was typed: an
+/// amount is someone's salary or rent, and an error string ends up in a crash report.
 pub fn parse_amount(input: String, currency: String) -> Result<MoneyDto, BridgeError> {
     let currency = scalar::currency("currency", &currency)?;
-    Money::parse(&input, currency)
-        .map(MoneyDto::from)
-        .map_err(|reason| BridgeError::OutOfRange {
+    let rejected = |reason: &dyn core::fmt::Display| BridgeError::OutOfRange {
+        field: "amount".to_owned(),
+        value: reason.to_string(),
+    };
+
+    let amount = Money::parse(&input, currency).map_err(|error| match error {
+        // `MoneyError::Parse`'s own message quotes the input. The rejection inside it does
+        // not, and it is the part that says what to fix.
+        MoneyError::Parse { reason, .. } => rejected(&reason),
+        other => rejected(&other),
+    })?;
+
+    // A row may not carry more than this, so refusing it at the keyboard is cheaper than
+    // refusing it at save time with the entry screen already dismissed.
+    if amount.minor().unsigned_abs() > MAX_AMOUNT_MINOR.unsigned_abs() {
+        return Err(BridgeError::OutOfRange {
             field: "amount".to_owned(),
-            value: reason.to_string(),
-        })
+            value: "larger than any row may carry".to_owned(),
+        });
+    }
+    Ok(amount.into())
 }

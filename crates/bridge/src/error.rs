@@ -8,8 +8,11 @@
 //! Every variant names the field it came from. An error crossing the bridge is read by a
 //! developer looking at a stack trace in Dart, where the Rust types are gone, so the string
 //! has to carry enough to find the row — the field, what was supplied, and what was wanted.
-//! Amounts and free text are not interpolated: a message that quotes someone's salary ends
-//! up in a crash report.
+//! Amounts and free text are not interpolated by this crate: a message that quotes
+//! someone's salary ends up in a crash report. Where a core error is forwarded as a
+//! `reason` string the core's own wording applies, and [`crate::api::parse_amount`] — the
+//! one function here handling typed money — unwraps the rejection out of it rather than
+//! passing on the message that quotes the input.
 
 /// A value that could not be converted, or a rule that refused the input.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -80,7 +83,9 @@ pub enum BridgeError {
     /// documented in `mt-core` and there is no Dart code that can usefully match on them.
     #[error("{rule} failed: {reason}")]
     Rule {
-        /// Which rule: `walk`, `budget`, `recurrence`, `categorise`.
+        /// Which rule refused: `walk`, `balances`, `totals`, `flows`, `budget`,
+        /// `recurrence` or `category_rule`. Dart has nothing else to match on, so the set
+        /// is exhaustive and stays that way.
         rule: String,
         /// What the core said.
         reason: String,
@@ -88,7 +93,7 @@ pub enum BridgeError {
 }
 
 impl BridgeError {
-    /// A conversion failure for a named field.
+    /// A rule that refused its input, with the core's own reason.
     pub(crate) fn rule(rule: &str, reason: impl core::fmt::Display) -> Self {
         Self::Rule {
             rule: rule.to_owned(),
