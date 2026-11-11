@@ -9,7 +9,7 @@
 //! that matters: the same inputs give the same answer on a handset, in a browser and on the
 //! server, which is the whole reason the rules live in Rust rather than being written twice.
 
-use mt_core::model::MAX_AMOUNT_MINOR;
+use mt_core::model::{EARLIEST_BOOKED_AT, LATEST_BOOKED_AT, MAX_AMOUNT_MINOR};
 use mt_core::money::{Currency, Money, MoneyError};
 use mt_core::{budget, categorise, dedup, ledger, recurrence};
 use uuid::Uuid;
@@ -329,10 +329,11 @@ pub fn evaluate_budgets(
 /// machine — `now` is passed in, and the zone comes from the caller's table.
 ///
 /// # Errors
-/// [`BridgeError`] for a value that will not convert, [`BridgeError::ZoneCoverage`] if the
-/// zone table does not cover the window being generated, or [`BridgeError::Rule`] if the
-/// template does not validate or the window holds more occurrences than the core will
-/// generate in one call.
+/// [`BridgeError`] for a value that will not convert, [`BridgeError::OutOfRange`] if the
+/// window reaches outside the dates a row may be booked at, [`BridgeError::ZoneCoverage`]
+/// if the zone table does not cover the window being generated, or [`BridgeError::Rule`]
+/// if the template does not validate or the window holds more occurrences than the core
+/// will generate in one call.
 pub fn expand_recurrence(
     rule: RecurringRuleDto,
     through: String,
@@ -342,14 +343,26 @@ pub fn expand_recurrence(
     let rule = rule.to_core()?;
     let through = scalar::date("through", &through)?;
     let now = scalar::instant("now", &now)?;
+
+    // Generated rows are written, and a row the ledger will not accept is not worth
+    // generating: without this, a template starting in 2199 generated through 2250 comes
+    // back Ok with six hundred rows that `transactions_to_core` then refuses one by one.
+    // The core bounds a row's `booked_at`; it does not bound the window asked for, and the
+    // boundary is where a caller's range is checked.
+    if through > LATEST_BOOKED_AT.date() || rule.starts_on < EARLIEST_BOOKED_AT.date() {
+        return Err(BridgeError::OutOfRange {
+            field: "through".to_owned(),
+            value: scalar::format_date("through", through)?,
+        });
+    }
     let table = zone.to_table()?;
 
     // Generation turns every local date from the template's start to the end of the window
     // into an instant at local midnight, so the table has to be right for all of it.
-    // Saturating, not checked: `time` panics on an ordinary `+` that leaves the calendar,
-    // and `through` is a caller-supplied string that may say year 9999. Saturating to
-    // `Date::MAX` only widens the window being asked for, so the question is still
-    // refused rather than quietly accepted.
+    // Saturating, not checked: `time` panics on an ordinary `+` that leaves the calendar.
+    // The ledger bound above keeps `through` inside 2200 so this cannot saturate today,
+    // and it stays saturating because the alternative is a panic if that ever changes —
+    // clamping only widens the window asked for, so a refusal stays a refusal.
     table.check_covers(
         "the generation window",
         rule.starts_on

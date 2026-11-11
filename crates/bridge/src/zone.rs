@@ -51,7 +51,11 @@ pub struct ZoneDto {
     ///
     /// A question about a local date is answered from instants up to 26 hours either side
     /// of its UTC midnight, so claim 26 hours beyond the earliest date you will ask about.
-    /// Set both ends or neither.
+    /// A caller that only hands over instants — [`crate::api::evaluate_budgets`] reads the
+    /// local day of rows it already has — needs no such margin, and over-claiming is
+    /// harmless anyway if the table came from a real zone database.
+    ///
+    /// Set both ends or neither, and a table carrying transitions must set them.
     pub covers_from: Option<String>,
     /// Last instant the transition list is complete for, RFC 3339.
     ///
@@ -92,27 +96,42 @@ impl ZoneDto {
         let covers_from = scalar::optional_instant("zone.covers_from", self.covers_from.as_ref())?;
         let covers_through =
             scalar::optional_instant("zone.covers_through", self.covers_through.as_ref())?;
+        let claim = |field: &str, reason: &str| BridgeError::ZoneClaim {
+            field: field.to_owned(),
+            reason: reason.to_owned(),
+        };
         match (covers_from, covers_through) {
             (Some(from), Some(through)) if from > through => {
-                return Err(BridgeError::OutOfRange {
-                    field: "zone.covers_through".to_owned(),
-                    value: through.to_string(),
-                });
+                return Err(claim(
+                    "zone.covers_through",
+                    "the window ends before it starts",
+                ));
             }
             // A claim open at one end is the hazard this type exists to close, wearing the
             // badge of a table that passed the check: a window starting in January and
             // never ending answers for ever from a transition list that stops in October.
             (Some(_), None) => {
-                return Err(BridgeError::OutOfRange {
-                    field: "zone.covers_through".to_owned(),
-                    value: "a window claimed at one end only".to_owned(),
-                });
+                return Err(claim(
+                    "zone.covers_through",
+                    "a window claimed at one end only",
+                ));
             }
             (None, Some(_)) => {
-                return Err(BridgeError::OutOfRange {
-                    field: "zone.covers_from".to_owned(),
-                    value: "a window claimed at one end only".to_owned(),
-                });
+                return Err(claim(
+                    "zone.covers_from",
+                    "a window claimed at one end only",
+                ));
+            }
+            // And the same hole with both ends left open. The doc on this type says a
+            // table with no claim is honest only for a zone that never shifts; a table
+            // that ships transitions and claims nothing is exactly the silent half-year
+            // of wrong answers the claim exists to prevent, so it is refused rather than
+            // left to a doc comment nobody reads twice.
+            (None, None) if !self.transitions.is_empty() => {
+                return Err(claim(
+                    "zone.covers_from",
+                    "a table that shifts must claim the window it is complete for",
+                ));
             }
             _ => {}
         }
@@ -155,6 +174,11 @@ pub struct ZoneTable {
 /// without a margin. If [`mt_core::budget::period_bounds`] is ever published from this
 /// crate it does need one: that is the one core function that converts a period's dates
 /// into instants.
+///
+/// One other thing holds this together from two crates away: `local_date` reads an offset
+/// at the row's own instant, and `time` panics if shifting an instant near the end of the
+/// calendar leaves it. Rows cannot get there because [`mt_core::model::Transaction`]
+/// validates `booked_at` into 1900..2200 before any of this is reached.
 pub const COVERAGE_MARGIN: Duration = Duration::hours(26);
 
 impl ZoneTable {

@@ -858,9 +858,11 @@ fn a_question_inside_the_window_is_answered_from_the_table_and_not_the_base_offs
     let generation =
         expand_recurrence(summer, "2026-07-15".to_owned(), NOW.to_owned(), london()).unwrap();
 
-    // Deliberately across a transition. These land at local midnight in BST — an hour east
-    // of UTC, and the wire keeps the offset it happened at — so an implementation that
-    // ignored the table and stood on the base offset would say `00:00:00Z` and fail here.
+    // Deliberately on the far side of a transition — London's 29 March shift is behind
+    // this window, so the offset in force is not the base one. These land at local
+    // midnight in BST, an hour east of UTC, and the wire keeps the offset they happened
+    // at, so an implementation that ignored the table and stood on the base offset would
+    // say `00:00:00Z` and fail here.
     assert_eq!(
         generation
             .rows
@@ -905,16 +907,24 @@ fn a_budget_counts_a_row_against_the_local_day_the_shifting_zone_puts_it_on() {
 
 #[test]
 fn a_budget_in_the_last_month_a_table_claims_is_still_evaluated() {
-    // The window covers the rows being counted, not the period a cap happens to span: a
-    // December budget asks the zone nothing about January, so claiming January is not its
-    // caller's job.
+    // The window covers the rows being counted, not the period a cap happens to span. This
+    // budget runs to 31 December and the table's claim ends two days into January, so an
+    // implementation that put the period in the claim would refuse a perfectly ordinary
+    // December — which is what the one before this commit did.
+    let wallet = account(1, 100_000);
     let statuses = evaluate_budgets(
         vec![mt_bridge::dto::BudgetDto {
             starts_on: "2026-12-01".to_owned(),
             ..budget(4, 50_000, None)
         }],
         Vec::new(),
-        Vec::new(),
+        vec![transaction(
+            5,
+            &wallet,
+            Direction::Out,
+            20_000,
+            "2026-12-20T09:00:00Z",
+        )],
         "2026-12-15".to_owned(),
         BalanceBasis::Confirmed,
         london(),
@@ -923,6 +933,7 @@ fn a_budget_in_the_last_month_a_table_claims_is_still_evaluated() {
 
     assert_eq!(statuses.len(), 1);
     assert_eq!(statuses[0].period_ends_on, "2026-12-31");
+    assert_eq!(statuses[0].spent, money(20_000));
 }
 
 #[test]
@@ -932,26 +943,46 @@ fn a_date_at_the_end_of_the_calendar_is_refused_rather_than_overflowing() {
     // string, so it is answered with an error like any other input.
     let wallet = account(1, 500_000);
 
-    let error = expand_recurrence(
-        recurring(2, &wallet, 120_000),
-        "9999-12-31".to_owned(),
-        NOW.to_owned(),
-        london(),
-    )
-    .unwrap_err();
-    assert!(matches!(error, BridgeError::ZoneCoverage { .. }));
+    for zone in [london(), accra()] {
+        assert!(matches!(
+            expand_recurrence(
+                recurring(2, &wallet, 120_000),
+                "9999-12-31".to_owned(),
+                NOW.to_owned(),
+                zone,
+            )
+            .unwrap_err(),
+            BridgeError::OutOfRange { ref field, .. } if field == "through"
+        ));
+    }
+}
 
-    // And with no claim to check it still must not overflow on the way past.
-    assert!(
+#[test]
+fn a_window_reaching_past_the_ledgers_own_dates_generates_nothing() {
+    // Rows are generated to be written, and 2200 is where the ledger stops accepting them.
+    // Without this the call returns Ok with rows that the very next conversion refuses,
+    // one at a time, with no sign of where they came from.
+    let wallet = account(1, 500_000);
+    let rule = mt_bridge::dto::RecurringRuleDto {
+        starts_on: "2199-01-15".to_owned(),
+        ..recurring(2, &wallet, 120_000)
+    };
+
+    assert!(matches!(
         expand_recurrence(
-            recurring(2, &wallet, 120_000),
-            "9999-12-31".to_owned(),
+            rule.clone(),
+            "2200-01-02".to_owned(),
             NOW.to_owned(),
             accra(),
         )
-        .is_err(),
-        "a window that long is refused by the core, not by a panic"
-    );
+        .unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. } if field == "through"
+    ));
+
+    // Just inside it is ordinary work.
+    let generated =
+        expand_recurrence(rule, "2199-03-31".to_owned(), NOW.to_owned(), accra()).unwrap();
+    assert_eq!(generated.rows.len(), 3);
 }
 
 // ------------------------------------------------------------------ editing a recurrence ---

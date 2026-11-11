@@ -62,6 +62,18 @@ pub enum BridgeError {
         reason: String,
     },
 
+    /// A zone table's claim about itself does not hold together.
+    ///
+    /// Separate from a malformed value: each end parsed, they just do not make a window
+    /// anyone can be held to.
+    #[error("{field}: {reason}")]
+    ZoneClaim {
+        /// The field the claim is wrong at.
+        field: String,
+        /// What is wrong with it.
+        reason: String,
+    },
+
     /// A call would have reckoned a local date outside the window its zone table claims.
     ///
     /// Not a malformed value: a table that stops short answers from its base offset and

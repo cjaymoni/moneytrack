@@ -127,8 +127,8 @@ fn a_day_whose_midnight_is_skipped_still_begins_somewhere_inside_itself() {
     // The clocks jump at local midnight: 1 November never has a 00:00 at all.
     let zone = ZoneDto {
         base_offset_seconds: 0,
-        covers_from: None,
-        covers_through: None,
+        covers_from: Some("2026-10-01T00:00:00Z".to_owned()),
+        covers_through: Some("2026-12-01T00:00:00Z".to_owned()),
         transitions: vec![ZoneTransitionDto {
             at: "2026-11-01T00:00:00Z".to_owned(),
             offset_seconds: 3_600,
@@ -148,8 +148,8 @@ fn a_day_whose_midnight_happens_twice_begins_at_one_of_them() {
     // The clocks fall back through local midnight: 00:00 on 1 November happens twice.
     let zone = ZoneDto {
         base_offset_seconds: 3_600,
-        covers_from: None,
-        covers_through: None,
+        covers_from: Some("2026-10-01T00:00:00Z".to_owned()),
+        covers_through: Some("2026-12-01T00:00:00Z".to_owned()),
         transitions: vec![ZoneTransitionDto {
             at: "2026-11-01T00:00:00Z".to_owned(),
             offset_seconds: 0,
@@ -284,7 +284,7 @@ fn a_window_that_ends_before_it_starts_is_refused() {
 
     assert!(matches!(
         backwards.to_table().unwrap_err(),
-        BridgeError::OutOfRange { ref field, .. } if field == "zone.covers_through"
+        BridgeError::ZoneClaim { ref field, .. } if field == "zone.covers_through"
     ));
 }
 
@@ -307,10 +307,33 @@ fn a_window_claimed_at_one_end_only_is_refused() {
 
     assert!(matches!(
         open_ended.to_table().unwrap_err(),
-        BridgeError::OutOfRange { ref field, .. } if field == "zone.covers_through"
+        BridgeError::ZoneClaim { ref field, .. } if field == "zone.covers_through"
     ));
     assert!(matches!(
         open_started.to_table().unwrap_err(),
-        BridgeError::OutOfRange { ref field, .. } if field == "zone.covers_from"
+        BridgeError::ZoneClaim { ref field, .. } if field == "zone.covers_from"
     ));
+}
+
+#[test]
+fn a_table_that_shifts_must_say_what_window_it_is_complete_for() {
+    // The same hole as a one-sided claim, with both sides left open: a list of transitions
+    // and no claim answers for ever, and the half of the year it is wrong about says
+    // nothing. The doc said so; now the type does.
+    let unclaimed = ZoneDto {
+        base_offset_seconds: 0,
+        covers_from: None,
+        covers_through: None,
+        transitions: vec![ZoneTransitionDto {
+            at: "2026-03-29T01:00:00Z".to_owned(),
+            offset_seconds: 3_600,
+        }],
+    };
+
+    assert!(matches!(
+        unclaimed.to_table().unwrap_err(),
+        BridgeError::ZoneClaim { ref field, .. } if field == "zone.covers_from"
+    ));
+    // A zone with nothing to be wrong about still needs no claim.
+    assert!(ZoneDto::fixed(0).to_table().is_ok());
 }
