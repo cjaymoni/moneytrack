@@ -811,13 +811,23 @@ fn an_amount_bigger_than_any_row_may_carry_is_refused_without_quoting_it() {
 
 #[test]
 fn a_question_outside_the_zone_tables_window_is_refused_rather_than_guessed() {
-    // The London table is built for 2026 and says so. Asking it about 2027 would otherwise
-    // be answered from the base offset — right half the year, wrong the other half, and
-    // silent either way.
+    // The London table is built for 2026 and says so. Reading the local day of a 2027 row
+    // would otherwise be answered from the base offset — right half the year, wrong the
+    // other half, and silent either way.
+    let wallet_2027 = account(5, 100_000);
     let next_year = evaluate_budgets(
-        vec![budget(4, 50_000, None)],
+        vec![mt_bridge::dto::BudgetDto {
+            starts_on: "2027-06-01".to_owned(),
+            ..budget(4, 50_000, None)
+        }],
         Vec::new(),
-        Vec::new(),
+        vec![transaction(
+            6,
+            &wallet_2027,
+            Direction::Out,
+            20_000,
+            "2027-06-15T09:00:00Z",
+        )],
         "2027-06-15".to_owned(),
         BalanceBasis::Confirmed,
         london(),
@@ -837,26 +847,110 @@ fn a_question_outside_the_zone_tables_window_is_refused_rather_than_guessed() {
 }
 
 #[test]
-fn a_question_inside_the_window_is_answered_normally() {
+fn a_question_inside_the_window_is_answered_from_the_table_and_not_the_base_offset() {
     let wallet = account(1, 500_000);
+    let summer = mt_bridge::dto::RecurringRuleDto {
+        starts_on: "2026-05-15".to_owned(),
+        timezone: "Europe/London".to_owned(),
+        ..recurring(2, &wallet, 120_000)
+    };
 
-    let generation = expand_recurrence(
-        recurring(2, &wallet, 120_000),
-        "2026-12-15".to_owned(),
-        NOW.to_owned(),
-        london(),
-    )
-    .unwrap();
+    let generation =
+        expand_recurrence(summer, "2026-07-15".to_owned(), NOW.to_owned(), london()).unwrap();
 
-    // Same template as the Accra tests, reckoned in a zone that shifts: November is GMT and
-    // the rows still land at local midnight.
+    // Deliberately across a transition. These land at local midnight in BST — an hour east
+    // of UTC, and the wire keeps the offset it happened at — so an implementation that
+    // ignored the table and stood on the base offset would say `00:00:00Z` and fail here.
     assert_eq!(
         generation
             .rows
             .iter()
             .map(|row| row.booked_at.as_str())
             .collect::<Vec<_>>(),
-        vec!["2026-11-15T00:00:00Z", "2026-12-15T00:00:00Z"]
+        vec![
+            "2026-05-15T00:00:00+01:00",
+            "2026-06-15T00:00:00+01:00",
+            "2026-07-15T00:00:00+01:00"
+        ]
+    );
+}
+
+#[test]
+fn a_budget_counts_a_row_against_the_local_day_the_shifting_zone_puts_it_on() {
+    let wallet = account(1, 100_000);
+    let transport = category(2, "Transport");
+    // 23:30 UTC on 30 June is half past midnight on 1 July in BST, so this row belongs to
+    // July's cap and not to June's. Standing on the base offset would put it in June.
+    let mut late_fare = transaction(3, &wallet, Direction::Out, 20_000, "2026-06-30T23:30:00Z");
+    late_fare.category_id = Some(transport.id.clone());
+    let july = mt_bridge::dto::BudgetDto {
+        starts_on: "2026-07-01".to_owned(),
+        ..budget(4, 50_000, Some(&transport))
+    };
+
+    let statuses = evaluate_budgets(
+        vec![july],
+        vec![transport],
+        vec![late_fare],
+        "2026-07-15".to_owned(),
+        BalanceBasis::Confirmed,
+        london(),
+    )
+    .unwrap();
+
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0].spent, money(20_000));
+    assert_eq!(statuses[0].period_starts_on, "2026-07-01");
+}
+
+#[test]
+fn a_budget_in_the_last_month_a_table_claims_is_still_evaluated() {
+    // The window covers the rows being counted, not the period a cap happens to span: a
+    // December budget asks the zone nothing about January, so claiming January is not its
+    // caller's job.
+    let statuses = evaluate_budgets(
+        vec![mt_bridge::dto::BudgetDto {
+            starts_on: "2026-12-01".to_owned(),
+            ..budget(4, 50_000, None)
+        }],
+        Vec::new(),
+        Vec::new(),
+        "2026-12-15".to_owned(),
+        BalanceBasis::Confirmed,
+        london(),
+    )
+    .unwrap();
+
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0].period_ends_on, "2026-12-31");
+}
+
+#[test]
+fn a_date_at_the_end_of_the_calendar_is_refused_rather_than_overflowing() {
+    // `time` panics on an ordinary addition that leaves the calendar, and a panic unwinding
+    // into Dart is the worst failure this crate has. Year 9999 arrives as an ordinary
+    // string, so it is answered with an error like any other input.
+    let wallet = account(1, 500_000);
+
+    let error = expand_recurrence(
+        recurring(2, &wallet, 120_000),
+        "9999-12-31".to_owned(),
+        NOW.to_owned(),
+        london(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, BridgeError::ZoneCoverage { .. }));
+
+    // And with no claim to check it still must not overflow on the way past.
+    assert!(
+        expand_recurrence(
+            recurring(2, &wallet, 120_000),
+            "9999-12-31".to_owned(),
+            NOW.to_owned(),
+            accra(),
+        )
+        .is_err(),
+        "a window that long is refused by the core, not by a panic"
     );
 }
 

@@ -85,8 +85,8 @@ fn transitions_out_of_order_are_sorted_rather_than_trusted() {
     // otherwise answer with the wrong offset and never say so.
     let shuffled = ZoneDto {
         base_offset_seconds: 0,
-        covers_from: Some("2026-01-01T00:00:00Z".to_owned()),
-        covers_through: Some("2026-12-31T23:59:59Z".to_owned()),
+        covers_from: Some("2025-12-30T00:00:00Z".to_owned()),
+        covers_through: Some("2027-01-02T00:00:00Z".to_owned()),
         transitions: vec![
             ZoneTransitionDto {
                 at: "2026-10-25T01:00:00Z".to_owned(),
@@ -244,17 +244,17 @@ fn a_table_that_claims_a_window_is_held_to_it() {
         zone.check_covers(
             "a question running off the end",
             datetime!(2026-12-01 00:00:00 UTC),
-            datetime!(2027-01-02 00:00:00 UTC)
+            datetime!(2027-01-03 00:00:00 UTC)
         ),
-        Err(BridgeError::ZoneCoverage { ref needed, .. }) if needed.starts_with("2027-01-02")
+        Err(BridgeError::ZoneCoverage { ref needed, .. }) if needed.starts_with("2027-01-03")
     ));
     assert!(matches!(
         zone.check_covers(
             "a question starting before the table",
-            datetime!(2025-12-30 00:00:00 UTC),
+            datetime!(2025-12-29 00:00:00 UTC),
             datetime!(2026-02-01 00:00:00 UTC)
         ),
-        Err(BridgeError::ZoneCoverage { ref needed, .. }) if needed.starts_with("2025-12-30")
+        Err(BridgeError::ZoneCoverage { ref needed, .. }) if needed.starts_with("2025-12-29")
     ));
 }
 
@@ -285,5 +285,32 @@ fn a_window_that_ends_before_it_starts_is_refused() {
     assert!(matches!(
         backwards.to_table().unwrap_err(),
         BridgeError::OutOfRange { ref field, .. } if field == "zone.covers_through"
+    ));
+}
+
+#[test]
+fn a_window_claimed_at_one_end_only_is_refused() {
+    // The hazard this type exists to close, wearing the badge of a table that passed the
+    // check: a claim that starts in January and never ends answers for ever from a
+    // transition list that stops in October.
+    let open_ended = ZoneDto {
+        base_offset_seconds: 0,
+        transitions: Vec::new(),
+        covers_from: Some("2026-01-01T00:00:00Z".to_owned()),
+        covers_through: None,
+    };
+    let open_started = ZoneDto {
+        covers_from: None,
+        covers_through: Some("2026-12-31T00:00:00Z".to_owned()),
+        ..open_ended.clone()
+    };
+
+    assert!(matches!(
+        open_ended.to_table().unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. } if field == "zone.covers_through"
+    ));
+    assert!(matches!(
+        open_started.to_table().unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. } if field == "zone.covers_from"
     ));
 }

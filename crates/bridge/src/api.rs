@@ -274,7 +274,7 @@ pub fn period_flows(
 /// reached. [`BridgeError::Rule`] is the overflow path only. Either way one bad budget
 /// stops the set rather than being skipped: a store handing out rows that cannot be
 /// trusted is not a screen to render three quarters of. [`BridgeError::ZoneCoverage`] if
-/// the zone table does not cover the periods being counted.
+/// the zone table does not cover the rows being counted.
 pub fn evaluate_budgets(
     budgets: Vec<BudgetDto>,
     categories: Vec<CategoryDto>,
@@ -289,27 +289,17 @@ pub fn evaluate_budgets(
     let on = scalar::date("on", &on)?;
     let table = zone.to_table()?;
 
-    // The instants this evaluation will ask the zone about: the day asked for, each
-    // period a budget is actually running over — `period_containing` clips to the
-    // budget's own lifetime, so this is exact rather than a guess at the widest cadence —
-    // and every row's own booked_at, whose local date decides the period it falls in.
-    let mut earliest = on.midnight().assume_utc();
-    let mut latest = earliest;
-    for budget in &budgets {
-        if let Some(period) = budget::period_containing(budget, on) {
-            earliest = earliest.min(period.starts_on.midnight().assume_utc());
-            latest = latest.max(period.ends_on.midnight().assume_utc());
-        }
+    // The only question this evaluation puts to the zone is the local date of each row's
+    // `booked_at`: `Period::contains` compares two local dates and converts nothing, and
+    // `period_bounds` — the one place a period becomes an instant — is a helper for store
+    // callers that evaluation never reaches. Those are already instants, so they carry no
+    // margin, and the period the cap covers is not part of the claim at all.
+    if let (Some(earliest), Some(latest)) = (
+        rows.iter().map(|row| row.booked_at).min(),
+        rows.iter().map(|row| row.booked_at).max(),
+    ) {
+        table.check_covers("the rows being counted", earliest, latest)?;
     }
-    for row in &rows {
-        earliest = earliest.min(row.booked_at);
-        latest = latest.max(row.booked_at);
-    }
-    table.check_covers(
-        "the budget period",
-        earliest - COVERAGE_MARGIN,
-        latest + COVERAGE_MARGIN,
-    )?;
 
     let statuses = budget::evaluate_all(&budgets, &categories, &rows, on, basis.into(), &table)
         .map_err(|reason| BridgeError::rule("budget", reason))?;
@@ -356,10 +346,20 @@ pub fn expand_recurrence(
 
     // Generation turns every local date from the template's start to the end of the window
     // into an instant at local midnight, so the table has to be right for all of it.
+    // Saturating, not checked: `time` panics on an ordinary `+` that leaves the calendar,
+    // and `through` is a caller-supplied string that may say year 9999. Saturating to
+    // `Date::MAX` only widens the window being asked for, so the question is still
+    // refused rather than quietly accepted.
     table.check_covers(
         "the generation window",
-        rule.starts_on.midnight().assume_utc() - COVERAGE_MARGIN,
-        through.midnight().assume_utc() + COVERAGE_MARGIN,
+        rule.starts_on
+            .midnight()
+            .assume_utc()
+            .saturating_sub(COVERAGE_MARGIN),
+        through
+            .midnight()
+            .assume_utc()
+            .saturating_add(COVERAGE_MARGIN),
     )?;
 
     let generation = recurrence::generate(&rule, through, now, &table, || Uuid::now_v7().into())
@@ -477,6 +477,7 @@ pub fn score_duplicates(
 /// feature that gets this wrong got it wrong by choosing one of them silently. The scope
 /// is asked at edit time and answered here; `pivot` is the instance the user has open.
 /// Soft-deleted rows are left out, because an edit should not resurrect something removed.
+/// Ids come back in the order the instances were supplied.
 ///
 /// # Errors
 /// [`BridgeError`] for a value that will not convert.

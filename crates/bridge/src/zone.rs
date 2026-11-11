@@ -47,9 +47,16 @@ pub struct ZoneDto {
     pub base_offset_seconds: i32,
     /// Every change to it.
     pub transitions: Vec<ZoneTransitionDto>,
-    /// First instant this table is known to be right for, RFC 3339. Unset makes no claim.
+    /// First instant the transition list is complete for, RFC 3339.
+    ///
+    /// A question about a local date is answered from instants up to 26 hours either side
+    /// of its UTC midnight, so claim 26 hours beyond the earliest date you will ask about.
+    /// Set both ends or neither.
     pub covers_from: Option<String>,
-    /// Last instant this table is known to be right for, RFC 3339. Unset makes no claim.
+    /// Last instant the transition list is complete for, RFC 3339.
+    ///
+    /// As [`ZoneDto::covers_from`]: claim 26 hours beyond the latest date you will ask
+    /// about, and set both ends or neither.
     pub covers_through: Option<String>,
 }
 
@@ -85,13 +92,29 @@ impl ZoneDto {
         let covers_from = scalar::optional_instant("zone.covers_from", self.covers_from.as_ref())?;
         let covers_through =
             scalar::optional_instant("zone.covers_through", self.covers_through.as_ref())?;
-        if let (Some(from), Some(through)) = (covers_from, covers_through)
-            && from > through
-        {
-            return Err(BridgeError::OutOfRange {
-                field: "zone.covers_through".to_owned(),
-                value: self.covers_through.clone().unwrap_or_default(),
-            });
+        match (covers_from, covers_through) {
+            (Some(from), Some(through)) if from > through => {
+                return Err(BridgeError::OutOfRange {
+                    field: "zone.covers_through".to_owned(),
+                    value: through.to_string(),
+                });
+            }
+            // A claim open at one end is the hazard this type exists to close, wearing the
+            // badge of a table that passed the check: a window starting in January and
+            // never ending answers for ever from a transition list that stops in October.
+            (Some(_), None) => {
+                return Err(BridgeError::OutOfRange {
+                    field: "zone.covers_through".to_owned(),
+                    value: "a window claimed at one end only".to_owned(),
+                });
+            }
+            (None, Some(_)) => {
+                return Err(BridgeError::OutOfRange {
+                    field: "zone.covers_from".to_owned(),
+                    value: "a window claimed at one end only".to_owned(),
+                });
+            }
+            _ => {}
         }
 
         Ok(ZoneTable {
@@ -126,6 +149,12 @@ pub struct ZoneTable {
 /// A local date becomes an instant at the zone's own offset, which [`UtcOffset`] allows up
 /// to just under 26 hours either way. Callers check coverage with this margin so a window
 /// that only just reaches a date is not accepted for a question about it.
+///
+/// Only a caller that turns a local *date* into an instant needs it. Reading the local date
+/// of an instant already in hand does not, which is why budget evaluation checks its rows
+/// without a margin. If [`mt_core::budget::period_bounds`] is ever published from this
+/// crate it does need one: that is the one core function that converts a period's dates
+/// into instants.
 pub const COVERAGE_MARGIN: Duration = Duration::hours(26);
 
 impl ZoneTable {
@@ -144,19 +173,21 @@ impl ZoneTable {
         from: OffsetDateTime,
         through: OffsetDateTime,
     ) -> Result<(), BridgeError> {
-        let outside = |bound: OffsetDateTime| -> Result<(), BridgeError> {
-            Err(BridgeError::ZoneCoverage {
+        let outside = if self.covers_from.is_some_and(|covered| from < covered) {
+            Some(from)
+        } else if self.covers_through.is_some_and(|covered| through > covered) {
+            Some(through)
+        } else {
+            None
+        };
+
+        match outside {
+            Some(bound) => Err(BridgeError::ZoneCoverage {
                 field: field.to_owned(),
                 needed: scalar::format_instant("zone.coverage", bound)?,
-            })
-        };
-        if self.covers_from.is_some_and(|covered| from < covered) {
-            return outside(from);
+            }),
+            None => Ok(()),
         }
-        if self.covers_through.is_some_and(|covered| through > covered) {
-            return outside(through);
-        }
-        Ok(())
     }
 }
 
