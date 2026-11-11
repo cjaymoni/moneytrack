@@ -1,6 +1,6 @@
 /// The smallest ledger that proves the Rust core is reachable from Flutter.
 ///
-/// Every number on the screen in [main] comes from `mt-core` by way of `mt-bridge`: Dart
+/// Every number on the screen in [main] comes from `mt-core` by way of `mt_bridge`: Dart
 /// builds the rows, Rust sorts them, walks them and decides when the money runs out. None
 /// of this is the app — there is no store behind it and the rows are written here by hand.
 /// It exists so that a broken bridge fails loudly at the first `flutter run` rather than

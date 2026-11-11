@@ -11,7 +11,6 @@ publish = false
 
 [workspace.dependencies]
 mt-core = { path = "crates/core" }
-mt_bridge = { path = "crates/bridge" }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 thiserror = "2.0.12"
@@ -29,6 +28,10 @@ time = { version = "0.3.41", features = ["serde", "serde-well-known", "serde-hum
 # still denied.
 unsafe_code = "deny"
 missing_docs = "warn"
+# `frb_expand` is set by flutter_rust_bridge's own macro expansion and by nothing here, so
+# the compiler is right that it never sees it defined. Declared rather than silenced, so a
+# genuine typo in a `cfg` still warns.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
 
 [workspace.lints.clippy]
 float_arithmetic = "deny"

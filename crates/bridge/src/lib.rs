@@ -39,11 +39,22 @@
 //! `mt-core` value. Letting codegen near them would produce opaque pointers — handles
 //! crossing the bridge, which is the one thing this crate exists to prevent.
 
+// `forbid` per module, not at the crate root, and not left to the workspace's `deny`.
+// Under `deny` alone a hand-written `#[allow(unsafe_code)] unsafe { .. }` compiles clean,
+// which is exactly the temptation an FFI-adjacent crate puts in front of someone. These
+// six modules are the ones people write; `frb_generated` is the one the generator writes,
+// and it is the only place unsafe is permitted at all.
+#[forbid(unsafe_code)]
 pub mod api;
+#[forbid(unsafe_code)]
 pub mod dto;
+#[forbid(unsafe_code)]
 pub mod enums;
+#[forbid(unsafe_code)]
 pub mod error;
+#[forbid(unsafe_code)]
 pub mod scalar;
+#[forbid(unsafe_code)]
 pub mod zone;
 
 /// The `flutter_rust_bridge` glue, written by the generator and edited by nobody.
@@ -53,9 +64,9 @@ pub mod zone;
 /// generator reaches is in [`api`], and the allow is attached here rather than at the
 /// crate root so a hand-written `unsafe` anywhere else still fails to compile.
 ///
-/// The clippy denials are listed one by one rather than as a group, because five of them
-/// live in the `restriction` set that `clippy::all` does not cover. Each is still denied
-/// everywhere a person writes code.
+/// The clippy denials are listed one by one rather than as a group, because all six of the
+/// workspace's live in the `restriction` set that `clippy::all` does not cover. Each is
+/// still denied everywhere a person writes code.
 #[allow(
     unsafe_code,
     missing_docs,

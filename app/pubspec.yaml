@@ -36,9 +36,13 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # The Rust core, reached through flutter_rust_bridge. `mt_bridge` is the plugin that
-  # builds `crates/bridge` for each platform; the version here must match the
-  # `flutter_rust_bridge` crate in Cargo.toml, or the generated glue and the runtime
-  # disagree about their own wire format.
+  # builds `crates/bridge` for each platform.
+  #
+  # This version must match the `flutter_rust_bridge` crate in `crates/bridge/Cargo.toml`,
+  # or the generated glue and the runtime disagree about their own wire format. Running the
+  # codegen with a newer CLI rewrites the crate pin and the generated Dart but NOT this
+  # line, so bump it by hand afterwards. The mismatch is caught at `RustLib.init()`, which
+  # the integration test calls — so it fails in CI rather than on someone's phone.
   flutter_rust_bridge: 2.13.0
   mt_bridge:
     path: rust_builder

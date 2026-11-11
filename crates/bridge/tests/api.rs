@@ -16,8 +16,8 @@ use common::{
 };
 use mt_bridge::api::{
     account_balances, categorise_candidate, compile_rules, currency_totals, evaluate_budgets,
-    expand_recurrence, instances_in_scope, parse_amount, period_flows, score_duplicates,
-    validate_transfer, walk_balance,
+    expand_recurrence, format_amount, instances_in_scope, parse_amount, period_flows,
+    score_duplicates, validate_transfer, walk_balance,
 };
 use mt_bridge::dto::MatchRulesDto;
 use mt_bridge::enums::{
@@ -25,6 +25,7 @@ use mt_bridge::enums::{
     TxStatus, VerdictBasis,
 };
 use mt_bridge::error::BridgeError;
+use mt_bridge::scalar::MoneyDto;
 use mt_bridge::zone::ZoneDto;
 
 // --------------------------------------------------------------------------- the walk ---
@@ -444,6 +445,56 @@ fn a_transfer_whose_legs_disagree_is_refused_before_it_is_written() {
     let mut balanced = transaction(5, &bank, Direction::In, 5_000, NOW);
     balanced.transfer_id = Some(uuid(0xaa));
     assert!(validate_transfer(vec![out_leg, balanced]).is_ok());
+}
+
+#[test]
+fn an_amount_renders_at_its_own_currencys_decimal_places() {
+    let cedis = MoneyDto {
+        minor_units: 125_000,
+        currency: "GHS".to_owned(),
+    };
+    let francs = MoneyDto {
+        minor_units: 125_000,
+        currency: "XOF".to_owned(),
+    };
+
+    // The same number of minor units, two currencies, two right answers. A screen dividing
+    // by a hundred in Dart would be wrong by a factor of a hundred for the second.
+    assert_eq!(format_amount(cedis).unwrap(), "1250.00");
+    assert_eq!(format_amount(francs).unwrap(), "125000");
+
+    assert_eq!(
+        format_amount(MoneyDto {
+            minor_units: -5,
+            currency: "GHS".to_owned()
+        })
+        .unwrap(),
+        "-0.05"
+    );
+    // The floor of i64, where `abs()` would overflow rather than flip the sign.
+    assert_eq!(
+        format_amount(MoneyDto {
+            minor_units: i64::MIN,
+            currency: "GHS".to_owned()
+        })
+        .unwrap(),
+        "-92233720368547758.08"
+    );
+    assert!(matches!(
+        format_amount(MoneyDto {
+            minor_units: 1,
+            currency: "cedi".to_owned()
+        })
+        .unwrap_err(),
+        BridgeError::InvalidCurrency { .. }
+    ));
+}
+
+#[test]
+fn an_amount_survives_a_round_trip_through_both_halves_of_the_boundary() {
+    let typed = parse_amount("12.50".to_owned(), "GHS".to_owned()).unwrap();
+
+    assert_eq!(format_amount(typed).unwrap(), "12.50");
 }
 
 #[test]

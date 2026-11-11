@@ -13,7 +13,7 @@ Future<void> main() async {
 /// A holding screen while the app is built.
 ///
 /// It shows the one thing worth knowing at this stage: that the rules are running. Both
-/// figures below are walked by `mt-core` through `mt-bridge`, from rows Dart wrote by
+/// figures below are walked by `mt-core` through `mt_bridge`, from rows Dart wrote by
 /// hand — there is no store yet, and no design here either. See `lib/src/wiring_check.dart`.
 class MoneytrackApp extends StatelessWidget {
   const MoneytrackApp({super.key});
@@ -29,8 +29,20 @@ class MoneytrackApp extends StatelessWidget {
 }
 
 /// Shows the sample ledger walked twice: once over what has happened, once carried forward.
-class WiringCheckPage extends StatelessWidget {
+class WiringCheckPage extends StatefulWidget {
   const WiringCheckPage({super.key});
+
+  @override
+  State<WiringCheckPage> createState() => _WiringCheckPageState();
+}
+
+class _WiringCheckPageState extends State<WiringCheckPage> {
+  /// Held rather than built in `build`, which would re-cross the bridge on every rebuild
+  /// — a theme change, a window resize — and flash the spinner each time.
+  late final Future<List<WalkDto>> _walks = Future.wait([
+    sampleHistory(),
+    sampleOutlook(),
+  ]);
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +50,7 @@ class WiringCheckPage extends StatelessWidget {
       appBar: AppBar(title: const Text('moneytrack')),
       body: Center(
         child: FutureBuilder<List<WalkDto>>(
-          future: Future.wait([sampleHistory(), sampleOutlook()]),
+          future: _walks,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return Text('The core refused: ${snapshot.error}');
@@ -68,15 +80,13 @@ class WiringCheckPage extends StatelessWidget {
   }
 }
 
-/// Minor units as a decimal string. Display only — arithmetic stays in Rust.
-String _money(MoneyDto amount) {
-  final minor = amount.minorUnits;
-  final negative = minor < 0;
-  final units = minor.abs();
-  final major = units ~/ 100;
-  final cents = (units % 100).toString().padLeft(2, '0');
-  return '${negative ? '-' : ''}${amount.currency} $major.$cents';
-}
+/// An amount with its currency code in front of it.
+///
+/// Where the decimal point goes is Rust's answer, not Dart's: the cedi has two places and
+/// the CFA franc has none, and that registry lives in the core. All this adds is the code
+/// and the space.
+String _money(MoneyDto amount) =>
+    '${amount.currency} ${formatAmount(amount: amount)}';
 
 /// What the projected walk says about running out of money.
 String _shortfall(WalkDto outlook) {

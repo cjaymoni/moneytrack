@@ -46,6 +46,19 @@ void main() {
     expect(amount.currency, 'GHS');
   });
 
+  test('where the decimal point goes is the currency\'s answer, not Dart\'s', () {
+    // Same minor units, two currencies, two right answers. Synchronous, because a list of
+    // rows should not await its own formatting.
+    expect(
+      formatAmount(amount: const MoneyDto(minorUnits: 125000, currency: 'GHS')),
+      '1250.00',
+    );
+    expect(
+      formatAmount(amount: const MoneyDto(minorUnits: 125000, currency: 'XOF')),
+      '125000',
+    );
+  });
+
   test('a refusal crosses as the error the core named, not as a crash', () async {
     // Three decimal places in a two-decimal currency.
     await expectLater(
@@ -54,7 +67,9 @@ void main() {
         isA<BridgeError_InvalidAmount>().having(
           (error) => error.reason,
           'reason',
-          isNot(contains('12.555')),
+          // Says what is wrong without quoting what was typed. Both halves matter: an
+          // empty reason would satisfy the second on its own and help nobody.
+          allOf(isNotEmpty, isNot(contains('12.555'))),
         ),
       ),
     );
@@ -88,7 +103,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Balance now: GHS 750.00'), findsOneWidget);
-    expect(find.text('After everything expected: -GHS 750.00'), findsOneWidget);
+    expect(find.text('After everything expected: GHS -750.00'), findsOneWidget);
     expect(find.text('Goes negative on 2026-11-28.'), findsOneWidget);
   });
 }

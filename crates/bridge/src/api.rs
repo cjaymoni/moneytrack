@@ -537,6 +537,24 @@ pub fn validate_transfer(legs: Vec<TransactionDto>) -> Result<(), BridgeError> {
         .map_err(|reason| BridgeError::invalid_row("transfer", reason))
 }
 
+/// Renders an amount for display: the bare number, at the currency's own decimal places.
+///
+/// The counterpart of [`parse_amount`], and here for the same reason. Where the decimal
+/// point goes is a property of the currency — two places for the cedi, none for the CFA
+/// franc — and the registry that knows it is in `mt-core`. A screen that divides by a
+/// hundred in Dart is right until the first West African row arrives, and then quietly
+/// wrong by a factor of a hundred.
+///
+/// Synchronous: it is a division and a format, and a UI building a list of rows should not
+/// have to await each one. No symbol, no grouping, no locale — those are the screen's.
+///
+/// # Errors
+/// [`BridgeError::InvalidCurrency`] for a code the registry does not know.
+#[flutter_rust_bridge::frb(sync)]
+pub fn format_amount(amount: MoneyDto) -> Result<String, BridgeError> {
+    Ok(amount.parse("amount")?.to_string())
+}
+
 /// The amount a decimal string denotes, in minor units.
 ///
 /// Entry screens take typed text, and the one place a float could still creep into this
