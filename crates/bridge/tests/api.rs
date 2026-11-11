@@ -25,6 +25,7 @@ use mt_bridge::enums::{
     TxStatus, VerdictBasis,
 };
 use mt_bridge::error::BridgeError;
+use mt_bridge::zone::ZoneDto;
 
 // --------------------------------------------------------------------------- the walk ---
 
@@ -937,7 +938,7 @@ fn a_budget_in_the_last_month_a_table_claims_is_still_evaluated() {
 }
 
 #[test]
-fn a_date_at_the_end_of_the_calendar_is_refused_rather_than_overflowing() {
+fn a_date_at_the_end_of_the_calendar_is_refused_rather_than_overflowing_the_calendar() {
     // `time` panics on an ordinary addition that leaves the calendar, and a panic unwinding
     // into Dart is the worst failure this crate has. Year 9999 arrives as an ordinary
     // string, so it is answered with an error like any other input.
@@ -980,9 +981,59 @@ fn a_window_reaching_past_the_ledgers_own_dates_generates_nothing() {
     ));
 
     // Just inside it is ordinary work.
-    let generated =
-        expand_recurrence(rule, "2199-03-31".to_owned(), NOW.to_owned(), accra()).unwrap();
+    let generated = expand_recurrence(
+        rule.clone(),
+        "2199-03-31".to_owned(),
+        NOW.to_owned(),
+        accra(),
+    )
+    .unwrap();
     assert_eq!(generated.rows.len(), 3);
+
+    // The edge is where the bound says it is: a row for 1 January 2200 is one the ledger
+    // would refuse, so the window that would produce it is refused first.
+    assert!(matches!(
+        expand_recurrence(rule, "2200-01-01".to_owned(), NOW.to_owned(), accra()).unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. } if field == "through"
+    ));
+}
+
+#[test]
+fn the_ledger_bound_is_read_in_the_rules_own_zone_and_not_in_utc() {
+    // A generated row is booked at local midnight, which is hours away from its date's UTC
+    // midnight. Comparing dates to dates threw that away and let the boundary day through
+    // in both directions — invisibly, because every other test here uses a zone at UTC.
+    let wallet = account(1, 500_000);
+    let monthly_first = |starts_on: &str| mt_bridge::dto::RecurringRuleDto {
+        starts_on: starts_on.to_owned(),
+        by_month_day: Some(1),
+        ..recurring(2, &wallet, 120_000)
+    };
+
+    // Five hours west: local midnight on 1 January 2200 is 05:00 UTC, past the last
+    // instant a row may carry.
+    let west = expand_recurrence(
+        monthly_first("2199-12-01"),
+        "2200-01-01".to_owned(),
+        NOW.to_owned(),
+        ZoneDto::fixed(-5 * 3_600),
+    )
+    .unwrap_err();
+    assert!(matches!(west, BridgeError::OutOfRange { ref field, .. } if field == "through"));
+
+    // An hour east: local midnight on 1 January 1900 is 23:00 UTC the day before, which is
+    // earlier than the first instant a row may carry.
+    let east = expand_recurrence(
+        monthly_first("1900-01-01"),
+        "1900-03-01".to_owned(),
+        NOW.to_owned(),
+        ZoneDto::fixed(3_600),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(east, BridgeError::OutOfRange { ref field, .. } if field == "rule.starts_on"),
+        "the refusal must name the field at fault, got {east:?}"
+    );
 }
 
 // ------------------------------------------------------------------ editing a recurrence ---

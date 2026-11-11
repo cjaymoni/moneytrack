@@ -79,8 +79,9 @@ impl ZoneDto {
     /// Reads the table into something the core's rules can ask questions of.
     ///
     /// # Errors
-    /// [`BridgeError::OutOfRange`] for an offset beyond ±25:59:59, or
-    /// [`BridgeError::InvalidTimestamp`] for a transition instant that does not parse.
+    /// [`BridgeError::OutOfRange`] for an offset beyond ±25:59:59,
+    /// [`BridgeError::InvalidTimestamp`] for a transition instant that does not parse, or
+    /// [`BridgeError::ZoneClaim`] for a coverage window that does not hold together.
     pub fn to_table(&self) -> Result<ZoneTable, BridgeError> {
         let mut transitions = Vec::with_capacity(self.transitions.len());
         for transition in &self.transitions {
@@ -146,6 +147,10 @@ impl ZoneDto {
 }
 
 /// Reads an offset in seconds east of UTC.
+///
+/// `UtcOffset` allows ±25:59:59 while RFC 3339 can only write ±23:59, so an offset between
+/// the two is accepted here and then fails when a generated row is rendered back. No zone
+/// on earth is out there, and narrowing it would be a guess at what a caller meant.
 fn offset(field: &str, seconds: i32) -> Result<UtcOffset, BridgeError> {
     UtcOffset::from_whole_seconds(seconds).map_err(|_| BridgeError::OutOfRange {
         field: field.to_owned(),

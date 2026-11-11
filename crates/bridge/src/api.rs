@@ -273,8 +273,9 @@ pub fn period_flows(
 /// reversed date range is caught there, by the row's own validation, before evaluation is
 /// reached. [`BridgeError::Rule`] is the overflow path only. Either way one bad budget
 /// stops the set rather than being skipped: a store handing out rows that cannot be
-/// trusted is not a screen to render three quarters of. [`BridgeError::ZoneCoverage`] if
-/// the zone table does not cover the rows being counted.
+/// trusted is not a screen to render three quarters of. [`BridgeError::ZoneClaim`] or
+/// [`BridgeError::ZoneCoverage`] if the zone table does not hold together or does not
+/// cover the rows being counted.
 pub fn evaluate_budgets(
     budgets: Vec<BudgetDto>,
     categories: Vec<CategoryDto>,
@@ -329,11 +330,12 @@ pub fn evaluate_budgets(
 /// machine — `now` is passed in, and the zone comes from the caller's table.
 ///
 /// # Errors
-/// [`BridgeError`] for a value that will not convert, [`BridgeError::OutOfRange`] if the
-/// window reaches outside the dates a row may be booked at, [`BridgeError::ZoneCoverage`]
-/// if the zone table does not cover the window being generated, or [`BridgeError::Rule`]
-/// if the template does not validate or the window holds more occurrences than the core
-/// will generate in one call.
+/// [`BridgeError`] for a value that will not convert, [`BridgeError::OutOfRange`] naming
+/// `through` or `rule.starts_on` if the window reaches outside the instants a row may be
+/// booked at, [`BridgeError::ZoneClaim`] or [`BridgeError::ZoneCoverage`] if the zone
+/// table does not hold together or does not cover the window being generated, or
+/// [`BridgeError::Rule`] if the template does not validate or the window holds more
+/// occurrences than the core will generate in one call.
 pub fn expand_recurrence(
     rule: RecurringRuleDto,
     through: String,
@@ -344,36 +346,46 @@ pub fn expand_recurrence(
     let through = scalar::date("through", &through)?;
     let now = scalar::instant("now", &now)?;
 
+    // The instants this window can produce, not the dates it is written in. A generated
+    // row is booked at local midnight, which is up to 26 hours either side of its date's
+    // UTC midnight, so bounding the dates would let the boundary day through in both
+    // directions for every zone that is not UTC. Saturating because `time` panics rather
+    // than wraps, and clamping only widens what is checked.
+    let earliest = rule
+        .starts_on
+        .midnight()
+        .assume_utc()
+        .saturating_sub(COVERAGE_MARGIN);
+    let latest = through
+        .midnight()
+        .assume_utc()
+        .saturating_add(COVERAGE_MARGIN);
+
     // Generated rows are written, and a row the ledger will not accept is not worth
     // generating: without this, a template starting in 2199 generated through 2250 comes
     // back Ok with six hundred rows that `transactions_to_core` then refuses one by one.
     // The core bounds a row's `booked_at`; it does not bound the window asked for, and the
-    // boundary is where a caller's range is checked.
-    if through > LATEST_BOOKED_AT.date() || rule.starts_on < EARLIEST_BOOKED_AT.date() {
+    // boundary is where a caller's range is checked. The cost is a couple of days at each
+    // extreme of 1900 and 2200, which no real template wants — and note the bound is on
+    // the template, not on the rows this call would emit, so a rule starting in 1900 stays
+    // refused in an eastward zone even once `generated_through` has moved well past it.
+    if latest > LATEST_BOOKED_AT {
         return Err(BridgeError::OutOfRange {
             field: "through".to_owned(),
             value: scalar::format_date("through", through)?,
         });
     }
+    if earliest < EARLIEST_BOOKED_AT {
+        return Err(BridgeError::OutOfRange {
+            field: "rule.starts_on".to_owned(),
+            value: scalar::format_date("rule.starts_on", rule.starts_on)?,
+        });
+    }
     let table = zone.to_table()?;
 
-    // Generation turns every local date from the template's start to the end of the window
-    // into an instant at local midnight, so the table has to be right for all of it.
-    // Saturating, not checked: `time` panics on an ordinary `+` that leaves the calendar.
-    // The ledger bound above keeps `through` inside 2200 so this cannot saturate today,
-    // and it stays saturating because the alternative is a panic if that ever changes —
-    // clamping only widens the window asked for, so a refusal stays a refusal.
-    table.check_covers(
-        "the generation window",
-        rule.starts_on
-            .midnight()
-            .assume_utc()
-            .saturating_sub(COVERAGE_MARGIN),
-        through
-            .midnight()
-            .assume_utc()
-            .saturating_add(COVERAGE_MARGIN),
-    )?;
+    // The same window the ledger bound was taken from: generation turns every local date
+    // in it into an instant at local midnight, so the table has to be right for all of it.
+    table.check_covers("the generation window", earliest, latest)?;
 
     let generation = recurrence::generate(&rule, through, now, &table, || Uuid::now_v7().into())
         .map_err(|reason| BridgeError::rule("recurrence", reason))?;
