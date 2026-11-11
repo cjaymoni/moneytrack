@@ -118,20 +118,39 @@ What stays in Dart, deliberately:
 - **Sync transport.** HTTP, retries, auth tokens, background scheduling.
 - **Platform plugins.** The Kotlin SMS receiver, camera, file picking.
 
-What crosses, roughly:
+What crosses, as built:
 
 ```rust
 // crates/bridge/src/api.rs — the entire public surface, kept small on purpose.
 
-pub fn parse_message(raw: &str, sender: &str, pack: &RulePack) -> Option<Candidate>;
-pub fn categorise(input: CategoriseInput, pack: &RulePack) -> CategoryVerdict;
-pub fn walk_balance(opening: Money, txs: Vec<Tx>, until: DateTime<Utc>) -> Vec<BalancePoint>;
-pub fn expand_recurrence(rule: RecurringRule, from: Date, to: Date) -> Vec<Tx>;
-pub fn score_duplicates(incoming: Vec<Candidate>, existing: Vec<Tx>) -> Vec<DuplicatePair>;
-pub fn evaluate_budgets(budgets: Vec<Budget>, txs: Vec<Tx>, period: Period) -> Vec<BudgetState>;
+pub fn walk_balance(account: AccountDto, txs: Vec<TransactionDto>, basis: BalanceBasis)
+    -> Result<WalkDto, BridgeError>;
+pub fn account_balances(..) -> Result<Vec<AccountBalanceDto>, BridgeError>;
+pub fn currency_totals(..) -> Result<Vec<MoneyDto>, BridgeError>;
+pub fn period_flows(..) -> Result<FlowsDto, BridgeError>;
+pub fn evaluate_budgets(.., on: String, basis: BalanceBasis, zone: ZoneDto)
+    -> Result<Vec<BudgetStatusDto>, BridgeError>;
+pub fn expand_recurrence(rule: RecurringRuleDto, through: String, now: String, zone: ZoneDto)
+    -> Result<GenerationDto, BridgeError>;
+pub fn categorise_candidate(..) -> Result<CategorisationDto, BridgeError>;
+pub fn score_duplicates(..) -> Result<Vec<DuplicateReportDto>, BridgeError>;
+pub fn compile_rules(..) -> Result<(), BridgeError>;      // refuse a bad pattern at save time
+pub fn validate_transfer(..) -> Result<(), BridgeError>;  // refuse legs that disagree
+pub fn parse_amount(input: String, currency: String) -> Result<MoneyDto, BridgeError>;
 ```
 
-Note what is absent: no `save`, no `fetch`, no `sync`. Those are Dart's.
+Four differences from the sketch this section used to carry, each one the design meeting
+reality. `parse_message` is absent because the parsers are phase 2 and there is nothing
+behind it yet. Every function returns a `Result`: the input is a row read out of SQLite by a
+client that may be a release ahead, so the boundary validates and names the field rather than
+computing a plausible wrong number. Ids, instants and dates cross as text in the spellings
+the sync wire already commits to, and money crosses as minor units plus a code — never as a
+decimal string, never as a double. And the zone crosses as a table of offsets the platform
+supplies, because the core refuses to carry tzdata and the handset already has it.
+
+Note what is absent: no `save`, no `fetch`, no `sync`. Those are Dart's. The clock is Dart's
+too — `now` is an argument — with one exception, `expand_recurrence`, which mints a UUIDv7
+per row because a row needs an id before it can be written.
 
 ---
 

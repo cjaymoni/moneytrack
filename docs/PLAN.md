@@ -1,7 +1,9 @@
 # Personal income & spending tracker — plan
 
 Drafted 2026-11-10, revised the same day after reading `algirdasc/expensave`.
-Status: phase 0 is built and tested in `crates/core`; the rest is still for discussion.
+Status: phase 0 is built and tested in `crates/core`, and the bridge surface it is reached
+through is built and tested in `crates/bridge`. Phase 1 — the Flutter app — is next; the
+rest is still for discussion.
 
 ## What it has to do
 
