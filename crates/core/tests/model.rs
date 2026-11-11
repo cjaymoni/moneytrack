@@ -1,5 +1,9 @@
 //! Validation and sign behaviour of the row types, and the text spellings the schema stores.
 
+// Sealed like the library it tests: an integration test is its own crate root, and the
+// workspace only denies unsafe, which an `allow` in this file would switch off.
+#![forbid(unsafe_code)]
+
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

@@ -39,7 +39,7 @@ class WiringCheckPage extends StatefulWidget {
 class _WiringCheckPageState extends State<WiringCheckPage> {
   /// Held rather than built in `build`, which would re-cross the bridge on every rebuild
   /// — a theme change, a window resize — and flash the spinner each time.
-  late final Future<_Figures> _figures = _readLedger();
+  late final Future<_Figures> _figures = _renderLedger();
 
   @override
   Widget build(BuildContext context) {
@@ -95,7 +95,7 @@ class _Figures {
   final String shortfall;
 }
 
-Future<_Figures> _readLedger() async {
+Future<_Figures> _renderLedger() async {
   final walks = await Future.wait([sampleHistory(), sampleOutlook()]);
   final history = walks[0];
   final outlook = walks[1];

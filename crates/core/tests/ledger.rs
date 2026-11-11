@@ -1,5 +1,9 @@
 //! The balance walk: ordering, what counts, and what it refuses to guess at.
 
+// Sealed like the library it tests: an integration test is its own crate root, and the
+// workspace only denies unsafe, which an `allow` in this file would switch off.
+#![forbid(unsafe_code)]
+
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 
 mod common;

@@ -97,15 +97,16 @@ macro_rules! currency_registry {
             }
         }
 
-        // Every registry entry must have an exponent `scale` knows how to turn into a
-        // factor. Adding a four-decimal currency — CLF is a real one — without extending
-        // `scale` would otherwise scale it by a hundred and render it silently wrong,
-        // which is the exact bug the exponent exists to prevent. This fails the build
-        // instead.
+        // The one bound on an exponent, checked where an entry enters rather than where it
+        // is used: 10^19 leaves `i64`, so `Currency::scale` would overflow. Eighteen is
+        // far past any real currency — three decimal places is the most anyone uses — and
+        // the point is that the limit is stated once, at the registry, instead of being
+        // implied by a list of match arms somewhere else that can silently fall out of
+        // step with it.
         $(
             const _: () = assert!(
-                $exponent <= 3,
-                concat!("currency ", $name, " has an exponent `Currency::scale` does not handle"),
+                $exponent <= 18,
+                concat!("currency ", $name, " has an exponent that overflows `Currency::scale`"),
             );
         )*
     };
@@ -168,16 +169,17 @@ impl Currency {
     /// Minor units in one major unit: 100 for GHS, 1 for XOF.
     #[must_use]
     pub const fn scale(self) -> i64 {
-        // 10^exponent, for the exponents the registry is allowed to carry. The arm below
-        // is unreachable by construction: a const assertion beside the registry refuses
-        // any entry with an exponent this match does not list.
-        match self.exponent() {
-            0 => 1,
-            1 => 10,
-            2 => 100,
-            3 => 1_000,
-            _ => 100,
+        // Computed rather than tabulated. A match arm per exponent was a second list that
+        // had to agree with the registry and nothing made it: deleting an arm would have
+        // fallen through to a plausible wrong factor instead of failing. The exponent is
+        // bounded where it enters, beside the registry, so this cannot overflow.
+        let mut factor: i64 = 1;
+        let mut places = self.exponent();
+        while places > 0 {
+            factor *= 10;
+            places -= 1;
         }
+        factor
     }
 }
 

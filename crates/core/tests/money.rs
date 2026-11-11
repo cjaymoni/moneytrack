@@ -1,5 +1,9 @@
 //! Behaviour of `Money` and `Currency`: construction, parsing, checked arithmetic, display.
 
+// Sealed like the library it tests: an integration test is its own crate root, and the
+// workspace only denies unsafe, which an `allow` in this file would switch off.
+#![forbid(unsafe_code)]
+
 #![allow(clippy::unwrap_used, clippy::panic, clippy::float_arithmetic)]
 
 use mt_core::money::{Currency, Money, MoneyError, ParseRejection};
