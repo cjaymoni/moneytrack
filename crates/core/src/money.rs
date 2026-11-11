@@ -96,6 +96,18 @@ macro_rules! currency_registry {
                 }
             }
         }
+
+        // Every registry entry must have an exponent `scale` knows how to turn into a
+        // factor. Adding a four-decimal currency — CLF is a real one — without extending
+        // `scale` would otherwise scale it by a hundred and render it silently wrong,
+        // which is the exact bug the exponent exists to prevent. This fails the build
+        // instead.
+        $(
+            const _: () = assert!(
+                $exponent <= 3,
+                concat!("currency ", $name, " has an exponent `Currency::scale` does not handle"),
+            );
+        )*
     };
 }
 
@@ -156,7 +168,9 @@ impl Currency {
     /// Minor units in one major unit: 100 for GHS, 1 for XOF.
     #[must_use]
     pub const fn scale(self) -> i64 {
-        // 10^exponent for the exponents the registry actually uses.
+        // 10^exponent, for the exponents the registry is allowed to carry. The arm below
+        // is unreachable by construction: a const assertion beside the registry refuses
+        // any entry with an exponent this match does not list.
         match self.exponent() {
             0 => 1,
             1 => 10,

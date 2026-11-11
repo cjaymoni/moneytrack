@@ -6,6 +6,9 @@
 //! generated row carries an id Dart can store, and that a refusal arrives as an error rather
 //! than as a plausible wrong number.
 
+// Sealed like the library's own modules: the workspace only denies unsafe, and a `deny`
+// can be switched off by an `allow` in the file that wants it.
+#![forbid(unsafe_code)]
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 
 mod common;
@@ -463,23 +466,10 @@ fn an_amount_renders_at_its_own_currencys_decimal_places() {
     assert_eq!(format_amount(cedis).unwrap(), "1250.00");
     assert_eq!(format_amount(francs).unwrap(), "125000");
 
-    assert_eq!(
-        format_amount(MoneyDto {
-            minor_units: -5,
-            currency: "GHS".to_owned()
-        })
-        .unwrap(),
-        "-0.05"
-    );
-    // The floor of i64, where `abs()` would overflow rather than flip the sign.
-    assert_eq!(
-        format_amount(MoneyDto {
-            minor_units: i64::MIN,
-            currency: "GHS".to_owned()
-        })
-        .unwrap(),
-        "-92233720368547758.08"
-    );
+    // How a negative, or the floor of i64 where `abs()` would overflow, is rendered is the
+    // core's own question and `crates/core/tests/money.rs` asks it. What belongs here is
+    // that the boundary delegates rather than deciding, and what it does with a code the
+    // registry does not know.
     assert!(matches!(
         format_amount(MoneyDto {
             minor_units: 1,

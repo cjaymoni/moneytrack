@@ -5,6 +5,9 @@
 //! instant a local date begins reads back as that same local date — and that it survives the
 //! two days a year a shifting zone makes it awkward.
 
+// Sealed like the library's own modules: the workspace only denies unsafe, and a `deny`
+// can be switched off by an `allow` in the file that wants it.
+#![forbid(unsafe_code)]
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

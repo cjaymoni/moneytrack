@@ -26,8 +26,7 @@
 //!
 //! ## The codegen contract
 //!
-//! The `flutter_rust_bridge` annotations are not here yet: the generated glue lands when the
-//! Flutter app does. What is settled is which part of this crate codegen reads.
+//! What is settled is which part of this crate codegen reads.
 //!
 //! **`api.rs` is the input, and the DTO and enum types it names come with it.** Those
 //! signatures hold the shape codegen accepts — no lifetimes, no generics, no borrows, and
@@ -61,8 +60,12 @@ pub mod zone;
 ///
 /// This is the one module in the project that uses `unsafe`, because an FFI boundary is
 /// unsafe by construction: it hands Dart raw pointers to values Rust owns. Everything the
-/// generator reaches is in [`api`], and the allow is attached here rather than at the
-/// crate root so a hand-written `unsafe` anywhere else still fails to compile.
+/// generator reaches is in [`api`].
+///
+/// The allow is attached here rather than at the crate root, which is what lets the six
+/// modules above forbid unsafe outright and the test crates forbid it at their own roots.
+/// What is left on plain `deny` is this file — a crate-root `forbid` would conflict with
+/// the allow below — and nothing else.
 ///
 /// The clippy denials are listed one by one rather than as a group, because all six of the
 /// workspace's live in the `restriction` set that `clippy::all` does not cover. Each is

@@ -166,10 +166,12 @@ property the whole boundary was shaped around. The Rust doc comments come throug
 Dart side, so the rule about what `raw_text` may never do is readable from Flutter.
 
 One cost, paid knowingly. The generated glue is FFI and uses `unsafe`, and `forbid` cannot be
-switched off by an inner `allow`. So the workspace denies unsafe rather than forbidding it,
-`mt-core` forbids it in its own source where the guarantee is absolute, and the single
-generated module in `mt_bridge` carries the allow. Hand-written `unsafe` anywhere else still
-fails to compile.
+switched off by an inner `allow` — so a crate holding that glue cannot forbid unsafe at its
+root. The workspace therefore denies rather than forbids, and `forbid` is applied one level
+in, where it still bites: `mt-core` forbids it for the whole crate, `mt_bridge` forbids it on
+each of its six hand-written modules and on each of its test crates, and the generated module
+is the single `allow`. What stays on `deny` is the residue — crate roots, and anything added
+later that forgets to seal itself — where an `allow` can still override it.
 
 ---
 

@@ -39,24 +39,21 @@ class WiringCheckPage extends StatefulWidget {
 class _WiringCheckPageState extends State<WiringCheckPage> {
   /// Held rather than built in `build`, which would re-cross the bridge on every rebuild
   /// — a theme change, a window resize — and flash the spinner each time.
-  late final Future<List<WalkDto>> _walks = Future.wait([
-    sampleHistory(),
-    sampleOutlook(),
-  ]);
+  late final Future<_Figures> _figures = _readLedger();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('moneytrack')),
       body: Center(
-        child: FutureBuilder<List<WalkDto>>(
-          future: _walks,
+        child: FutureBuilder<_Figures>(
+          future: _figures,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return Text('The core refused: ${snapshot.error}');
             }
-            final walks = snapshot.data;
-            if (walks == null) {
+            final figures = snapshot.data;
+            if (figures == null) {
               return const CircularProgressIndicator();
             }
             return Padding(
@@ -65,11 +62,11 @@ class _WiringCheckPageState extends State<WiringCheckPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Balance now: ${_money(walks[0].closing)}'),
+                  Text('Balance now: ${figures.now}'),
                   const SizedBox(height: 8),
-                  Text('After everything expected: ${_money(walks[1].closing)}'),
+                  Text('After everything expected: ${figures.projected}'),
                   const SizedBox(height: 8),
-                  Text(_shortfall(walks[1])),
+                  Text(figures.shortfall),
                 ],
               ),
             );
@@ -78,6 +75,35 @@ class _WiringCheckPageState extends State<WiringCheckPage> {
       ),
     );
   }
+}
+
+/// Everything the screen shows, already rendered.
+///
+/// Formatting happens here rather than in `build` because it can refuse — an unknown
+/// currency code throws — and a refusal belongs in the error branch beside the walk's own,
+/// not in a framework error screen. Nothing on this path can produce one today; rows from
+/// a store will.
+class _Figures {
+  const _Figures({
+    required this.now,
+    required this.projected,
+    required this.shortfall,
+  });
+
+  final String now;
+  final String projected;
+  final String shortfall;
+}
+
+Future<_Figures> _readLedger() async {
+  final walks = await Future.wait([sampleHistory(), sampleOutlook()]);
+  final history = walks[0];
+  final outlook = walks[1];
+  return _Figures(
+    now: _money(history.closing),
+    projected: _money(outlook.closing),
+    shortfall: _shortfall(outlook),
+  );
 }
 
 /// An amount with its currency code in front of it.

@@ -5,6 +5,9 @@
 //! bridge does with input that is wrong — which is to name the field and stop, never to drop
 //! the row and carry on with a balance that is quietly short.
 
+// Sealed like the library's own modules: the workspace only denies unsafe, and a `deny`
+// can be switched off by an `allow` in the file that wants it.
+#![forbid(unsafe_code)]
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

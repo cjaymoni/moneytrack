@@ -21,16 +21,22 @@ regex = { version = "1.13.1", default-features = false, features = ["std", "perf
 time = { version = "0.3.41", features = ["serde", "serde-well-known", "serde-human-readable", "macros", "formatting", "parsing"] }
 
 [workspace.lints.rust]
-# `deny` here rather than `forbid`, and the difference is deliberate. `mt-core` forbids
-# unsafe in its own source, where the guarantee is worth stating absolutely. `mt-bridge`
-# cannot: it holds the `flutter_rust_bridge` glue, which is FFI and unsafe by nature, so
-# that one generated module carries an `allow` and every line anyone writes by hand is
-# still denied.
+# `deny` here rather than `forbid`, and the difference is deliberate. A crate that holds
+# the `flutter_rust_bridge` glue cannot forbid unsafe at its root, because FFI is unsafe by
+# nature and `forbid` cannot be switched off for the generated module.
+#
+# So `forbid` is applied one level in, where it still means something: `mt-core` forbids it
+# for the whole crate, `mt_bridge` forbids it on each hand-written module and on each test
+# crate, and the generated module is the single `allow`. What this line governs is the
+# residue — crate roots and anything added later — where an `allow` can still override it.
+# A new module that matters should carry its own `forbid`.
 unsafe_code = "deny"
 missing_docs = "warn"
 # `frb_expand` is set by flutter_rust_bridge's own macro expansion and by nothing here, so
 # the compiler is right that it never sees it defined. Declared rather than silenced, so a
-# genuine typo in a `cfg` still warns.
+# genuine typo in a `cfg` still warns. Workspace-wide although only the bridge needs it: a
+# crate-local `[lints]` table replaces the inherited set rather than adding to it, and
+# restating all eight denials to scope one `check-cfg` is the worse trade.
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
 
 [workspace.lints.clippy]
