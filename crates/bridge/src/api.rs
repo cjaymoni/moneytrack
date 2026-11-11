@@ -12,12 +12,11 @@
 use mt_core::model::MAX_AMOUNT_MINOR;
 use mt_core::money::{Currency, Money, MoneyError};
 use mt_core::{budget, categorise, dedup, ledger, recurrence};
-use time::Duration;
 use uuid::Uuid;
 
 use crate::dto::{
-    AccountDto, BudgetDto, CandidateDto, CategoryDto, CategoryRuleDto, RecurringRuleDto,
-    TransactionDto, batch, transactions_to_core,
+    AccountDto, BudgetDto, CandidateDto, CategoryDto, CategoryRuleDto, MatchRulesDto,
+    RecurringRuleDto, TransactionDto, batch, transactions_to_core,
 };
 use crate::enums::{BalanceBasis, BudgetLevel, DuplicateSignal};
 use crate::error::BridgeError;
@@ -160,48 +159,6 @@ pub struct DuplicateReportDto {
     pub suspects: Vec<SuspectDto>,
 }
 
-/// The thresholds duplicate matching uses. Absent means the core's defaults.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MatchRulesDto {
-    /// Outside this many seconds, two rows are never the same event.
-    pub window_seconds: i64,
-    /// Inside this many seconds, they are close enough to score for it.
-    pub close_window_seconds: i64,
-    /// Suspicions scoring below this many basis points are not reported.
-    pub report_at_or_above_bps: u16,
-}
-
-impl MatchRulesDto {
-    /// Checks the thresholds and converts them.
-    ///
-    /// Validated like every other value entering this crate, and for the same reason. A
-    /// negative window, or a close window wider than the window it sits inside, does not
-    /// crash anything — it quietly reports fewer duplicates, which is the dropped row this
-    /// crate is organised against wearing a different hat.
-    ///
-    /// # Errors
-    /// [`BridgeError::OutOfRange`] naming the threshold at fault.
-    pub fn to_core(&self) -> Result<dedup::MatchRules, BridgeError> {
-        if self.window_seconds < 0 {
-            return Err(BridgeError::OutOfRange {
-                field: "match_rules.window_seconds".to_owned(),
-                value: self.window_seconds.to_string(),
-            });
-        }
-        if self.close_window_seconds < 0 || self.close_window_seconds > self.window_seconds {
-            return Err(BridgeError::OutOfRange {
-                field: "match_rules.close_window_seconds".to_owned(),
-                value: self.close_window_seconds.to_string(),
-            });
-        }
-        Ok(dedup::MatchRules {
-            window: Duration::seconds(self.window_seconds),
-            close_window: Duration::seconds(self.close_window_seconds),
-            report_at_or_above: self.report_at_or_above_bps,
-        })
-    }
-}
-
 /// Walks one account's rows and returns the running balance after each.
 ///
 /// History and forecast are the same call: a future-dated pending row is a row with a later
@@ -325,9 +282,11 @@ pub fn period_flows(
 /// started yet has no period to count.
 ///
 /// # Errors
-/// [`BridgeError`] for a row that will not convert, or [`BridgeError::Rule`] if a budget
-/// cannot be evaluated at all. One bad budget stops the set: a cap of zero or a reversed
-/// date range means the store is handing out rows that cannot be trusted.
+/// [`BridgeError::InvalidRow`] for a budget that will not convert — a cap of zero or a
+/// reversed date range is caught there, by the row's own validation, before evaluation is
+/// reached. [`BridgeError::Rule`] is the overflow path only. Either way one bad budget
+/// stops the set rather than being skipped: a store handing out rows that cannot be
+/// trusted is not a screen to render three quarters of.
 pub fn evaluate_budgets(
     budgets: Vec<BudgetDto>,
     categories: Vec<CategoryDto>,
@@ -514,29 +473,31 @@ pub fn validate_transfer(legs: Vec<TransactionDto>) -> Result<(), BridgeError> {
 /// has.
 ///
 /// # Errors
-/// [`BridgeError::InvalidCurrency`] for an unusable code, or [`BridgeError::OutOfRange`]
+/// [`BridgeError::InvalidCurrency`] for an unusable code, or [`BridgeError::InvalidAmount`]
 /// saying why the text is not an amount. The rejection never quotes what was typed: an
 /// amount is someone's salary or rent, and an error string ends up in a crash report.
 pub fn parse_amount(input: String, currency: String) -> Result<MoneyDto, BridgeError> {
     let currency = scalar::currency("currency", &currency)?;
-    let rejected = |reason: &dyn core::fmt::Display| BridgeError::OutOfRange {
+    let refused = |reason: &dyn core::fmt::Display| BridgeError::InvalidAmount {
         field: "amount".to_owned(),
-        value: reason.to_string(),
+        reason: reason.to_string(),
     };
 
     let amount = Money::parse(&input, currency).map_err(|error| match error {
         // `MoneyError::Parse`'s own message quotes the input. The rejection inside it does
         // not, and it is the part that says what to fix.
-        MoneyError::Parse { reason, .. } => rejected(&reason),
-        other => rejected(&other),
+        MoneyError::Parse { reason, .. } => refused(&reason),
+        // Defensive: `Money::parse` funnels every failure into `Parse`, and the code was
+        // validated above, so nothing reaches here. It carries currency codes, not input.
+        other => refused(&other),
     })?;
 
     // A row may not carry more than this, so refusing it at the keyboard is cheaper than
     // refusing it at save time with the entry screen already dismissed.
     if amount.minor().unsigned_abs() > MAX_AMOUNT_MINOR.unsigned_abs() {
-        return Err(BridgeError::OutOfRange {
+        return Err(BridgeError::InvalidAmount {
             field: "amount".to_owned(),
-            value: "larger than any row may carry".to_owned(),
+            reason: "larger than any row may carry".to_owned(),
         });
     }
     Ok(amount.into())

@@ -15,10 +15,11 @@ use common::{
     uuid,
 };
 use mt_bridge::api::{
-    MatchRulesDto, VerdictBasis, account_balances, categorise_candidate, compile_rules,
-    currency_totals, evaluate_budgets, expand_recurrence, parse_amount, period_flows,
-    score_duplicates, validate_transfer, walk_balance,
+    VerdictBasis, account_balances, categorise_candidate, compile_rules, currency_totals,
+    evaluate_budgets, expand_recurrence, parse_amount, period_flows, score_duplicates,
+    validate_transfer, walk_balance,
 };
+use mt_bridge::dto::MatchRulesDto;
 use mt_bridge::enums::{
     BalanceBasis, BudgetLevel, Direction, DuplicateSignal, RecurrenceFreq, TxStatus,
 };
@@ -502,9 +503,11 @@ fn a_row_whose_account_was_not_supplied_is_an_error_not_a_missing_balance() {
 }
 
 #[test]
-fn a_budget_that_cannot_be_evaluated_stops_the_set() {
-    // A cap of zero means the store is handing out rows that cannot be trusted. Showing the
-    // other budgets as if nothing were wrong would be worse than showing none.
+fn one_unusable_budget_stops_the_set_rather_than_being_skipped() {
+    // A cap of zero is caught by the row's own validation, before evaluation is reached —
+    // so this is the conversion refusing, not the rule. Either way the good budget beside
+    // it does not render: a store handing out rows that cannot be trusted is not a screen
+    // to show three quarters of.
     let unusable = mt_bridge::dto::BudgetDto {
         cap: money(0),
         ..budget(4, 0, None)
@@ -579,9 +582,23 @@ fn thresholds_that_do_not_make_sense_are_refused_rather_than_quietly_narrowing_t
         score_duplicates(Vec::new(), Vec::new(), Some(negative)).unwrap_err(),
         BridgeError::OutOfRange { ref field, .. } if field == "match_rules.window_seconds"
     ));
+    let unreachable_threshold = MatchRulesDto {
+        window_seconds: 3_600,
+        close_window_seconds: 60,
+        report_at_or_above_bps: 10_001,
+    };
+
     assert!(matches!(
         score_duplicates(Vec::new(), Vec::new(), Some(inverted)).unwrap_err(),
         BridgeError::OutOfRange { ref field, .. } if field == "match_rules.close_window_seconds"
+    ));
+    // Basis points stop at 10_000 across the project, and a threshold above the ceiling
+    // could never be met by anything. 10_000 itself is left usable: scored suspects clamp
+    // one below it, so it reads as "only a match on the institution's own reference".
+    assert!(matches!(
+        score_duplicates(Vec::new(), Vec::new(), Some(unreachable_threshold)).unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. }
+            if field == "match_rules.report_at_or_above_bps"
     ));
 }
 
@@ -694,20 +711,36 @@ fn a_shared_reference_from_the_bank_is_certain_and_everything_else_is_not() {
     same_reference.external_id = existing.external_id.clone();
     let mut merely_alike = candidate(12_000, NOW);
     merely_alike.account_id = Some(wallet.id.clone());
+    // A second row both candidates resemble, so the counts below say something.
+    let mut lookalike = transaction(3, &wallet, Direction::Out, 12_000, NOW);
+    lookalike.counterparty = Some("Melcom".to_owned());
 
-    let reports =
-        score_duplicates(vec![same_reference, merely_alike], vec![existing], None).unwrap();
+    let reports = score_duplicates(
+        vec![same_reference, merely_alike],
+        vec![existing, lookalike],
+        None,
+    )
+    .unwrap();
 
     assert!(reports[0].suspects[0].is_certain);
+    assert_eq!(reports[0].suspects[0].transaction_id, uuid(2));
     assert!(
         reports[0].suspects[0]
             .signals
             .contains(&DuplicateSignal::SameExternalId)
     );
-    // Even this licenses a pre-ticked box, never a silent merge — so it is still reported
-    // as a suspect rather than acted on.
+    // A shared reference answers alone: the core stops there rather than padding the list
+    // with rows that merely look like it. The candidate without one sees both rows, and
+    // neither is certain — certainty licenses a pre-ticked box, never a silent merge, so
+    // even the certain one is reported rather than acted on.
     assert_eq!(reports[0].suspects.len(), 1);
-    assert!(!reports[1].suspects[0].is_certain);
+    assert_eq!(reports[1].suspects.len(), 2);
+    assert!(
+        reports[1]
+            .suspects
+            .iter()
+            .all(|suspect| !suspect.is_certain)
+    );
 }
 
 #[test]
@@ -717,24 +750,24 @@ fn an_amount_bigger_than_any_row_may_carry_is_refused_without_quoting_it() {
     let error = parse_amount("10000000000000.01".to_owned(), "GHS".to_owned()).unwrap_err();
 
     match error {
-        BridgeError::OutOfRange { field, value } => {
+        BridgeError::InvalidAmount { field, reason } => {
             assert_eq!(field, "amount");
             assert!(
-                !value.contains("10000000000000"),
-                "the rejection quotes what was typed: {value}"
+                !reason.contains("10000000000000"),
+                "the rejection quotes what was typed: {reason}"
             );
         }
-        other => panic!("expected an out-of-range amount, got {other:?}"),
+        other => panic!("expected a refused amount, got {other:?}"),
     }
 
     // The same applies to ordinary typos: the reason says what is wrong, not what it was.
     match parse_amount("12.555".to_owned(), "GHS".to_owned()).unwrap_err() {
-        BridgeError::OutOfRange { value, .. } => {
+        BridgeError::InvalidAmount { reason, .. } => {
             assert!(
-                !value.contains("12.555"),
-                "the rejection quotes the input: {value}"
+                !reason.contains("12.555"),
+                "the rejection quotes the input: {reason}"
             );
         }
-        other => panic!("expected an out-of-range amount, got {other:?}"),
+        other => panic!("expected a refused amount, got {other:?}"),
     }
 }

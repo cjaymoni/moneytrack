@@ -53,6 +53,15 @@ pub enum BridgeError {
         value: String,
     },
 
+    /// Text that is not a usable amount. Carries why, never what was typed.
+    #[error("{field} is not a usable amount: {reason}")]
+    InvalidAmount {
+        /// The field it was supplied as.
+        field: String,
+        /// Why it was refused.
+        reason: String,
+    },
+
     /// A value outside the range its field allows.
     #[error("{field} is out of range: {value}")]
     OutOfRange {

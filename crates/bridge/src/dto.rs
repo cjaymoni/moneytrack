@@ -9,9 +9,12 @@
 //! ahead, so it is untrusted input in the ordinary sense — the boundary checks shape, range
 //! and referential sanity here, and the rules downstream may then assume a valid row.
 
+use mt_core::dedup;
 use mt_core::model::{
-    Account, Budget, Candidate, Category, CategoryRule, RecurringRule, SyncMeta, Transaction,
+    Account, BPS_SCALE, Budget, Candidate, Category, CategoryRule, RecurringRule, SyncMeta,
+    Transaction,
 };
+use time::Duration;
 
 use crate::enums::{
     AccountKind, BudgetPeriod, CategoryKind, Direction, MatchedField, RecurrenceFreq, RuleOrigin,
@@ -473,6 +476,58 @@ impl CandidateDto {
             .validate()
             .map_err(|reason| BridgeError::invalid_row("candidate", reason))?;
         Ok(candidate)
+    }
+}
+
+/// The thresholds duplicate matching uses. Absent means the core's defaults.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MatchRulesDto {
+    /// Outside this many seconds, two rows are never the same event.
+    pub window_seconds: i64,
+    /// Inside this many seconds, they are close enough to score for it.
+    pub close_window_seconds: i64,
+    /// Suspicions scoring below this many basis points are not reported.
+    pub report_at_or_above_bps: u16,
+}
+
+impl MatchRulesDto {
+    /// Checks the thresholds and converts them.
+    ///
+    /// Validated like every other value entering this crate, and for the same reason:
+    /// none of these crashes anything, each just moves the answer. A negative window
+    /// reports nothing at all. A close window wider than the window it sits inside scores
+    /// every in-window pair as close, so it reports more, not fewer. And a report
+    /// threshold above [`BPS_SCALE`] is past the top of the scale and could not be met by
+    /// anything. [`BPS_SCALE`] itself stays usable, and reads as "only a match on the
+    /// institution's own reference": scored suspects clamp one below it, and a reference
+    /// match ignores the threshold entirely.
+    ///
+    /// # Errors
+    /// [`BridgeError::OutOfRange`] naming the threshold at fault.
+    pub fn to_core(&self) -> Result<dedup::MatchRules, BridgeError> {
+        if self.window_seconds < 0 {
+            return Err(BridgeError::OutOfRange {
+                field: "match_rules.window_seconds".to_owned(),
+                value: self.window_seconds.to_string(),
+            });
+        }
+        if self.close_window_seconds < 0 || self.close_window_seconds > self.window_seconds {
+            return Err(BridgeError::OutOfRange {
+                field: "match_rules.close_window_seconds".to_owned(),
+                value: self.close_window_seconds.to_string(),
+            });
+        }
+        if self.report_at_or_above_bps > BPS_SCALE {
+            return Err(BridgeError::OutOfRange {
+                field: "match_rules.report_at_or_above_bps".to_owned(),
+                value: self.report_at_or_above_bps.to_string(),
+            });
+        }
+        Ok(dedup::MatchRules {
+            window: Duration::seconds(self.window_seconds),
+            close_window: Duration::seconds(self.close_window_seconds),
+            report_at_or_above: self.report_at_or_above_bps,
+        })
     }
 }
 
