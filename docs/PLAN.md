@@ -2,7 +2,9 @@
 
 Drafted 2026-11-10, revised the same day after reading `algirdasc/expensave`.
 Status: phase 0 is built and tested in `crates/core`, and the bridge surface it is reached
-through is built and tested in `crates/bridge`. Phase 1 — the Flutter app — is next; the
+through is built and tested in `crates/bridge`. Phase 1 has started: `app/` is a Flutter
+project for Android and macOS, `flutter_rust_bridge` is wired to the bridge crate, and an
+integration test walks a balance in Rust from Dart. The screens themselves are next; the
 rest is still for discussion.
 
 ## What it has to do

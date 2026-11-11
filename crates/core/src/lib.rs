@@ -26,6 +26,10 @@
 //! and an expected output, and it is why the same code can run on a handset and on a server
 //! without either of them having to agree about anything but the numbers.
 
+// The workspace denies unsafe; this crate forbids it, which cannot be switched off by an
+// inner `allow`. Nothing here touches a pointer, a socket or an FFI boundary, and nothing
+// ever should: it is arithmetic over values.
+#![forbid(unsafe_code)]
 #![cfg_attr(
     test,
     allow(

@@ -1,0 +1,22 @@
+PODS:
+  - FlutterMacOS (1.0.0)
+  - mt_bridge (0.0.1):
+    - FlutterMacOS
+
+DEPENDENCIES:
+  - FlutterMacOS (from `Flutter/ephemeral`)
+  - mt_bridge (from `Flutter/ephemeral/.symlinks/plugins/mt_bridge/macos`)
+
+EXTERNAL SOURCES:
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+  mt_bridge:
+    :path: Flutter/ephemeral/.symlinks/plugins/mt_bridge/macos
+
+SPEC CHECKSUMS:
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  mt_bridge: 0d64b54b621dbd51d77029f32660d2af02459751
+
+PODFILE CHECKSUM: 2907e745ad8f3bf9773e493d57b1322776d2e75a
+
+COCOAPODS: 1.16.2

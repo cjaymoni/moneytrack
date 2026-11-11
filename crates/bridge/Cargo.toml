@@ -1,5 +1,5 @@
 [package]
-name = "mt-bridge"
+name = "mt_bridge"
 description = "The published API surface between Flutter and mt-core: owned values in, owned values out."
 version.workspace = true
 edition.workspace = true
@@ -7,7 +7,22 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# Underscored, unlike every other crate here, because three naming schemes have to agree:
+# a Dart package name cannot contain a dash, cargokit looks for the built artifact under
+# the *package* name, and the podspec links `libmt_bridge.a`. A dash anywhere in that chain
+# breaks it somewhere else.
+#
+# `staticlib` is what the Apple platforms link; `cdylib` is for Android and the desktops;
+# `lib` keeps the crate usable from Rust, which is how its own tests reach it.
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+
 [dependencies]
+# Not a workspace dependency, and exact rather than caret, because the codegen rewrites it:
+# the runtime and the generator must be the same version or they disagree about their own
+# wire format. A release line rather than the 2.14 beta — this is the generator the app's
+# whole type surface comes out of.
+flutter_rust_bridge = "=2.13.0"
 mt-core.workspace = true
 thiserror.workspace = true
 time.workspace = true

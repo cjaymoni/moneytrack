@@ -1,4 +1,4 @@
-//! `mt-bridge` — the only surface Flutter may call.
+//! `mt_bridge` — the only surface Flutter may call.
 //!
 //! One rule governs everything here: **values cross, handles do not.** The core holds no
 //! database connection, no socket and no clock, so the bridge hands it owned values and
@@ -45,5 +45,30 @@ pub mod enums;
 pub mod error;
 pub mod scalar;
 pub mod zone;
+
+/// The `flutter_rust_bridge` glue, written by the generator and edited by nobody.
+///
+/// This is the one module in the project that uses `unsafe`, because an FFI boundary is
+/// unsafe by construction: it hands Dart raw pointers to values Rust owns. Everything the
+/// generator reaches is in [`api`], and the allow is attached here rather than at the
+/// crate root so a hand-written `unsafe` anywhere else still fails to compile.
+///
+/// The clippy denials are listed one by one rather than as a group, because five of them
+/// live in the `restriction` set that `clippy::all` does not cover. Each is still denied
+/// everywhere a person writes code.
+#[allow(
+    unsafe_code,
+    missing_docs,
+    clippy::all,
+    clippy::pedantic,
+    clippy::as_conversions,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::float_arithmetic
+)]
+#[rustfmt::skip]
+mod frb_generated;
 
 pub use error::BridgeError;

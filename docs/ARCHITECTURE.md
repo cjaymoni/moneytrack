@@ -156,6 +156,21 @@ Note what is absent: no `save`, no `fetch`, no `sync`. Those are Dart's. The clo
 too — `now` is an argument — with one exception, `expand_recurrence`, which mints a UUIDv7
 per row because a row needs an id before it can be written.
 
+### What codegen actually produced
+
+`flutter_rust_bridge` 2.13 is wired (`app/flutter_rust_bridge.yaml`, `rust_input: crate::api`),
+so the contract above is no longer a claim. Every function crosses as a plain Dart future
+taking named arguments, every DTO as a plain Dart class, and `BridgeError` as a sealed union
+Dart can switch on exhaustively. **No opaque pointers**: not one handle crosses, which is the
+property the whole boundary was shaped around. The Rust doc comments come through onto the
+Dart side, so the rule about what `raw_text` may never do is readable from Flutter.
+
+One cost, paid knowingly. The generated glue is FFI and uses `unsafe`, and `forbid` cannot be
+switched off by an inner `allow`. So the workspace denies unsafe rather than forbidding it,
+`mt-core` forbids it in its own source where the guarantee is absolute, and the single
+generated module in `mt_bridge` carries the allow. Hand-written `unsafe` anywhere else still
+fails to compile.
+
 ---
 
 ## 4. The core crate

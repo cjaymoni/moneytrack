@@ -11,7 +11,7 @@ publish = false
 
 [workspace.dependencies]
 mt-core = { path = "crates/core" }
-mt-bridge = { path = "crates/bridge" }
+mt_bridge = { path = "crates/bridge" }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 thiserror = "2.0.12"
@@ -22,7 +22,12 @@ regex = { version = "1.13.1", default-features = false, features = ["std", "perf
 time = { version = "0.3.41", features = ["serde", "serde-well-known", "serde-human-readable", "macros", "formatting", "parsing"] }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# `deny` here rather than `forbid`, and the difference is deliberate. `mt-core` forbids
+# unsafe in its own source, where the guarantee is worth stating absolutely. `mt-bridge`
+# cannot: it holds the `flutter_rust_bridge` glue, which is FFI and unsafe by nature, so
+# that one generated module carries an `allow` and every line anyone writes by hand is
+# still denied.
+unsafe_code = "deny"
 missing_docs = "warn"
 
 [workspace.lints.clippy]
