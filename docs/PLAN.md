@@ -1,7 +1,7 @@
 # Personal income & spending tracker — plan
 
 Drafted 2026-11-10, revised the same day after reading `algirdasc/expensave`.
-Status: for discussion, nothing built yet.
+Status: phase 0 is built and tested in `crates/core`; the rest is still for discussion.
 
 ## What it has to do
 
@@ -250,8 +250,13 @@ into one "calendar" object, which is precisely what blocks the multi-currency ca
 
 ## Open questions
 
-- Server in Dart (one language everywhere) or Rust/Axum (reuses the credvault muscle)?
-  Leaning Dart to keep the context switch low.
+Settled: the server is Rust/Axum, not Dart. The deciding argument is in
+[ARCHITECTURE.md](ARCHITECTURE.md) — a syncing product has the client and the server both
+computing balances and budget state, and two implementations of those rules eventually
+disagree about someone's money. One `mt-core`, linked into both, removes the class of bug
+rather than testing for it. Phase 0 settles it in practice too: the rules are written, in
+Rust, and there is nothing to port.
+
 - Is the web client needed, or does desktop cover the sit-down case? Dropping it removes the
   storage asymmetry and a chunk of phase 5.
 - Self-hosted server, or local-only with sync over the LAN? Local-only is a real option and
