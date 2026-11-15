@@ -8,11 +8,13 @@ adaptive
 
 ## Stack
 
-Native UIs — SwiftUI on iOS, Jetpack Compose on Android — over a Rust core, store and sync
-layer reached through UniFFI, with an Axum server; see `docs/ARCHITECTURE.md` and
-`docs/decisions/0001-native-uis.md`. Desktop and web are out of scope for now. Design artifacts
-and screen mockups are built as local static HTML/CSS in `design/`, then implemented natively
-on each platform. No hosted artifacts — everything stays in the repo.
+A browser client (TypeScript, React, Vite) over a Rust server (Axum, Postgres) that links the
+`mt-core` rules directly, plus native apps — SwiftUI on iOS, Jetpack Compose on Android — that
+carry their own encrypted SQLite copy through UniFFI. The browser is thin: it renders what the
+server computes and runs no rules of its own. The web client is being built first and the apps
+are paused; see `docs/ARCHITECTURE.md` and `docs/decisions/0002-web-first.md`. Design artifacts
+and screen mockups are built as local static HTML/CSS in `design/`, then implemented per
+platform. No hosted artifacts — everything stays in the repo.
 
 ## Users
 

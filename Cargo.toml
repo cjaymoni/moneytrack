@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/store", "crates/ffi"]
+members = ["crates/core", "crates/store", "crates/ffi", "crates/server"]
 
 [workspace.package]
 version = "0.1.0"
@@ -25,8 +25,33 @@ time = { version = "0.3.41", features = ["serde", "serde-well-known", "serde-hum
 # has no SQLCipher at all, and iOS ships a plain SQLite that would silently open the file
 # unencrypted.
 rusqlite = { version = "0.43.0", features = ["bundled-sqlcipher-vendored-openssl", "time", "uuid"] }
-# Only the FFI needs a runtime, and only to keep blocking database work off the UI thread.
+# The FFI needs a runtime to keep blocking database work off the UI thread; the server needs
+# one because it is a server. Features are selected per crate.
 tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
+axum = "0.8.9"
+axum-extra = { version = "0.12.6", features = ["cookie"] }
+# Postgres, and deliberately not through `sqlx`. Cargo refuses a graph where two packages
+# claim the same `links` value, and it decides that before it looks at features: `sqlx`
+# names `sqlx-sqlite` as an optional dependency, `sqlx-sqlite` links the native `sqlite3`,
+# and so does the `rusqlite` the device store is built on. Turning the SQLite driver off
+# does not help, because the conflict is found during version selection.
+#
+# So the server would have held the device store hostage to its choice of SQL library for
+# ever. `tokio-postgres` ends that: the two databases stop fighting over a native library,
+# and the queries here were written by hand anyway.
+tokio-postgres = { version = "0.7.18", features = ["with-uuid-1", "with-time-0_3"] }
+deadpool-postgres = "0.14.2"
+tower = "0.5.3"
+tower-http = { version = "0.7.1", features = ["trace", "limit", "timeout"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+# Argon2id for passwords, and the OS generator for everything secret. No `Math.random`
+# equivalent anywhere near a token.
+argon2 = "0.6.0"
+getrandom = "0.4.3"
+sha2 = "0.11.1"
+base64ct = { version = "1.8.3", features = ["std"] }
+subtle = "2.6.1"
 tempfile = "3.27.0"
 
 [workspace.lints.rust]

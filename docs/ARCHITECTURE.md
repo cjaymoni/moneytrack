@@ -1,11 +1,15 @@
 # Architecture
 
 Companion to [PLAN.md](PLAN.md), which covers *what* is being built and in what order. This
-document covers *how* it is put together and why. Written 2026-11-10; revised 2026-11-15 when
-the UI decision was reversed — see [decisions/0001-native-uis.md](decisions/0001-native-uis.md)
-for that reversal on its own terms. Phase 0 is built, so §4 describes code that exists;
-everything describing the store, the sync client and the two apps is a sketch that first
-contact with a compiler will change.
+document covers *how* it is put together and why. Written 2026-11-10 and revised twice on
+2026-11-15: once when the UI decision was reversed, and again when the web client became the
+thing being built. Both reversals are argued in
+[decisions/0001-native-uis.md](decisions/0001-native-uis.md) and
+[decisions/0002-web-first.md](decisions/0002-web-first.md).
+
+Phases 0 and 1a are built, so §4, §4a and §3 describe code that exists. §6 and §7 — the server
+and the web client — are the active work and are a sketch that first contact with a compiler
+will change. The mobile apps are paused where 1a left them.
 
 `moneytrack` is a working name.
 
@@ -13,14 +17,18 @@ contact with a compiler will change.
 
 ## 1. The decision
 
-**A Rust core, store and server. Two native UIs: SwiftUI on iOS, Jetpack Compose on Android.**
+**A Rust core and server. A thin browser client first; two native apps, paused, that carry
+their own copy of the database.**
 
 Everything that decides what a number is — money arithmetic, the balance walk, the
 categorisation ladder, recurrence expansion, duplicate scoring, budget evaluation, SMS parsing
-— is one Rust crate. Everything that *keeps* a number — the SQLite database, its migrations,
-the queries the screens run, and the sync client that reconciles them with the server — is two
-more Rust crates. All of it is compiled into both apps through UniFFI and linked directly into
-the Axum server. What is written twice is screens, and only screens.
+— is one Rust crate, `mt-core`. The Axum server links it directly. The apps compile it in
+through UniFFI along with `mt-store`, which keeps their own SQLite copy so a handset works
+with no signal.
+
+The browser keeps nothing and decides nothing. It renders what the server computes, which is
+the same `mt-core` answer a handset computes locally — so the thin client and the offline one
+cannot disagree about a balance, because only one of them is doing arithmetic.
 
 ### Why Rust holds this much
 
@@ -36,6 +44,15 @@ mean the schema, the migration sequence, every query behind every screen and the
 push/pull/merge cycle written once in Room and once in GRDB, kept in agreement by discipline —
 which is the thing this architecture was shaped to avoid, reintroduced one layer down. So the
 boundary moves: Rust owns the database.
+
+### Why the browser comes first
+
+Because the stores are shut to us. A Play listing needs a review and, for SMS capture, a
+restricted-permissions declaration granted case by case; the App Store needs an account and a
+review of its own. A web app is a URL. Everything built for it — the schema, the tenancy, the
+auth, the deployment — is what mobile sync needs later anyway, so this is a reordering rather
+than a detour. The full argument, including why the browser is thin rather than local-first
+WASM, is in [decisions/0002-web-first.md](decisions/0002-web-first.md).
 
 ### Why the UIs are native
 
@@ -101,38 +118,36 @@ XCFramework build step and a Gradle module wrapping a `.so`.
 ```
    ┌────────────────────────┐          ┌────────────────────────┐
    │   iOS app (SwiftUI)    │          │  Android app (Compose) │
-   │  screens · navigation  │          │  screens · navigation  │
-   │  camera · files        │          │  SMS receiver (Kotlin) │
-   │  Keychain · BGTask     │          │  camera · files        │
-   │                        │          │  Keystore · WorkManager│
+   │  paused at phase 1a    │          │  paused at phase 1a    │
    └───────────┬────────────┘          └───────────┬────────────┘
                │   UniFFI (Swift)                  │  UniFFI (Kotlin)
                └─────────────────┬─────────────────┘
                  ┌───────────────▼──────────────────────────┐
-                 │              mt-ffi                      │
-                 │  the published surface, and nothing else │
+                 │        mt-ffi  ·  mt-store               │
+                 │  the handle · SQLite · change bus        │
                  └───────────────┬──────────────────────────┘
-                 ┌───────────────▼──────────────────────────┐
-                 │        mt-store          mt-sync         │
-                 │  SQLite · migrations  ·  push/pull/merge │
-                 │  queries · change bus ·  watermarks      │
-                 └───────────────┬──────────────────────────┘
-                 ┌───────────────▼──────────────────────────┐
-                 │            mt-core  (Rust)               │
-                 │  money · ledger · rules · recurrence     │
-                 │  dedup · budget · parse                  │
-                 │          no I/O, no clock, no DB         │
-                 └───────────────┬──────────────────────────┘
-                                 │  same crates, linked
-                 ┌───────────────▼──────────────────────────┐
-                 │        mt-server (Rust / Axum)           │
-                 │  auth · sync · rule packs · Postgres     │
-                 └──────────────────────────────────────────┘
+                                 │
+   ┌────────────────────────┐    │
+   │   Browser (React/TS)   │    │      renders what it is told;
+   │  screens · routing     │    │      holds no ledger, runs no rules
+   └───────────┬────────────┘    │
+               │ HTTPS, JSON     │
+               │ session cookie  │
+   ┌───────────▼─────────────────▼──────────────────────────┐
+   │              mt-server (Rust / Axum)                   │
+   │  auth · tenant-scoped repositories · screen queries    │
+   │  later: sync, rule packs            Postgres via sqlx  │
+   └───────────────┬────────────────────────────────────────┘
+   ┌───────────────▼────────────────────────────────────────┐
+   │                   mt-core  (Rust)                      │
+   │  money · ledger · rules · recurrence · dedup · budget  │
+   │             no I/O, no clock, no DB                    │
+   └────────────────────────────────────────────────────────┘
 ```
 
-`mt-core` stays exactly what it is: pure, no I/O, no clock, no database. The new crates sit
-above it and depend on it; it depends on nothing of theirs. The server links `core` and the
-sync protocol types directly and never sees `mt-ffi`.
+`mt-core` is at the bottom of both paths and is the reason they agree. The server reaches it
+directly; a handset reaches it through `mt-store`. Neither route has a second implementation
+of a rule in it, and the browser has no route to one at all.
 
 ### Repository layout
 
@@ -143,8 +158,9 @@ moneytrack/
 │   ├── core/              mt-core — pure, no I/O. The only place rules live.
 │   ├── store/             SQLite, migrations, repositories, the change bus.
 │   ├── sync/              wire protocol, watermarks, merge, transport trait.
-│   ├── server/            mt-server — Axum, Postgres, auth, sync, rule packs.
+│   ├── server/            mt-server — Axum, Postgres, auth, the API.
 │   └── ffi/               UniFFI surface: the published API, nothing else.
+├── web/                   the browser client: TypeScript, React, Vite.
 ├── ios/                   Xcode project (app) + MoneytrackKit (the Swift package).
 ├── android/               Gradle: `core` (bindings + .so) and `app` (Compose screens).
 ├── tools/                 bindings.sh, ffi-build.sh, android-libs.sh.
@@ -466,32 +482,102 @@ the conflict story is one a support email can explain.
 
 ## 6. Server
 
-Axum, Postgres, `mt-core` and `mt-sync`'s wire types linked in as libraries.
+Axum, Postgres through `tokio-postgres`, `mt-core` linked in as a library. The spine is
+built: auth, sessions, the tenant-scoped repositories and the first endpoints.
+
+Not `sqlx`, and the reason is worth recording because it looks like a preference and is not.
+Cargo refuses a dependency graph where two packages claim the same `links` value, and it
+decides that during version selection, before features are considered. `sqlx` names
+`sqlx-sqlite` as an optional dependency; `sqlx-sqlite` links the native `sqlite3`; so does
+the `rusqlite` the device store is built on. Turning the SQLite driver off does not help. The
+choice was to hold the device store hostage to the server's SQL library for ever, or to use
+a Postgres client that has no opinion about SQLite. The queries here are written by hand
+either way.
+
+### Tenancy, which is the part to get right first
 
 Multi-tenancy is enforced in the repository layer, not the handlers: every query takes a
-`UserId` and there is no accessor that does not. Retrofitting an owner check onto each query
-later is how IDOR bugs ship, so the layer is built tenant-aware from the first commit and a
-test asserts that no query helper exists without it.
+`UserId` and there is no accessor that does not. `db/postgres/0001_init.sql` already does its
+half — every per-person table is keyed on `(user_id, id)` and every foreign key carries
+`user_id` through, so a transaction physically cannot reference another user's account — and
+the repository layer has to do the other half from the first commit. Retrofitting an owner
+check onto each query later is how IDOR bugs ship. A test asserts that no query helper exists
+without a `UserId` parameter, and the API tests include an explicit cross-tenant read that
+must fail.
 
-Endpoints, in rough shape:
+### Auth
+
+Argon2id for passwords, with the parameters in one place and no second call site.
+
+Sessions are opaque tokens, not JWTs. The token is random bytes from the OS, stored only as a
+SHA-256 hash in `refresh_tokens`, and delivered to the browser as a cookie that is `HttpOnly`,
+`Secure`, `SameSite=Lax` and scoped to the API path. A browser never sees a token in
+JavaScript, which removes the whole class of bug where an XSS becomes a stolen session that
+outlives the fix. Sessions rotate on use, and presenting a rotated token revokes the chain —
+the schema has `rotated_from` for exactly that, because reuse of a rotated token means theft.
+
+State-changing requests carry a CSRF token checked against a second cookie. `SameSite=Lax`
+alone is a browser default, not a guarantee, and this is someone's money.
+
+Auth routes are rate limited per address and per account, and a failed sign-in says the same
+thing whether the address exists or not.
+
+### What the browser asks for
+
+Screen-shaped endpoints, mirroring what `mt-store` answers on a handset:
 
 ```
-POST   /auth/register · /auth/login · /auth/refresh · /auth/reset
-POST   /sync/push        rows changed since watermark
-GET    /sync/pull        rows since watermark
-GET    /packs/latest     rule pack manifest + download
-POST   /packs/sample     user-initiated redacted unparsed sample
-GET    /me/export        full data export (legal requirement)
-DELETE /me               account deletion (legal requirement)
+POST   /auth/register · /auth/login · /auth/logout · /auth/password
+GET    /me
+
+GET    /accounts                 every account with its balance
+POST   /accounts
+GET    /transactions             a page, filtered by account and date window
+POST   /transactions
+GET    /balances                 per account and per currency, on a basis
+GET    /outlook                  the projected walk and the first shortfall
+GET    /budgets                  where every cap stands on a date
 ```
 
-Money is `BIGINT` minor units plus a currency column. Balances are **derived** from the walk,
-not stored. The prior art keeps a denormalised balance column and ships a cron command to
-repair it when it drifts; that is a warning, not a pattern. If a cached balance ever becomes
-necessary for performance, it is updated inside the same database transaction as the row that
-changed.
+Money crosses as minor units plus an ISO code — never a decimal string, never a double — and
+beside it, a `display` string the server rendered through `mt-core`. Where the decimal point
+goes is a property of the currency, and a client that divides by a hundred is right until the
+first CFA franc row arrives. Ids, instants and dates use the same wire spellings as the sync
+protocol and the FFI, which `crates/core/tests/wire.rs` already fixes.
 
----
+Errors come back with a stable machine-readable code and a message. The code is what the
+client switches on; the message is for a person.
+
+### Later, on the same server
+
+Sync (`/sync/push`, `/sync/pull`), rule packs, and the redacted-sample endpoint. The schema
+already carries the per-user `sync_seq` counter and the device watermarks they need. Deletion
+and export are phase 5 and are obligations, not features.
+
+## 6a. The browser client
+
+TypeScript, React, Vite. Static files: the build output is HTML, JS and CSS that any host can
+serve, and the API is a separate origin or a path behind the same one.
+
+**One rule, and it is the whole design.** No rule lives here. No money arithmetic, no decision
+about what counts as spending, no transfer filtering, no category ladder, no formatting of an
+amount by dividing by a hundred. If a number appears on a screen, the server computed it and
+the client printed it. The test, when something looks wrong: can the number be traced to one
+`mt-core` call? The moment the answer is no, the product has two implementations of its own
+arithmetic again, which is the thing this architecture exists to prevent.
+
+What the client *is* responsible for: routing, forms and their validation-for-politeness
+(the server validates for real), loading and error states, keyboard and screen-reader
+behaviour, and remembering what the person was looking at.
+
+**Design.** The tokens in `design/tokens/` and the direction in `DESIGN.md` carry over. The
+HTML references in `design/mobile/` do not: they are phone-shaped, and a browser on a laptop
+is a different composition with different densities. New layouts are design work, not a
+port — the type, palette, density and the stamp are what the world lends.
+
+**State.** Server state is fetched and cached per query, invalidated on mutation; there is no
+client-side model of the ledger to keep in step. That is the thin-client discipline paying
+for itself: no cache coherence problem, because there is no second copy.
 
 ## 7. Rule packs
 
@@ -529,14 +615,16 @@ is the main reason the architecture is shaped this way.
 
 | Target | Triple | Produces |
 |---|---|---|
+| Server | host, and the host of wherever it is deployed | the Axum binary |
+| Browser | — | static files from Vite; no Rust in the browser at all |
 | Android arm64 | `aarch64-linux-android` | `.so` via cargo-ndk, in a Gradle module |
 | Android x86_64 | `x86_64-linux-android` | emulator |
 | iOS device | `aarch64-apple-ios` | staticlib, into an XCFramework |
 | iOS simulator | `aarch64-apple-ios-sim` | staticlib, into the same XCFramework |
-| Server / dev | host | native, same crates linked directly |
 
-No WASM and no desktop triples, which is most of what dropping web bought. Bindings are
-generated in the same step as the libraries, checked for drift in CI, and never hand-edited.
+Still no WASM: the browser runs no Rust, which is what being a thin client means and what
+removes the one risk the original architecture had to keep open. Bindings are generated in the
+same step as the libraries, checked for drift in CI, and never hand-edited.
 
 Testing follows the boundary, and the boundary has moved down, which means more of the product
 is testable without a device than before:
@@ -550,6 +638,13 @@ is testable without a device than before:
   through the conflict cases.
 - **`mt-ffi`** carries a round-trip test per published function, so the surface is exercised in
   Rust before either app sees it.
+- **`mt-server`** carries API tests against a real Postgres in a container — not a mock, and
+  not SQLite standing in for it, because the constraints doing the tenancy work are Postgres
+  constraints. Every endpoint gets its happy path, its unauthenticated path and its
+  wrong-tenant path, and the wrong-tenant one is the test that matters most.
+- **The browser client** carries component tests over its own behaviour and, where a flow is
+  worth the cost, an end-to-end run against a server with a seeded database. It carries no
+  test of a number, because it computes none.
 - **The apps** carry screen tests, and one round trip each that opens a real encrypted
   database, writes a transaction and reads the balance back out of Rust. Both run on the
   laptop rather than on a device: the XCFramework carries a macOS slice so `swift test` takes
@@ -592,6 +687,17 @@ than that gets expensive.
 3. **Self-hosted option alongside the published product?** Costs little given the server is one
    binary, and it is a credible answer to "where is my financial data".
 4. **Rule pack signing** — simple detached signature, or full transparency log? Start simple.
-5. **Does the sit-down case ever come back,** as a web client against the server or as a
-   SwiftUI Mac app? Deferred, not refused; nothing below the FFI would have to change.
-6. **Working name.** `moneytrack` is a placeholder.
+5. ~~**Does the sit-down case come back?**~~ Settled by
+   [decisions/0002-web-first.md](decisions/0002-web-first.md): a browser is the first client,
+   and it covers the sit-down case. A native desktop app is still refused.
+6. **Where it is hosted, and what that costs per month.** The deployment has to carry a
+   managed Postgres with backups, TLS, and somewhere to put the static files. Two things in
+   the code are waiting on this answer and are wrong until it arrives: the database
+   connection is plain TCP, which is right for a loopback container and wrong for a managed
+   Postgres across a network, and the rate limiter reads the caller's address from the socket
+   rather than a forwarded header, which behind a proxy is the proxy. Both are marked where
+   they sit.
+7. **Email.** Verification and password reset need a provider. Until there is one, sign-up
+   works without verification and a forgotten password is a support request — acceptable for
+   one user, not for a second.
+8. **Working name.** `moneytrack` is a placeholder.

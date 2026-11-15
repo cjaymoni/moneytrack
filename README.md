@@ -1,7 +1,12 @@
 # moneytrack (working name)
 
-Personal income and spending tracker for Android and iPhone, with automatic capture from MoMo
-and bank SMS on Android. Intended for publication, not just personal use.
+Personal income and spending tracker: a web app first, with Android and iPhone apps that carry
+their own copy of the ledger offline and capture MoMo and bank SMS on Android. Intended for
+publication, not just personal use.
+
+The browser comes first because it is the only channel that is open to us right now — a web
+app is a URL, where a store listing is a review. The mobile apps are paused at phase 1a, which
+they reached complete; they resume against the same server.
 
 The thinking so far:
 
@@ -24,7 +29,14 @@ Built so far:
 - `crates/ffi` — the published surface, over UniFFI. One handle crosses, the store; everything
   else is values.
 - `ios/` and `android/` — an app on each platform that opens a real encrypted ledger and reads
-  a balance back out of Rust. The screens are next.
+  a balance back out of Rust. Paused here while the web client is built.
+
+- `crates/server` — the API: Axum over Postgres, with `mt-core` linked in. Sign-up, sign-in,
+  sessions in `HttpOnly` cookies, CSRF, and the accounts, transactions and balance endpoints.
+  Every query is scoped to a user, and the tests include one person trying to read and write
+  another's rows.
+
+Being built next: `web/`, the browser client in TypeScript and React.
 
 `cargo test --workspace` covers the Rust, `db/tests/` covers the database constraints, and
 each app has a round trip that runs on the laptop rather than on a device.
@@ -42,6 +54,17 @@ tools/android-libs.sh     # a .so per ABI
 Then `cargo test --workspace`; `swift test` in `ios/MoneytrackKit`, or open
 `ios/Moneytrack.xcodeproj`; `./gradlew test` in `android`, or open that folder in Android
 Studio. Android needs `android/local.properties` pointing at the SDK.
+
+The server and its tests need a Postgres:
+
+```
+tools/pg.sh                     # a container on 55432; prints the connection string
+cp .env.example .env            # and fill it in
+cargo run -p mt-server          # migrates on start, then listens
+```
+
+The tests create a database of their own per test and drop it afterwards, so `cargo test`
+needs the container running and nothing else.
 
 Decided: a Rust core, store and sync layer; native UIs, SwiftUI and Jetpack Compose; integer
 minor units for money; on-device SMS parsing; and pending transactions as the forecast.

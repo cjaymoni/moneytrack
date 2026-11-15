@@ -1,15 +1,23 @@
 # Personal income & spending tracker — plan
 
-Drafted 2026-11-10, revised the same day after reading `algirdasc/expensave`. Revised again
-2026-11-15, when the UI decision was reversed: two native apps instead of one Flutter tree, and
-the local database moved into Rust behind them. That reversal is argued on its own terms in
-[decisions/0001-native-uis.md](decisions/0001-native-uis.md).
+Drafted 2026-11-10, revised the same day after reading `algirdasc/expensave`. Revised twice on
+2026-11-15: first when the UI decision was reversed — two native apps instead of one Flutter
+tree, with the local database moved into Rust behind them — and then again when the web client
+became the thing being built, because the app stores are a gate that cannot be opened yet.
+Both reversals are argued on their own terms in
+[decisions/0001-native-uis.md](decisions/0001-native-uis.md) and
+[decisions/0002-web-first.md](decisions/0002-web-first.md).
 
 Status: phase 0 is built and tested in `crates/core` — money, ids, enums, the row types, and
 the five rules that turn rows into answers. Phase 1a is built too: `crates/store` runs the
-SQLite schema and carries the change bus, `crates/ffi` publishes it over UniFFI, and both
-apps open a real encrypted database and read a balance back out of Rust. `crates/bridge` and
-the Flutter tree are gone. Phase 1b — the screens — is next.
+SQLite schema and carries the change bus, `crates/ffi` publishes it over UniFFI, and both apps
+open a real encrypted database and read a balance back out of Rust.
+
+**The mobile apps are paused there.** The active line is the web client and the server under
+it. Phase 2a is built: `crates/server` runs the Postgres schema, registers and signs people
+in with Argon2id and opaque session cookies, and answers the accounts, transactions and
+balance endpoints — every query scoped to a user, with tests that try to read and write
+across the boundary and must fail. `web/` is next.
 
 ## What it has to do
 
@@ -37,20 +45,19 @@ amounts are plain floats in one implicit currency.
 
 ## Shape
 
-A Rust core, store and server, and two native UIs — SwiftUI on iOS, Jetpack Compose on Android.
+A Rust core, a Rust server and three clients: a browser, an iPhone and an Android handset.
 
-Every rule and calculation lives in one Rust crate. So does the SQLite database beneath it, its
-migrations, the queries the screens run, and the sync client. All of it is compiled into both
-apps through UniFFI and linked directly into the server, so client and server cannot disagree
-about a balance, and the two apps cannot disagree with each other. What is written twice is
-screens, and only screens.
+Every rule and calculation lives in one Rust crate, `mt-core`. The server links it directly.
+The apps compile it in through UniFFI, along with `mt-store` — the SQLite database, its
+migrations and the queries behind their screens — so a handset works offline. The browser
+holds nothing and runs nothing: it renders what the server computes, which is the same
+`mt-core` answer a handset would have given.
 
-Native rather than Flutter, and Rust rather than Kotlin or Swift for everything below the
-screens. The reasoning, the rejected alternatives and the costs are in
-[ARCHITECTURE.md](ARCHITECTURE.md) and the decision record; the short version is that the design
-was already two designs, the web target that Flutter uniquely covered is gone, and two native
-apps without a shared storage layer would mean writing the schema, the queries and the sync
-cycle twice — the exact duplication the Rust core exists to prevent.
+Native apps rather than Flutter, and a thin browser rather than a local-first one. The
+reasoning, the rejected alternatives and the costs are in [ARCHITECTURE.md](ARCHITECTURE.md)
+and the two decision records. The short version: the design was already two designs, so one
+widget tree bought nothing; and a browser-local ledger is one browser profile on one machine,
+where "clear site data" means "delete everything I have ever recorded".
 
 ### Layout
 
@@ -58,8 +65,10 @@ cycle twice — the exact duplication the Rust core exists to prevent.
   recurrence, dedup, budgets, parsers. Where every rule lives.
 - `crates/store/` — SQLite, migrations, repositories, the screen queries, the change bus.
 - `crates/sync/` — wire protocol, watermarks, merge, transport behind a trait.
-- `crates/server/` — Axum, Postgres, auth, sync, rule packs. Links `core` directly.
+- `crates/server/` — Axum, Postgres, auth, the API the browser calls, later sync and rule
+  packs. Links `core` directly.
 - `crates/ffi/` — the UniFFI surface, and nothing else.
+- `web/` — the browser client: TypeScript, React, Vite. Static files over an HTTP API.
 - `ios/` — SwiftUI app.
 - `android/` — Compose app, plus the Kotlin SMS broadcast receiver.
 - `packs/` — versioned rule packs: SMS patterns and default categories, shipped as data.
@@ -235,31 +244,30 @@ tempted it.
 
 ## Phasing
 
+Phases 0 and 1a are built. What follows is reordered around the browser, because that is the
+channel that is open. Nothing in 1a is wasted: the apps resume against the same server.
+
 | Phase | Deliverable | Rough size |
 |---|---|---|
 | 0 | `core`: money, balance walk, categorisation ladder, recurrence, budgets, dedup — tested | small ✅ |
-| 1a | The turn: delete `app/`, `crates/ffi` over UniFFI, `crates/store` with the SQLite schema and the change bus, an empty app on each platform that opens a store and reads a balance back | medium ✅ |
-| 1b | Both apps: accounts, manual entry, pending/confirmed, ledger, recurring, outlook, breakdown | large |
-| 2 | SMS ingestion and rules learning (Android); the review inbox on both, since import feeds it too | medium |
-| 3 | Budgets and warnings; reconciliation entries | small |
-| 4 | CSV + OFX import, handler resolver, duplicate merging | medium |
-| 5 | Sync: `crates/sync`, the server, and the scheduling on each platform | large |
-| 6 | Receipt scanning | medium |
-| 7 | Launch readiness: multi-tenant hardening, rule packs, deletion/export, store declarations, marketing site | large |
+| 1a | The turn to native: `crates/ffi` over UniFFI, `crates/store` with the SQLite schema and the change bus, an app on each platform that opens an encrypted ledger and reads a balance back | medium ✅ |
+| 2a | The server's spine: Axum, Postgres, the schema migrated, sign-up and sign-in, sessions, and tenant-scoped repositories with no accessor that takes no `UserId` | medium ✅ |
+| 2b | The first useful screen, end to end: accounts, manual entry, the ledger list and a running balance, in the browser against the server | medium |
+| 3 | Budgets, the outlook, the category breakdown, reconciliation entries — the analysis the product exists for | medium |
+| 4 | CSV + OFX import, the review inbox, duplicate merging | medium |
+| 5 | Deletion, export, and the compliance furniture a hosted service cannot open without | medium |
+| 6 | Mobile resumes: `crates/sync` and the push/pull cycle against this server, then the apps' screens | large |
+| 7 | SMS ingestion on Android, rules learning from corrections | medium |
+| 8 | Receipt scanning | medium |
 
-Phase 1 split in two because the turn was a distinct piece of work with a distinct finish
-line: one call across UniFFI, from Swift and from Kotlin, that opens a real database and gets
-a real number back. That is done, on both, and each platform has the test to prove it — run
-on the laptop rather than on a device, so it costs a second rather than a simulator boot.
+Two things moved and both moved for the same reason. Deletion and export are no longer part of
+a launch-readiness phase at the end: the moment a second person's records are in a database we
+host, those are obligations rather than features. And SMS — the feature that made the product
+feel magic — is now last of the ingestion work, because it is Android-only and the apps are
+paused.
 
-Forecasting has no phase of its own — adopting the pending-transaction model folds it into
-phase 1 for roughly nothing. Phases 0–3 give a genuinely useful app; everything after is
-widening, not deepening. If this stalls it stalls at phase 5, which is why that sits after the
-apps already earn their keep standalone.
-
-Both platforms move together, phase by phase. Shipping Android three phases ahead would mean
-discovering the FFI's iOS problems late and rewriting screens against a surface that had
-settled around one platform's habits.
+Phases 0 through 4 give a genuinely useful product to anyone with a browser. Phase 6 is where
+the work already done in 1a comes back.
 
 ## Things that will bite
 
@@ -270,9 +278,13 @@ settled around one platform's habits.
    every report is wrong.
 4. **Multi-currency reporting.** Decide once: report in GHS by default at transaction-date
    rates, and label any total that crosses currencies.
-5. **Sensitive data.** Encrypt the local database, device auth to open the app, and if a
-   server stores anything it's your own instance. No analytics, no third-party crash reporter
-   carrying transaction text.
+5. **Sensitive data, and now other people's.** This changed with the server. A hosted
+   database holding other people's financial records makes us a data controller in fact:
+   encryption in transit and at rest, backups that have actually been restored from, deletion
+   and export that work, and registration under Ghana's Data Protection Act. On the device
+   side the old answers still hold — the local database is encrypted and the app is behind
+   device authentication. No analytics, and no third-party crash reporter that could carry
+   transaction text or labels, anywhere.
 6. **Other people's banks.** Unbounded format work once published. Rule packs and a redacted
    user-submitted sample flow are the containment; there is no version where you parse every
    Ghanaian bank correctly on day one.
@@ -300,9 +312,11 @@ into one "calendar" object, which is precisely what blocks the multi-currency ca
   Rust, and there is nothing to port.
 - **The UIs are native and the storage layer is not.** See
   [decisions/0001-native-uis.md](decisions/0001-native-uis.md).
-- **The web client is dropped**, along with desktop. That removes the storage asymmetry, the
-  WASM target and a chunk of phase 5. It can come back as an SPA against the server without
-  anything below the FFI changing.
+- **The web client is the first client**, as a thin SPA against the server rather than a
+  local-first WASM build. See [decisions/0002-web-first.md](decisions/0002-web-first.md). A
+  browser-local ledger would have been cheaper and is one browser profile on one machine,
+  which is not a place to keep someone's records. Desktop is still dropped; a browser covers
+  the sit-down case.
 - **iPhone is in the picture, from phase 1, alongside Android.** It changes nothing except that
   the SMS story is Android-only and the product has to be good without it.
 
