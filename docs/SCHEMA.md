@@ -164,11 +164,15 @@ docker rm -f mt-pg
 
 ## Still open
 
-- **Migrations.** Both files are revision 1 and apply to an empty database. Once there is a
-  released build, the server needs a migration runner (`sqlx migrate`, most likely) and the
-  device needs drift's schema versions with a tested upgrade path. Neither is wired up yet.
-- **Drift definitions.** `db/sqlite/0001_init.sql` is the statement of intent; the Flutter app
-  will declare the same tables in drift, generated to match this file.
+- **Migrations.** Both files are revision 1 and apply to an empty database. The device side
+  now has a runner — `crates/store` reads `PRAGMA user_version`, applies revision 1 to an
+  empty file, and refuses a file written by a later build rather than opening it blind — but
+  there is no revision 2 to step through yet, so the upgrade path is untested by anything
+  except its absence. The server still needs a runner (`sqlx migrate`, most likely).
+- **Who runs the device schema.** `db/sqlite/0001_init.sql` was a statement of intent that a
+  drift schema would have mirrored. With the local database moving into Rust (`crates/store`,
+  see ARCHITECTURE.md §4a) it becomes the thing that actually runs, and the mirroring problem
+  disappears along with it.
 - **Attachment blobs on the server.** The `attachments` table holds metadata. Where the bytes
   live when syncing between devices is not decided.
 - **Row-level security.** The composite keys make cross-tenant references impossible; Postgres

@@ -1,27 +1,35 @@
 # Personal income & spending tracker — plan
 
-Drafted 2026-11-10, revised the same day after reading `algirdasc/expensave`.
-Status: phase 0 is built and tested in `crates/core`, and the bridge surface it is reached
-through is built and tested in `crates/bridge`. Phase 1 has started: `app/` is a Flutter
-project for Android and macOS, `flutter_rust_bridge` is wired to the bridge crate, and an
-integration test walks a balance in Rust from Dart. The screens themselves are next; the
-rest is still for discussion.
+Drafted 2026-11-10, revised the same day after reading `algirdasc/expensave`. Revised again
+2026-11-15, when the UI decision was reversed: two native apps instead of one Flutter tree, and
+the local database moved into Rust behind them. That reversal is argued on its own terms in
+[decisions/0001-native-uis.md](decisions/0001-native-uis.md).
+
+Status: phase 0 is built and tested in `crates/core` — money, ids, enums, the row types, and
+the five rules that turn rows into answers. Phase 1a is built too: `crates/store` runs the
+SQLite schema and carries the change bus, `crates/ffi` publishes it over UniFFI, and both
+apps open a real encrypted database and read a balance back out of Rust. `crates/bridge` and
+the Flutter tree are gone. Phase 1b — the screens — is next.
 
 ## What it has to do
 
-Run on phone, desktop and web. Take transactions four ways: typed by hand, parsed from
-MoMo/bank SMS, imported from CSV/OFX statements, and scanned off receipts. Answer four
-questions: where did the money go, am I over budget, what does next month look like, and
-how much is in each account and currency.
+Run on Android and iPhone. Take transactions four ways: typed by hand, parsed from MoMo/bank
+SMS, imported from CSV/OFX statements, and scanned off receipts. Answer four questions: where
+did the money go, am I over budget, what does next month look like, and how much is in each
+account and currency.
+
+Desktop and web are out of scope for now. They were phase 5 "off the same Flutter tree", and
+there is no such tree any more; nothing below the FFI boundary would have to change if they
+come back, so the decision is deferred rather than refused.
 
 ## Prior art
 
 `algirdasc/expensave` (GPL-3.0, Symfony + Angular, actively maintained) solves a large part
 of this and several of its design decisions are better than my first draft. Everything
-marked **[expensave]** below is an idea taken from it and reimplemented in Dart — the code
-is GPL-3.0, so nothing is copied verbatim, and the stacks differ anyway. This is firm now that
-the plan is to publish: GPL code in a closed-source store app is both a licence breach and a
-known conflict with Apple's terms. Ideas are free; files are not.
+marked **[expensave]** below is an idea taken from it and reimplemented in Rust — the code is
+GPL-3.0, so nothing is copied verbatim, and the stacks differ anyway. This is firm now that the
+plan is to publish: GPL code in a closed-source store app is both a licence breach and a known
+conflict with Apple's terms. Ideas are free; files are not.
 
 What it does *not* solve, and why we're still building: no SMS capture (it's a browser app,
 a PWA cannot read SMS on Android), no budgets at all, and no currency field anywhere —
@@ -29,25 +37,32 @@ amounts are plain floats in one implicit currency.
 
 ## Shape
 
-A Rust core and server, a Flutter UI. Every rule and calculation lives in one Rust crate,
-compiled into the apps via `flutter_rust_bridge`, into the web client as WASM, and linked
-directly into the server — so client and server cannot disagree about a balance. SQLite on each
-device as the working store, Postgres behind the server.
+A Rust core, store and server, and two native UIs — SwiftUI on iOS, Jetpack Compose on Android.
 
-Flutter rather than Tauri mobile or React Native for the UI, and Rust rather than Dart for the
-rules. The reasoning, the rejected alternatives and the costs are in
-[ARCHITECTURE.md](ARCHITECTURE.md); the short version is that the sync product needs one
-implementation of the ledger, and the hardest Android work is better travelled in Flutter.
+Every rule and calculation lives in one Rust crate. So does the SQLite database beneath it, its
+migrations, the queries the screens run, and the sync client. All of it is compiled into both
+apps through UniFFI and linked directly into the server, so client and server cannot disagree
+about a balance, and the two apps cannot disagree with each other. What is written twice is
+screens, and only screens.
+
+Native rather than Flutter, and Rust rather than Kotlin or Swift for everything below the
+screens. The reasoning, the rejected alternatives and the costs are in
+[ARCHITECTURE.md](ARCHITECTURE.md) and the decision record; the short version is that the design
+was already two designs, the web target that Flutter uniquely covered is gone, and two native
+apps without a shared storage layer would mean writing the schema, the queries and the sync
+cycle twice — the exact duplication the Rust core exists to prevent.
 
 ### Layout
 
 - `crates/core/` — pure Rust, no I/O, no clock, no DB. Money, categorisation, balance walk,
   recurrence, dedup, budgets, parsers. Where every rule lives.
+- `crates/store/` — SQLite, migrations, repositories, the screen queries, the change bus.
+- `crates/sync/` — wire protocol, watermarks, merge, transport behind a trait.
 - `crates/server/` — Axum, Postgres, auth, sync, rule packs. Links `core` directly.
-- `crates/bridge/` — the `flutter_rust_bridge` surface, and nothing else.
-- `app/` — Flutter UI for all platforms, drift/SQLite storage, sync client, Kotlin SMS plugin.
+- `crates/ffi/` — the UniFFI surface, and nothing else.
+- `ios/` — SwiftUI app.
+- `android/` — Compose app, plus the Kotlin SMS broadcast receiver.
 - `packs/` — versioned rule packs: SMS patterns and default categories, shipped as data.
-- `site/` — static marketing site, not Flutter.
 
 ## Data model
 
@@ -86,6 +101,11 @@ denormalised balance column and ships a cron command to fix it when it drifts; t
 warning, not a pattern. If performance ever demands a cached balance, update it inside the
 same database transaction as the row that changed.
 
+The schema is written down three times — the Rust types, `db/postgres/0001_init.sql` and
+`db/sqlite/0001_init.sql` — and kept in agreement by a test rather than by care. See
+[SCHEMA.md](SCHEMA.md). The SQLite file stops being a statement of intent that a Dart schema
+mirrors, and becomes the thing `crates/store` actually runs.
+
 ### Recurrence editing
 
 When a recurring template changes, the edit asks which instances it applies to:
@@ -99,8 +119,10 @@ a device id; sync pushes what changed since the last watermark and pulls the res
 wins per row. Deletes are soft so a delete on one device isn't resurrected by another. Not a
 CRDT — for one person with a few devices, row-level LWW is honest and debuggable.
 
-The web client can't use local SQLite the same way; it talks to the server directly with a
-small cache. Accepted asymmetry.
+The whole cycle lives in `crates/sync`, which means the awkward cases — two devices editing one
+row, a delete racing an edit, a replayed watermark — are exercised by `cargo test` against two
+in-memory stores, on every commit, with no handset involved. The apps supply an HTTP client and
+an OS scheduler to wake it: `WorkManager` on Android, `BGTaskScheduler` on iOS.
 
 Publishing changes the ceiling here. Row-level LWW is fine for one person's three devices; for
 other people's money it needs per-user isolation enforced server-side on every query, a
@@ -127,7 +149,7 @@ classified for free. Corrections made in the inbox write back as new rules.
 
 Each source implements one interface: `supports(file_or_message)` plus `parse(...)` returning
 candidate rows. A resolver walks registered handlers until one claims the input. Adding GCB
-or Ecobank CSV later is a new class and nothing else. Planned handlers: MoMo SMS, bank alert
+or Ecobank CSV later is a new handler and nothing else. Planned handlers: MoMo SMS, bank alert
 SMS, generic CSV with a stored column mapping, OFX (several banks export it and the fields
 are defined, unlike CSV), Dollarbird-style export for migration.
 
@@ -142,9 +164,9 @@ threshold isn't.
 ### SMS, specifically
 
 Highest value of the four and the reason we're building rather than deploying expensave. A
-background receiver catches MoMo and bank alerts, runs the pattern table, and drops candidates
-into the inbox. Never auto-commit a parsed message straight to the ledger; formats change
-without notice and a silent mis-parse poisons the numbers quietly.
+background receiver catches MoMo and bank alerts, calls straight into Rust, runs the pattern
+table, and drops candidates into the inbox. Never auto-commit a parsed message straight to the
+ledger; formats change without notice and a silent mis-parse poisons the numbers quietly.
 
 Android only — iOS gives apps no access to SMS at all, and never will. On Android this is
 publishable: Google's restricted-permissions policy carries an exception row for "SMS-based
@@ -162,7 +184,7 @@ the four.
 
 **Reporting scaffolding** **[expensave]**: one generic report service parameterised by a date
 grouping format, carrying a running balance across the period, specialised into daily, monthly
-and by-category. Write it once, subclass it three times.
+and by-category. Write it once, in Rust, and both apps show it.
 
 - **Where it went** — month view, category breakdown, per-category trend, search.
 - **Budgets** — monthly cap per category, warning at 80% and at breach. Caps are per currency;
@@ -193,6 +215,8 @@ be questioned at some review, because it is described as temporary and granted c
 **Therefore the product must be good without SMS.** iOS can never have it, and an Android
 grant can be withdrawn. Manual entry, CSV/OFX import and receipt capture carry the product;
 SMS is the thing that makes the Android version feel magic. Build and market it in that order.
+Building both apps in parallel enforces this: a feature that only works on Android is visible
+as a hole in the iOS build the same week it is written.
 
 **Rule distribution becomes a support problem.** Every bank and wallet another user has is a
 format you don't have. Ship `category_rules` and SMS patterns as a versioned pack the app
@@ -205,27 +229,37 @@ App Store privacy labels that match what the app actually does, in-app account d
 data export, Ghana's Data Protection Act registration as a data controller, and GDPR duties
 the moment a European user signs up. Budget real time for this; it is a phase, not a checkbox.
 
-**The public web surface is a separate site.** Flutter web is fine for the signed-in app and
-poor as a landing page — heavy first load, canvas-rendered text, weak SEO. Marketing site in
-plain static HTML, app at `app.` on the same domain.
+**The public web surface is a static site**, written whenever launch approaches. It was never
+going to be the app's framework anyway, and now there is no app framework that could have
+tempted it.
 
 ## Phasing
 
 | Phase | Deliverable | Rough size |
 |---|---|---|
-| 0 | `core`: money, balance walk, categorisation ladder, recurrence, budgets, dedup — tested | small |
-| 1 | Android app: accounts, manual entry, pending/confirmed, recurring, outlook, breakdown | medium |
-| 2 | SMS ingestion, review inbox, rules learning from corrections | medium |
+| 0 | `core`: money, balance walk, categorisation ladder, recurrence, budgets, dedup — tested | small ✅ |
+| 1a | The turn: delete `app/`, `crates/ffi` over UniFFI, `crates/store` with the SQLite schema and the change bus, an empty app on each platform that opens a store and reads a balance back | medium ✅ |
+| 1b | Both apps: accounts, manual entry, pending/confirmed, ledger, recurring, outlook, breakdown | large |
+| 2 | SMS ingestion and rules learning (Android); the review inbox on both, since import feeds it too | medium |
 | 3 | Budgets and warnings; reconciliation entries | small |
 | 4 | CSV + OFX import, handler resolver, duplicate merging | medium |
-| 5 | Sync server, then desktop and web builds off the same tree | large |
+| 5 | Sync: `crates/sync`, the server, and the scheduling on each platform | large |
 | 6 | Receipt scanning | medium |
 | 7 | Launch readiness: multi-tenant hardening, rule packs, deletion/export, store declarations, marketing site | large |
 
-Forecasting no longer has a phase of its own — adopting the pending-transaction model folds it
-into phase 1 for roughly nothing. Phases 0–3 give a genuinely useful app; everything after is
+Phase 1 split in two because the turn was a distinct piece of work with a distinct finish
+line: one call across UniFFI, from Swift and from Kotlin, that opens a real database and gets
+a real number back. That is done, on both, and each platform has the test to prove it — run
+on the laptop rather than on a device, so it costs a second rather than a simulator boot.
+
+Forecasting has no phase of its own — adopting the pending-transaction model folds it into
+phase 1 for roughly nothing. Phases 0–3 give a genuinely useful app; everything after is
 widening, not deepening. If this stalls it stalls at phase 5, which is why that sits after the
-app already earns its keep standalone.
+apps already earn their keep standalone.
+
+Both platforms move together, phase by phase. Shipping Android three phases ahead would mean
+discovering the FFI's iOS problems late and rewriting screens against a surface that had
+settled around one platform's habits.
 
 ## Things that will bite
 
@@ -244,6 +278,11 @@ app already earns its keep standalone.
    Ghanaian bank correctly on day one.
 7. **Discipline, not software, is the usual failure.** Manual entry has to be under five
    seconds: amount, category, done, with account and date defaulted.
+8. **Two apps drifting.** New with this plan. The containment is that no screen decides
+   anything — every number, list and validation comes from the same Rust call on both — plus a
+   parity pass at the end of every phase. Drift found later than that is expensive.
+9. **The FFI surface growing without limit.** Each screen-shaped query is one more published
+   function. Watch the count; past about thirty, the line is in the wrong place.
 
 ## Not porting from expensave
 
@@ -252,17 +291,24 @@ errors suppressed (`@preg_match`) — a bad pattern should fail loudly at save t
 amount-plus-same-day duplicate check. And the conflation of account, container and currency
 into one "calendar" object, which is precisely what blocks the multi-currency case.
 
+## Settled
+
+- **The server is Rust/Axum, not Dart.** A syncing product has the client and the server both
+  computing balances and budget state, and two implementations of those rules eventually
+  disagree about someone's money. One `mt-core`, linked into both, removes the class of bug
+  rather than testing for it. Phase 0 settles it in practice too: the rules are written, in
+  Rust, and there is nothing to port.
+- **The UIs are native and the storage layer is not.** See
+  [decisions/0001-native-uis.md](decisions/0001-native-uis.md).
+- **The web client is dropped**, along with desktop. That removes the storage asymmetry, the
+  WASM target and a chunk of phase 5. It can come back as an SPA against the server without
+  anything below the FFI changing.
+- **iPhone is in the picture, from phase 1, alongside Android.** It changes nothing except that
+  the SMS story is Android-only and the product has to be good without it.
+
 ## Open questions
 
-Settled: the server is Rust/Axum, not Dart. The deciding argument is in
-[ARCHITECTURE.md](ARCHITECTURE.md) — a syncing product has the client and the server both
-computing balances and budget state, and two implementations of those rules eventually
-disagree about someone's money. One `mt-core`, linked into both, removes the class of bug
-rather than testing for it. Phase 0 settles it in practice too: the rules are written, in
-Rust, and there is nothing to port.
-
-- Is the web client needed, or does desktop cover the sit-down case? Dropping it removes the
-  storage asymmetry and a chunk of phase 5.
-- Self-hosted server, or local-only with sync over the LAN? Local-only is a real option and
-  removes most of the security surface.
-- iPhone in the picture, or Android only? Changes nothing except the SMS story.
+- Self-hosted server alongside the published one, or only the hosted product? Costs little
+  given the server is one binary, and it is a credible answer to "where is my financial data".
+- Rule pack signing: a detached signature, or something closer to a transparency log?
+- The working name.

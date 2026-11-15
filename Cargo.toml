@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/bridge"]
+members = ["crates/core", "crates/store", "crates/ffi"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,6 +11,7 @@ publish = false
 
 [workspace.dependencies]
 mt-core = { path = "crates/core" }
+mt-store = { path = "crates/store" }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 thiserror = "2.0.12"
@@ -19,33 +20,32 @@ uuid = { version = "1.17.0", features = ["v7", "serde"] }
 # backtracking) matters here because patterns arrive from rule packs and from sync.
 regex = { version = "1.13.1", default-features = false, features = ["std", "perf", "unicode-case", "unicode-perl"] }
 time = { version = "0.3.41", features = ["serde", "serde-well-known", "serde-human-readable", "macros", "formatting", "parsing"] }
+# The device database. `bundled-sqlcipher-vendored-openssl` builds SQLCipher and its crypto
+# from source rather than linking whatever the platform happens to ship: an Android handset
+# has no SQLCipher at all, and iOS ships a plain SQLite that would silently open the file
+# unencrypted.
+rusqlite = { version = "0.43.0", features = ["bundled-sqlcipher-vendored-openssl", "time", "uuid"] }
+# Only the FFI needs a runtime, and only to keep blocking database work off the UI thread.
+tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
+tempfile = "3.27.0"
 
 [workspace.lints.rust]
-# The unsafe policy, stated here once. The other two places that mention it — the module
-# doc in `crates/bridge/src/lib.rs` and §3 of docs/ARCHITECTURE.md — describe their own
-# corner of it and point back at this.
+# The unsafe policy, stated here once. §3 of docs/ARCHITECTURE.md and the module doc in
+# `crates/ffi/src/lib.rs` describe their own corner of it and point back at this.
 #
-# `deny` rather than `forbid`, because a crate holding the `flutter_rust_bridge` glue
-# cannot forbid unsafe at its root: FFI is unsafe by nature, and `forbid` cannot be
-# switched off for the generated module.
+# `forbid`, with no exception anywhere. Under `flutter_rust_bridge` there had to be one:
+# the generated glue was a file in the bridge crate, so that crate root could only `deny`
+# and allow the one module. UniFFI writes its scaffolding from a macro instead, and the
+# compiler does not fire lints inside another crate's macro expansion — so the FFI crate
+# forbids unsafe like everything else, and what the lint governs is what it should govern:
+# the code in this workspace that a person wrote. The boundary's own `unsafe` still exists,
+# in the expansion, doing what an FFI boundary does.
 #
-# So `forbid` is applied one level in, where it still means something. Of the fifteen crate
-# roots in this workspace — two libraries and thirteen integration tests — fourteen forbid
-# unsafe outright, and `mt_bridge`'s six hand-written modules forbid it individually. The
-# single exception is `crates/bridge/src/lib.rs`, which cannot, and the single `allow` is
-# the generated module it holds.
-#
-# What this line governs, then, is that one root and anything added later that forgets to
-# seal itself, where an `allow` can still override it. A new crate root or a new module in
-# the bridge should carry its own `forbid`.
-unsafe_code = "deny"
+# Being `forbid` rather than `deny`, no `#[allow]` anywhere beneath it can switch this off.
+# A crate that genuinely needs unsafe one day changes this line, in a commit that says so.
+unsafe_code = "forbid"
 missing_docs = "warn"
-# `frb_expand` is set by flutter_rust_bridge's own macro expansion and by nothing here, so
-# the compiler is right that it never sees it defined. Declared rather than silenced, so a
-# genuine typo in a `cfg` still warns. Workspace-wide although only the bridge needs it: a
-# crate-local `[lints]` table replaces the inherited set rather than adding to it, and
-# restating all eight denials to scope one `check-cfg` is the worse trade.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+unexpected_cfgs = "warn"
 
 [workspace.lints.clippy]
 float_arithmetic = "deny"

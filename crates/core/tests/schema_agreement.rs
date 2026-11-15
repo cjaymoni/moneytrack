@@ -5,10 +5,9 @@
 //! tables. Nothing in the compiler connects any of that, so this test does: add a variant,
 //! a currency or a column on one side only and it fails here rather than on someone's phone.
 
-// Sealed like the library it tests: an integration test is its own crate root, and the
-// workspace only denies unsafe, which an `allow` in this file would switch off.
+// Restated although the workspace already forbids it: an integration test is its own crate
+// root, and a test is exactly where someone reaches for a shortcut.
 #![forbid(unsafe_code)]
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::collections::BTreeSet;

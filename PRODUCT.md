@@ -8,9 +8,11 @@ adaptive
 
 ## Stack
 
-Flutter for all clients (Android, iOS, desktop, web) with a Rust core and Axum server; see
-`docs/ARCHITECTURE.md`. Design artifacts and screen mockups are built as local static HTML/CSS
-in `design/`, then implemented in Flutter. No hosted artifacts — everything stays in the repo.
+Native UIs — SwiftUI on iOS, Jetpack Compose on Android — over a Rust core, store and sync
+layer reached through UniFFI, with an Axum server; see `docs/ARCHITECTURE.md` and
+`docs/decisions/0001-native-uis.md`. Desktop and web are out of scope for now. Design artifacts
+and screen mockups are built as local static HTML/CSS in `design/`, then implemented natively
+on each platform. No hosted artifacts — everything stays in the repo.
 
 ## Users
 

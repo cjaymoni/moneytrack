@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Without this the app cannot reach the Keychain at all, and the first run fails with
+	     errSecMissingEntitlement (-34018) before it ever opens the ledger. The key the
+	     database is encrypted under lives there, so this entitlement is load-bearing rather
+	     than boilerplate. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)gh.moneytrack.app</string>
+	</array>
+</dict>
+</plist>

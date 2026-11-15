@@ -1,0 +1,47 @@
+[package]
+name = "mt_ffi"
+description = "The published API surface between the two apps and the Rust below them: one handle crosses, everything else is values."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Underscored, unlike every other crate here, because three naming schemes have to agree:
+# the Kotlin bindings load the library by its crate name, cargo-ndk packages the artifact
+# under that name, and the iOS XCFramework links `libmt_ffi.a`. A dash anywhere in that
+# chain breaks it somewhere else.
+#
+# `staticlib` is what the Apple platforms link; `cdylib` is what Android loads and what the
+# bindings generator reads its metadata out of; `lib` keeps the crate usable from Rust,
+# which is how its own tests reach it.
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+
+# The generator, run as `cargo run --bin uniffi-bindgen` so the version that writes the
+# Swift and the Kotlin is the one compiled into the library beside it.
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+# Exact rather than caret: the scaffolding compiled into this crate and the generator that
+# writes the bindings must be the same version or they disagree about their own wire
+# format. `tokio` here is what lets an exported function be `async`, which is how every
+# call that touches the database reaches Swift as `await` and Kotlin as `suspend`.
+uniffi = { version = "=0.32.2", features = ["tokio", "cli"] }
+mt-core.workspace = true
+mt-store.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+# The published surface is async, so the tests that exercise it need something to drive a
+# future. `macros` and a current-thread runtime, which is all `#[tokio::test]` wants.
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

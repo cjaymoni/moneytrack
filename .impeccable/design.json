@@ -93,7 +93,7 @@
     "platform": {
       "mode": "adaptive",
       "authority": "design/ADAPTIVE.md is authoritative for the per-OS mapping (Material 3 on Android, HIG on iOS) and is not duplicated in DESIGN.md.",
-      "note": "The .mt-nav, .mt-fab, .mt-chip, .mt-seg and .mt-btn classes in design/tokens/app.css are painted stand-ins so the HTML references read as real screens. They are not a component library to port to Flutter. Navigation, sheets, dialogs, controls, control shape, back behaviour, gestures and system motion are the platform's own. The world lends type, palette, density and the stamp.",
+      "note": "The .mt-nav, .mt-fab, .mt-chip, .mt-seg and .mt-btn classes in design/tokens/app.css are painted stand-ins so the HTML references read as real screens. They are not a component library to port. Navigation, sheets, dialogs, controls, control shape, back behaviour, gestures and system motion are the platform's own. The world lends type, palette, density and the stamp.",
       "shapeLimit": "The 2-4px radii in tokens.css apply to surfaces the world paints — the review strip, the stamp, sheets. Controls take Material 3 corner tokens on Android and HIG continuous corners on iOS.",
       "fonts": "Archivo and Stardos Stencil ship as bundled app assets. The Google Fonts CDN links exist only because the design files are HTML references.",
       "tokenMirror": "design/tokens/tokens.css is the normative source and is intended to be mirrored into a Dart token file. That mirror does not exist yet; no .dart files are present in the repo."
@@ -185,7 +185,7 @@
       "name": "Bottom Navigation",
       "kind": "nav",
       "refersTo": "nav-item",
-      "description": "Four destinations on a raised oat bar. Painted stand-in: in Flutter this is the Material 3 navigation bar or the HIG tab bar, with Material Symbols or SF Symbols respectively. What this system owns is the colour, the icon weight and the micro label register.",
+      "description": "Four destinations on a raised oat bar. Painted stand-in: in the apps this is the Compose Material 3 navigation bar or the SwiftUI tab bar, with Material Symbols or SF Symbols respectively. What this system owns is the colour, the icon weight and the micro label register.",
       "html": "<nav class=\"ds-nav\" aria-label=\"Sections\"><a href=\"#\" aria-current=\"page\"><svg viewBox=\"0 0 24 24\"><path d=\"M4 19V5m5 14V9m5 10V7m5 12v-6\"/></svg>Ledger</a><a href=\"#\"><svg viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"5\" width=\"18\" height=\"15\" rx=\"2\"/><path d=\"M3 10h18M8 3v4m8-4v4\"/></svg>Outlook</a><a href=\"#\"><svg viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 7v5l3.5 2\"/></svg>Budgets</a><a href=\"#\"><svg viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"8\" r=\"3.5\"/><path d=\"M5 20a7 7 0 0 1 14 0\"/></svg>You</a></nav>",
       "css": ".ds-nav { display:flex; background:#F7F2E7; border-top:1px solid #D1C5AD; padding:9px 8px 12px; font-family:Archivo,'Helvetica Neue',system-ui,sans-serif; } .ds-nav a { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; text-decoration:none; color:#6B6454; font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; } .ds-nav a[aria-current=\"page\"] { color:#17150F; } .ds-nav a:hover { color:#4A4438; } .ds-nav a:focus-visible { outline:2px solid #8C3A1E; outline-offset:2px; border-radius:2px; } .ds-nav svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }"
     },
@@ -250,7 +250,7 @@
     ],
     "donts": [
       "Don't use Stardos Stencil outside a stamp or a stamp field.",
-      "Don't reimplement .mt-nav, .mt-fab, .mt-chip, .mt-seg or .mt-btn as custom Flutter widgets — they are painted stand-ins for native controls in these HTML references.",
+      "Don't reimplement .mt-nav, .mt-fab, .mt-chip, .mt-seg or .mt-btn as custom composables or custom SwiftUI views — they are painted stand-ins for native controls in these HTML references.",
       "Don't apply the 2-4px radii to a native control; a control's corner belongs to the platform.",
       "Don't fade text to signal a quieter state. An opacity on type is how the old future row failed AA.",
       "Don't put a date on the small row stamp; the date gutter already carries it. The dated form is the large mark, at the moment of stamping.",

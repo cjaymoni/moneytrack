@@ -5,3 +5,25 @@
 
 # Rust build output.
 /target/
+
+# Generated, never edited: `tools/bindings.sh` writes both from the Rust itself, and the
+# generator is this workspace's own binary. Checking them in would mean a reviewer reading
+# 200KB of machine output on every change to a DTO, and someone eventually editing it.
+/ios/MoneytrackKit/Sources/MoneytrackKit/Generated/
+/android/core/src/main/kotlin/uniffi/
+
+# Built, never vendored: `tools/ffi-build.sh` and `tools/android-libs.sh` write these.
+/ios/MoneytrackKit/Frameworks/
+/android/core/src/main/jniLibs/
+
+# iOS
+/ios/MoneytrackKit/.build/
+/ios/**/xcuserdata/
+/ios/**/*.xcworkspace/xcshareddata/swiftpm/configuration/
+DerivedData/
+
+# Android
+/android/.gradle/
+/android/build/
+/android/*/build/
+/android/local.properties

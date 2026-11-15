@@ -5,8 +5,8 @@ world lends **type, palette, density and one signature move** — the stamp. It 
 lend navigation, control shape, sheet behaviour, gestures or system motion.
 
 The `.mt-*` classes in `tokens/app.css` are painted stand-ins so the HTML references
-read as real screens. They are **not** a component library to port to Flutter. Every
-row below says what the Flutter build uses instead.
+read as real screens. They are **not** a component library to port. Every row below says
+what the two native builds use instead — Jetpack Compose on Android, SwiftUI on iOS.
 
 | Job | Android (Material 3) | iOS (HIG) | What the world contributes |
 |---|---|---|---|

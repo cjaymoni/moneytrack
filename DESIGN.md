@@ -279,7 +279,7 @@ The dark scheme re-grades every one of these roles (`{colors.ground-dark}` throu
 **Display / Body / Label Font:** Archivo (with Helvetica Neue, system-ui, sans-serif)
 **Stamp Font:** Stardos Stencil (with Archivo fallback)
 
-**Character:** One grotesque does everything — figures, labels, body — so the register comes from scale and tracking rather than from a second voice. Archivo's tabular figures are on globally (`font-variant-numeric: tabular-nums`), so columns of money align down the page and a changing balance does not shimmer. Stardos Stencil is the stencil voice of the grading shed and is confined to one object. Both faces ship as bundled app assets in the Flutter build; the CDN links in the HTML files exist only because those are HTML references.
+**Character:** One grotesque does everything — figures, labels, body — so the register comes from scale and tracking rather than from a second voice. Archivo's tabular figures are on globally (`font-variant-numeric: tabular-nums`), so columns of money align down the page and a changing balance does not shimmer. Stardos Stencil is the stencil voice of the grading shed and is confined to one object. Both faces ship as bundled app assets in each native build; the CDN links in the HTML files exist only because those are HTML references.
 
 ### Hierarchy
 - **Amount Hero** (600, 54px, 0.96, −0.035em): the balance on Ledger, the month's spend on Budgets, the lowest projected balance on Outlook, and the running figure in the entry sheet. One per screen.
@@ -348,7 +348,7 @@ An important limit the token file states itself: **these radii are for surfaces 
 
 Borders carry most of the structure: a 1px hairline for dividers and controls, a 1.5px dashed edge for anything awaiting a check, and a 1px solid oxblood edge once it has been checked. Dashed means unresolved; solid means settled. That contrast is the only border vocabulary the system has, and it maps directly onto the product's core state.
 
-Nothing is a capsule, and nothing is a circle except the 7px status dot in the account chip and the single marker point on the outlook line — small indicator geometry, not a form language. Icons are stroked line SVGs on a 24px grid at 1.7–2.1px, round caps and joins, drawn to match the hairline rules. In the Flutter build they are Material Symbols on Android and SF Symbols on iOS, never one set on both.
+Nothing is a capsule, and nothing is a circle except the 7px status dot in the account chip and the single marker point on the outlook line — small indicator geometry, not a form language. Icons are stroked line SVGs on a 24px grid at 1.7–2.1px, round caps and joins, drawn to match the hairline rules. In the apps they are Material Symbols on Android and SF Symbols on iOS, never one set on both.
 
 ### Named Rules
 **The Dashed-Means-Unverified Rule.** A dashed border is reserved for a thing the user has not yet checked. Never use dashes as decoration, as an empty-state flourish, or as a dividing line.
@@ -359,7 +359,7 @@ Nothing is a capsule, and nothing is a circle except the 7px status dot in the a
 
 Read `design/ADAPTIVE.md` first. It is authoritative for the per-OS mapping — what each job becomes under Material 3 and under HIG, and exactly what the world contributes to each. This section describes the painted appearance; ADAPTIVE.md decides the container, and it is not duplicated here.
 
-The classes below are **painted stand-ins**, not a component library. `.mt-nav`, `.mt-fab`, `.mt-chip`, `.mt-seg` and `.mt-btn` exist so the HTML references read as real screens. Do not build a custom bottom navigation, a custom sheet, a custom back button, a custom segmented control or a custom FAB in Flutter. Use the platform's and paint it with these tokens.
+The classes below are **painted stand-ins**, not a component library. `.mt-nav`, `.mt-fab`, `.mt-chip`, `.mt-seg` and `.mt-btn` exist so the HTML references read as real screens. Do not build a custom bottom navigation, a custom sheet, a custom back button, a custom segmented control or a custom FAB. Use the platform's — Compose Material 3 on Android, SwiftUI on iOS — and paint it with these tokens.
 
 ### Buttons
 - **Shape (painted):** barely-softened rectangle (3px). On device, the platform's own corner.
@@ -420,7 +420,7 @@ Loading is 12px hairline-fill bars pulsing between 75% and 35% opacity over 1.5s
 
 ### Don't:
 - **Don't** use Stardos Stencil outside a stamp or a stamp field.
-- **Don't** reimplement `.mt-nav`, `.mt-fab`, `.mt-chip`, `.mt-seg` or `.mt-btn` as custom Flutter widgets — they are painted stand-ins for native controls in these HTML references.
+- **Don't** reimplement `.mt-nav`, `.mt-fab`, `.mt-chip`, `.mt-seg` or `.mt-btn` as custom composables or custom SwiftUI views — they are painted stand-ins for native controls in these HTML references.
 - **Don't** apply the 2–4px radii to a native control; a control's corner belongs to the platform.
 - **Don't** fade text to signal a quieter state. An opacity on type is how the old future row failed AA.
 - **Don't** put a date on the small row stamp; the date gutter already carries it. The dated form is the large mark, at the moment of stamping.

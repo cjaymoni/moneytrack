@@ -5,10 +5,9 @@
 //! breaks every device in the field. The assertions below pin it deliberately rather than
 //! letting it be whatever a dependency's default happens to be.
 
-// Sealed like the library it tests: an integration test is its own crate root, and the
-// workspace only denies unsafe, which an `allow` in this file would switch off.
+// Restated although the workspace already forbids it: an integration test is its own crate
+// root, and a test is exactly where someone reaches for a shortcut.
 #![forbid(unsafe_code)]
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

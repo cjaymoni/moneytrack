@@ -1,9 +1,9 @@
 //! `mt-core` — every rule that decides what a number is.
 //!
 //! Pure: no I/O, no database handle, no socket, no clock. Time is passed in, rows are passed
-//! in, owned values come back. The same crate is compiled into the Flutter apps through
-//! `flutter_rust_bridge`, into the web client as WASM, and linked into the Axum server, so a
-//! client and a server cannot disagree about someone's balance.
+//! in, owned values come back. The same crate is compiled into the iOS and Android apps
+//! through UniFFI and linked into the Axum server, so a client and a server cannot disagree
+//! about someone's balance.
 //!
 //! ## What is here
 //!
@@ -26,9 +26,9 @@
 //! and an expected output, and it is why the same code can run on a handset and on a server
 //! without either of them having to agree about anything but the numbers.
 
-// The workspace denies unsafe; this crate forbids it, which cannot be switched off by an
-// inner `allow`. Nothing here touches a pointer, a socket or an FFI boundary, and nothing
-// ever should: it is arithmetic over values.
+// Restated here although the workspace already forbids it, because this is the crate where
+// it matters most: nothing here touches a pointer, a socket or an FFI boundary, and nothing
+// ever should. It is arithmetic over values.
 #![forbid(unsafe_code)]
 #![cfg_attr(
     test,

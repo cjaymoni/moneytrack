@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A bare system theme. The real one is Material 3 built from the tokens in design/, and
+     it belongs to phase 1b along with the screens; this exists so the activity has a theme
+     at all. -->
+<resources>
+    <style name="Theme.Moneytrack" parent="android:Theme.Material.NoActionBar" />
+</resources>

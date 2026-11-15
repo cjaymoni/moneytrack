@@ -1,8 +1,11 @@
 # Architecture
 
 Companion to [PLAN.md](PLAN.md), which covers *what* is being built and in what order. This
-document covers *how* it is put together and why. Written 2026-11-10. Nothing is built yet, so
-treat every signature below as a sketch that first contact with a compiler will change.
+document covers *how* it is put together and why. Written 2026-11-10; revised 2026-11-15 when
+the UI decision was reversed — see [decisions/0001-native-uis.md](decisions/0001-native-uis.md)
+for that reversal on its own terms. Phase 0 is built, so §4 describes code that exists;
+everything describing the store, the sync client and the two apps is a sketch that first
+contact with a compiler will change.
 
 `moneytrack` is a working name.
 
@@ -10,15 +13,16 @@ treat every signature below as a sketch that first contact with a compiler will 
 
 ## 1. The decision
 
-**A Rust core and server, a Flutter UI.**
+**A Rust core, store and server. Two native UIs: SwiftUI on iOS, Jetpack Compose on Android.**
 
 Everything that decides what a number is — money arithmetic, the balance walk, the
 categorisation ladder, recurrence expansion, duplicate scoring, budget evaluation, SMS parsing
-— is one Rust crate. It is compiled into the mobile and desktop apps through
-`flutter_rust_bridge`, into the web client as WASM, and linked directly into the Axum server.
-Everything a person touches is Flutter.
+— is one Rust crate. Everything that *keeps* a number — the SQLite database, its migrations,
+the queries the screens run, and the sync client that reconciles them with the server — is two
+more Rust crates. All of it is compiled into both apps through UniFFI and linked directly into
+the Axum server. What is written twice is screens, and only screens.
 
-### Why
+### Why Rust holds this much
 
 The product syncs, which means the client and the server both compute balances, budget state
 and whether two rows are the same transaction. Two implementations of those rules will
@@ -26,168 +30,285 @@ eventually disagree, and a client and server disagreeing about someone's balance
 class that destroys trust in a finance app and consumes its support budget. One compiled
 implementation cannot drift.
 
-Secondarily, the hard logic here is pure: bytes in, values out, no I/O. That is the shape where
-the bridge stays narrow and where Rust's type system actually earns its keep — `Direction`,
-`TxStatus` and `RecurrenceScope` are exactly the enums you want matched exhaustively when the
-subject is other people's money.
+That argument used to stop at the rules, because a single Flutter tree gave one implementation
+of the storage layer for free. Two native apps do not. Leaving SQLite to the platforms would
+mean the schema, the migration sequence, every query behind every screen and the whole
+push/pull/merge cycle written once in Room and once in GRDB, kept in agreement by discipline —
+which is the thing this architecture was shaped to avoid, reintroduced one layer down. So the
+boundary moves: Rust owns the database.
+
+### Why the UIs are native
+
+Four reasons, in the order they carry weight.
+
+**The design is already two designs.** `design/ADAPTIVE.md` specifies Material 3 on Android and
+HIG on iOS — different navigation, different sheet behaviour, different icon sets, different
+back gesture, different type scales — and the review screenshots in `.impeccable/review/` come
+in `phone-ios-*` and `phone-android-*` pairs. Flutter's economy is one widget tree for both
+platforms. We had already given that up on paper before any screen was built.
+
+**The hardest feature is native anyway.** The Android SMS receiver is Kotlin, lives in a
+broadcast receiver that must survive app kill, and under Flutter had to hop over a
+MethodChannel to reach the parser. Native, it calls Rust directly.
+
+**Web was the soft spot and web is gone.** Flutter's WASM target carried the one risk §1 used
+to flag. Dropping desktop and web (PLAN.md, phasing) removes the risk and, with it, most of
+what the single tree was buying.
+
+**A published consumer finance app is judged on feel.** Dynamic Type, predictive back,
+platform haptics, widgets and the system sheet behaviours are what "it feels like a real app"
+is made of, and they are free in the native toolkits and work in Flutter.
 
 ### Alternatives rejected
 
-**Flutter alone, core in Dart.** Simplest build, fewest moving parts, and the right answer for
-a personal app. Rejected because the server then needs a second implementation of every rule,
-in a second language, kept in agreement by discipline.
+**Flutter, which is what this document said until today.** Still the better answer for a
+product with one design across platforms, a web target and a lone developer counting hours.
+None of those three conditions survived contact with the design work. The switching cost is
+near zero today — `app/` is a scaffold, a wiring check and one round-trip test — and grows
+every week it is deferred.
 
-**Rust alone, UI in Tauri 2 mobile or Dioxus.** Attractive on paper and closest to the existing
-`credvault-rs` muscle. Rejected because there is almost no body of published consumer finance
-apps on that path, and the project's hardest single feature — an Android broadcast receiver
-that survives app kill and feeds a parser — sits exactly where that stack is least travelled.
-Time would go into the framework rather than the product.
+**Kotlin Multiplatform with the rules in Kotlin.** Would give shared logic across both apps and
+nothing to the server, which would then need a second implementation in a second language. That
+is the Dart-core proposal with a different accent, and it was rejected for the same reason. KMP
+over an *unchanged* Rust core adds a third language to the sandwich for no gain.
 
-**React Native.** Third on the merits for a three-target product, and the local toolchain would
-need upgrading before the first line of code. See PLAN.md.
+**Rust UI — Tauri 2 mobile, Dioxus.** Rejected in the original decision and still rejected: no
+body of published consumer finance apps on that path, and the broadcast receiver sits exactly
+where the stack is least travelled.
+
+**React Native.** Third on the merits before, and now competing against two native toolchains
+rather than one cross-platform one. No.
+
+**Hand-rolled C ABI plus JNI.** Total control over the boundary, and a large amount of
+hand-written `unsafe` on both sides of it plus a JNI layer maintained by hand. UniFFI generates
+that layer from the same Rust signatures, which is the whole point of it.
 
 ### Cost accepted
 
-A cross-compilation matrix — Android (NDK), iOS, macOS, Windows, Linux and WASM — maintained
-in CI for the life of the project. And web is the soft spot: `flutter_rust_bridge` has
-supported WASM since its 2.0 line and tests web in CI, but it is not obviously battle-tested
-for production, so the web target gets built in phase 0 rather than discovered in phase 5.
+Every screen is built twice, and two screen-test suites run on two simulators. Features will be
+tempted to drift between the platforms, and the containment is that nothing a screen *decides*
+lives in a screen: both apps call the same Rust for every number, every list and every
+validation, so divergence shows up as a layout difference rather than as two different answers.
+Feature parity, SMS aside, is a review item at the end of every phase.
 
-**Containment.** If WASM disappoints, the web client calls the server for anything the core
-computes. That costs nothing, because the server is already running the same Rust. The risk is
-absorbed by the architecture rather than by optimism.
+The cross-compilation matrix shrinks — Android (NDK) and iOS only, no WASM — but gains an
+XCFramework build step and a Gradle module wrapping a `.so`.
 
 ---
 
 ## 2. Shape
 
 ```
-                 ┌──────────────────────────────────────────┐
-                 │               Flutter UI                 │
-                 │  screens · drift/SQLite · sync client    │
-                 │  platform plugins (SMS, camera, files)   │
+   ┌────────────────────────┐          ┌────────────────────────┐
+   │   iOS app (SwiftUI)    │          │  Android app (Compose) │
+   │  screens · navigation  │          │  screens · navigation  │
+   │  camera · files        │          │  SMS receiver (Kotlin) │
+   │  Keychain · BGTask     │          │  camera · files        │
+   │                        │          │  Keystore · WorkManager│
+   └───────────┬────────────┘          └───────────┬────────────┘
+               │   UniFFI (Swift)                  │  UniFFI (Kotlin)
+               └─────────────────┬─────────────────┘
+                 ┌───────────────▼──────────────────────────┐
+                 │              mt-ffi                      │
+                 │  the published surface, and nothing else │
                  └───────────────┬──────────────────────────┘
-                                 │  flutter_rust_bridge
-                                 │  plain structs, value in / value out
+                 ┌───────────────▼──────────────────────────┐
+                 │        mt-store          mt-sync         │
+                 │  SQLite · migrations  ·  push/pull/merge │
+                 │  queries · change bus ·  watermarks      │
+                 └───────────────┬──────────────────────────┘
                  ┌───────────────▼──────────────────────────┐
                  │            mt-core  (Rust)               │
                  │  money · ledger · rules · recurrence     │
                  │  dedup · budget · parse                  │
                  │          no I/O, no clock, no DB         │
                  └───────────────┬──────────────────────────┘
-                                 │  same crate, linked
+                                 │  same crates, linked
                  ┌───────────────▼──────────────────────────┐
                  │        mt-server (Rust / Axum)           │
                  │  auth · sync · rule packs · Postgres     │
                  └──────────────────────────────────────────┘
 ```
 
-The web client is the same Flutter tree with `mt-core` compiled to WASM, or falling back to
-server-side computation.
+`mt-core` stays exactly what it is: pure, no I/O, no clock, no database. The new crates sit
+above it and depend on it; it depends on nothing of theirs. The server links `core` and the
+sync protocol types directly and never sees `mt-ffi`.
 
 ### Repository layout
 
 ```
 moneytrack/
-├── docs/                  PLAN.md, ARCHITECTURE.md, decisions/
+├── docs/                  PLAN.md, ARCHITECTURE.md, SCHEMA.md, decisions/
 ├── crates/
 │   ├── core/              mt-core — pure, no I/O. The only place rules live.
+│   ├── store/             SQLite, migrations, repositories, the change bus.
+│   ├── sync/              wire protocol, watermarks, merge, transport trait.
 │   ├── server/            mt-server — Axum, Postgres, auth, sync, rule packs.
-│   └── bridge/            frb glue: the published API surface, nothing else.
-├── app/                   Flutter: UI, drift schema, sync client, plugins.
-│   └── android/.../sms/   Kotlin broadcast receiver + plugin channel.
+│   └── ffi/               UniFFI surface: the published API, nothing else.
+├── ios/                   Xcode project (app) + MoneytrackKit (the Swift package).
+├── android/               Gradle: `core` (bindings + .so) and `app` (Compose screens).
+├── tools/                 bindings.sh, ffi-build.sh, android-libs.sh.
+├── db/                    the two schemas: sqlite/ and postgres/.
+├── design/                HTML references, tokens, ADAPTIVE.md.
 ├── packs/                 versioned rule packs (patterns, categories) as data.
-├── site/                  static marketing site. Not Flutter.
 └── .github/workflows/     build matrix, rule-pack release, store pipelines.
 ```
 
+`app/` and `crates/bridge/` were what this replaced, and both are gone: the bridge's
+hand-written modules moved to `crates/ffi` with their tests, and the Flutter tree was
+deleted. `site/` is dropped with the web client.
+
+Nothing generated or built is in source control. `tools/bindings.sh` writes the Swift and
+the Kotlin from the library itself, `tools/ffi-build.sh` assembles the XCFramework, and
+`tools/android-libs.sh` writes the `.so` per ABI.
+
 ---
 
-## 3. The bridge boundary
+## 3. The boundary
 
-The single rule: **values cross, handles do not.** The core never holds a database connection,
-a file handle, a socket or a clock. Time is passed in. Rows are passed in. Results come back as
-owned structs. This keeps `flutter_rust_bridge` in the regime where it is pleasant, and it is
-also what makes the core testable without a device.
+The old rule was **values cross, handles do not**, and it held because storage lived on the
+other side. Now it reads:
 
-What stays in Dart, deliberately:
+> **One handle crosses, and it is the store. Everything else is values.**
 
-- **Storage.** drift/SQLite. Moving persistence into Rust would widen the bridge enormously and
-  give up drift's reactive queries, which are what make the inbox and the running balance
-  update live as rows change.
-- **Sync transport.** HTTP, retries, auth tokens, background scheduling.
-- **Platform plugins.** The Kotlin SMS receiver, camera, file picking.
+An app opens a `Store` once, holds it for the process lifetime, and passes owned values across
+every call it makes on it. No connection, cursor, statement, row iterator or file handle is
+ever visible to Swift or Kotlin. The core below is untouched by this: it still receives owned
+values and still has no idea a database exists.
 
-What crosses, as built:
+### What is in Rust
+
+- **Storage.** `mt-store` opens the encrypted SQLite file, runs migrations, and exposes typed
+  repositories. `db/sqlite/0001_init.sql` stops being a statement of intent that a Dart schema
+  mirrors and becomes the thing that actually runs.
+- **Queries behind the screens.** The ledger list, the inbox, account balances, the breakdown,
+  the outlook. A screen asks for a page of rows already shaped for display; it does not
+  assemble one from a join it wrote itself.
+- **Sync.** Watermarks, push and pull, the merge, soft deletes. HTTP is behind a transport
+  trait so the tests run against a fake and the apps hand it a real client.
+- **Every rule**, as before.
+
+### What stays native
+
+- **Rendering, navigation, state restoration, accessibility.** The entire reason for the pivot.
+- **The SMS broadcast receiver** (Kotlin, Android only), which calls into Rust directly.
+- **Camera, photo library, file picking, share sheets.**
+- **The keychain / keystore** holding the database key, biometric unlock, and the OS scheduler
+  that wakes a sync — `BGTaskScheduler` on iOS, `WorkManager` on Android.
+- **Notifications and widgets.**
+
+### Reactivity, which drift used to provide
+
+Flutter's drift gave live queries, and the inbox and the running balance were going to lean on
+them. The replacement is explicit and small: the store carries a change bus. Every write
+publishes a revision and the set of tables it touched; the apps subscribe through a UniFFI
+callback interface, wrapped as an `AsyncStream` in Swift and a `Flow` in Kotlin, and re-run the
+queries that care. Re-querying local SQLite is cheap, the invalidation is visible rather than
+inferred, and it behaves identically on both platforms because it is one implementation.
+
+### Threading
+
+Every call that touches the database is exposed as async — `await` in Swift, `suspend` in
+Kotlin — so no screen can block the main thread by accident. Writes serialise behind a single
+writer; reads run concurrently against WAL. (UniFFI supports this with an async runtime
+attribute on the export; the exact arrangement gets pinned when the crate is wired.)
+
+### What the surface looks like
+
+The rule calls already existed, tested, in `crates/bridge`; they moved to `crates/ffi` with
+their DTOs, their enums and their error type, and their bodies did not change. The store
+calls are new. As built:
 
 ```rust
-// crates/bridge/src/api.rs — the entire public surface, kept small on purpose.
+// crates/ffi/src/store.rs — the handle, and what goes through it.
 
-pub fn walk_balance(account: AccountDto, txs: Vec<TransactionDto>, basis: BalanceBasis)
-    -> Result<WalkDto, BridgeError>;
-pub fn account_balances(..) -> Result<Vec<AccountBalanceDto>, BridgeError>;
-pub fn currency_totals(..) -> Result<Vec<MoneyDto>, BridgeError>;
-pub fn period_flows(..) -> Result<FlowsDto, BridgeError>;
-pub fn evaluate_budgets(.., on: String, basis: BalanceBasis, zone: ZoneDto)
-    -> Result<Vec<BudgetStatusDto>, BridgeError>;
-pub fn expand_recurrence(rule: RecurringRuleDto, through: String, now: String, zone: ZoneDto)
-    -> Result<GenerationDto, BridgeError>;
+pub async fn open_store(path: String, key: Vec<u8>) -> Result<Arc<Store>, StoreError>;
+
+impl Store {
+    pub fn device_id(&self) -> String;                 // sync: read once, at open
+    pub fn revision(&self) -> u64;                     // sync: a counter in memory
+    pub fn subscribe(&self, observer: Arc<dyn ChangeObserver>) -> Result<u64, StoreError>;
+    pub fn unsubscribe(&self, subscription: u64) -> Result<(), StoreError>;
+
+    pub async fn create_account(&self, account: NewAccountDto) -> Result<AccountDto, StoreError>;
+    pub async fn accounts(&self) -> Result<Vec<AccountDto>, StoreError>;
+    pub async fn record_transaction(&self, transaction: NewTransactionDto)
+        -> Result<TransactionDto, StoreError>;
+    pub async fn transactions_for_account(&self, account_id: String)
+        -> Result<Vec<TransactionDto>, StoreError>;
+    pub async fn account_balance(&self, account_id: String, basis: BalanceBasis)
+        -> Result<MoneyDto, StoreError>;
+    pub async fn account_balances(&self, basis: BalanceBasis)
+        -> Result<Vec<AccountBalanceDto>, StoreError>;
+}
+
+// crates/ffi/src/api.rs — the rules, over rows the caller is holding. Unchanged.
+pub fn walk_balance(..) -> Result<WalkDto, BridgeError>;
+pub fn evaluate_budgets(..) -> Result<Vec<BudgetStatusDto>, BridgeError>;
+pub fn expand_recurrence(..) -> Result<GenerationDto, BridgeError>;
 pub fn categorise_candidate(..) -> Result<CategorisationDto, BridgeError>;
-pub fn instances_in_scope(rule: RecurringRuleDto, scope: RecurrenceScope, ..)
-    -> Result<Vec<String>, BridgeError>;      // this | future | past | all, asked not guessed
 pub fn score_duplicates(..) -> Result<Vec<DuplicateReportDto>, BridgeError>;
+pub fn instances_in_scope(..) -> Result<Vec<String>, BridgeError>;
 pub fn compile_rules(..) -> Result<(), BridgeError>;      // refuse a bad pattern at save time
 pub fn validate_transfer(..) -> Result<(), BridgeError>;  // refuse legs that disagree
 pub fn parse_amount(input: String, currency: String) -> Result<MoneyDto, BridgeError>;
+pub fn format_amount(amount: MoneyDto) -> Result<String, BridgeError>;
 ```
 
-Four differences from the sketch this section used to carry, each one the design meeting
-reality. `parse_message` is absent because the parsers are phase 2 and there is nothing
-behind it yet. Every function returns a `Result`: the input is a row read out of SQLite by a
-client that may be a release ahead, so the boundary validates and names the field rather than
-computing a plausible wrong number. Ids, instants and dates cross as text in the spellings
-the sync wire already commits to, and money crosses as minor units plus a code — never as a
-decimal string, never as a double. And the zone crosses as a table of offsets the platform
-supplies, because the core refuses to carry tzdata and the handset already has it — with the
-window that table was built for, so a question reaching past it is refused rather than
-answered from the base offset and quietly put in the wrong month.
+Ingestion and sync are not here, because phases 2 and 5 are where they get written. The
+count to watch is the one §10 names: twenty-four published today — fourteen functions and
+ten methods on the store.
 
-Note what is absent: no `save`, no `fetch`, no `sync`. Those are Dart's. The clock is Dart's
-too — `now` is an argument — with one exception, `expand_recurrence`, which mints a UUIDv7
-per row because a row needs an id before it can be written.
+Every call that touches the database runs on a blocking pool and reaches the apps as `await`
+in Swift and `suspend` in Kotlin. The three that only read something already in memory stay
+synchronous, because making them async would be noise.
 
-### What codegen actually produced
+The conventions the bridge settled stayed settled, because they were right for reasons that
+had nothing to do with Dart. Every function returns a `Result`, and the error names the field
+that caused it rather than computing a plausible wrong number. Ids, instants and dates cross
+as text in the spellings the sync wire already commits to. Money crosses as minor units plus
+a code — never a decimal string, never a double. The time zone crosses as a table of offsets
+the platform supplies, with the window it was built for, and a question reaching past that
+window is refused rather than answered from the base offset and quietly put in the wrong
+month.
 
-`flutter_rust_bridge` 2.13 is wired (`app/flutter_rust_bridge.yaml`, `rust_input: crate::api`),
-so the contract above is no longer a claim. Every function crosses as a plain Dart future
-taking named arguments, every DTO as a plain Dart class, and `BridgeError` as a sealed union
-Dart can switch on exhaustively. **No opaque pointers**: not one handle crosses, which is the
-property the whole boundary was shaped around. The Rust doc comments come through onto the
-Dart side, so the rule about what `raw_text` may never do is readable from Flutter.
+UniFFI maps these the way the two languages expect: records become Swift structs and Kotlin
+data classes, enums become Swift enums and Kotlin sealed classes — so a new variant is a
+compile error on both sides rather than a silent `else` branch — and `Result::Err` becomes a
+Swift `throws` and a Kotlin exception.
 
-One cost, paid knowingly. The generated glue is FFI and uses `unsafe`, and `forbid` cannot
-be switched off by an inner `allow` — so a crate holding that glue cannot forbid unsafe at
-its root. The workspace therefore denies rather than forbids, and `forbid` is applied one
-level in, where it still bites: fourteen of the workspace's fifteen crate roots forbid it
-outright, as do `mt_bridge`'s six hand-written modules. The exception is
-`crates/bridge/src/lib.rs` itself, which stays on `deny` so the generated module it holds
-can carry the single `allow`. The policy is written out in full in the workspace
-`Cargo.toml`, beside the lint it governs.
+One thing the move cost, and it is worth writing down. `StoreError` is a mirror of
+`mt_store::StoreError`, variant for variant, except for the one that carries a conversion
+failure: that crosses as the message rather than as a `BridgeError` nested inside it. An app
+has nothing to do with the difference between a malformed id and a malformed date beyond
+showing it and logging it, and the field name — which is the part a developer needs — is in
+the message either way.
+
+### The unsafe policy under UniFFI
+
+Unchanged in substance. FFI scaffolding is unsafe by construction, so the workspace denies
+rather than forbids `unsafe_code`, and `forbid` is applied one level in, at every crate root
+and at every hand-written module of the FFI crate. The single `allow` moves from
+`frb_generated` to the module holding UniFFI's generated scaffolding. The policy is written out
+in full in the workspace `Cargo.toml`, beside the lint it governs, and the counts there need
+updating with the crates.
 
 ---
 
 ## 4. The core crate
+
+Unchanged by this revision, and the reason the revision is cheap. Phase 0 is built and tested.
 
 ```
 crates/core/src/
 ├── money.rs        Money(i64 minor units, Currency). No floats, ever.
 ├── model.rs        Tx, Account, Category, Budget, RecurringRule, Candidate.
 ├── ledger.rs       the balance walk — the heart of the product.
-├── rules.rs        the categorisation ladder.
+├── categorise.rs   the categorisation ladder.
 ├── recurrence.rs   cadence expansion + RecurrenceScope edit semantics.
 ├── dedup.rs        duplicate scoring across sources.
 ├── budget.rs       cap evaluation, thresholds.
-└── parse/          sms.rs, csv.rs, ofx.rs — one trait, many handlers.
+└── parse/          sms.rs, csv.rs, ofx.rs — one trait, many handlers.   (phase 2+)
 ```
 
 ### Money
@@ -206,12 +327,7 @@ transaction's date, so historical reports do not move when the cedi does.
 
 The central idea from PLAN.md: a transaction's `status` is `Pending` or `Confirmed`, and
 future-dated pending rows *are* the forecast. The walk does not distinguish past from future.
-
-```rust
-pub fn walk_balance(opening: Money, mut txs: Vec<Tx>, until: DateTime<Utc>) -> Vec<BalancePoint>
-```
-
-Sort by `booked_at`, accumulate, emit a point per day. One function serves the history screen,
+Sort by `booked_at`, accumulate, emit a point per row. One function serves the history screen,
 the outlook screen and the "when do I go negative" warning. There is no projection engine and
 no second code path, which is the whole reason the pending model was adopted.
 
@@ -252,6 +368,52 @@ corrupts the numbers quietly.
 
 ---
 
+## 4a. The store and sync crates
+
+New, and the substance of this revision. `mt-store` is built — the schema runs, the
+repositories and the balance queries are there, and the change bus is wired through to both
+apps. `mt-sync` is phase 5; the layout below is the plan for it.
+
+```
+crates/store/src/
+├── open.rs         opening, the key, the pragmas, and the handle itself
+├── migrate.rs      the migration sequence; db/sqlite/0001_init.sql is what it runs
+├── sql.rs          the only place that knows how a column is encoded
+├── repo/           one module per table: accounts, transactions
+├── query/          the reads behind the screens
+└── change.rs       the revision counter and the change bus
+```
+
+Repositories hand out `mt-core` values and never leak a `rusqlite` type at all: rows come out
+as core values, go through the rules, and leave the FFI as DTOs. Encryption is SQLCipher
+through `rusqlite`, built from source with its own crypto rather than linked against whatever
+the platform ships — an Android handset has no SQLCipher at all, and iOS ships a plain SQLite
+that would open the file unencrypted without saying so. The key is 32 raw bytes, generated on
+first run and kept in the Keychain or wrapped under an Android Keystore key, and handed to
+`open_store` as bytes. Rust never touches the secure enclave.
+
+Two decisions worth naming, because they are the ones a profile will eventually argue with.
+One connection behind a mutex, which is honest for a database with one writer and queries
+that run in microseconds, and visibly the first thing to change if a screen ever waits on it.
+And instants are rounded to the millisecond the column holds *before* the row is built, so
+the row a caller is handed back after a write is the row on disk — without that, `updated_at`
+means one thing in memory and another in the file, and `updated_at` is what last-write-wins
+resolves conflicts on.
+
+```
+crates/sync/src/
+├── wire.rs         the push/pull envelopes, shared with the server
+├── watermark.rs    what has been seen, per device
+├── merge.rs        last-write-wins per row, soft deletes, clock skew handling
+└── transport.rs    the trait; a real HTTP client in the apps, a fake in the tests
+```
+
+Keeping the merge in Rust is what makes the LWW story testable: the awkward cases — two devices
+editing the same row, a delete racing an edit, a device replaying an old watermark — are
+exercised in `cargo test` with two in-memory stores, on every commit, with no handset.
+
+---
+
 ## 5. Data flow
 
 ### SMS capture (Android only)
@@ -259,13 +421,17 @@ corrupts the numbers quietly.
 ```
 BroadcastReceiver (Kotlin)
   └─ sender allow-list check            ← before the body is read into memory
-     └─ MethodChannel → Dart
+     └─ UniFFI: offer_message(sender, body)
         └─ mt-core::parse_message       ← on-device, always
            └─ mt-core::categorise
-              └─ inbox_items (SQLite)   ← local
-                 └─ user confirms
-                    └─ transactions     ← only this ever syncs
+              └─ inbox_items (SQLite, in Rust)
+                 └─ change bus → the Review screen's badge
+                    └─ user confirms
+                       └─ transactions  ← only this ever syncs
 ```
+
+One hop shorter than the Flutter path, which had to cross a MethodChannel into Dart before it
+could reach the parser.
 
 The allow-list check happening *first* is a policy requirement, not an optimisation — the Play
 exception for "SMS-based money management" forbids a budgeting app from exfiltrating
@@ -275,9 +441,9 @@ can only be shared by an explicit user action that sends a redacted sample (§7)
 
 ### Manual entry
 
-The target is under five seconds: amount, category, done, with account and date defaulted.
-Writes straight to `transactions` as `Confirmed`, bypassing the inbox. This path must work
-perfectly on iOS, where SMS does not exist and never will.
+The target is under five seconds: amount, category, done, with account and date defaulted. One
+`record_transaction` call writes straight to `transactions` as `Confirmed`, bypassing the
+inbox. This path must work perfectly on iOS, where SMS does not exist and never will.
 
 ### Import
 
@@ -290,7 +456,8 @@ merge two separate GHS 20 trotro fares.
 
 Local SQLite is the working copy; the server is the merge point. Rows carry `updated_at` and a
 device id. Push what changed since the last watermark, pull the rest, last-write-wins per row.
-Deletes are soft (`deleted_at`) so a delete on one device is not resurrected by another.
+Deletes are soft (`deleted_at`) so a delete on one device is not resurrected by another. The
+whole cycle runs in `mt-sync`; the apps supply an HTTP client and an OS scheduler to wake it.
 
 Not a CRDT. For one person's handful of devices, row-level LWW is honest and debuggable, and
 the conflict story is one a support email can explain.
@@ -299,7 +466,7 @@ the conflict story is one a support email can explain.
 
 ## 6. Server
 
-Axum, Postgres, `mt-core` linked in as a library.
+Axum, Postgres, `mt-core` and `mt-sync`'s wire types linked in as libraries.
 
 Multi-tenancy is enforced in the repository layer, not the handlers: every query takes a
 `UserId` and there is no accessor that does not. Retrofitting an owner check onto each query
@@ -342,7 +509,8 @@ precisely what the policy forbids, and it would also be the wrong thing to do.
 
 ## 8. Security and privacy
 
-- Local database encrypted at rest; device authentication to open the app.
+- Local database encrypted at rest with SQLCipher; the key lives in the Keychain or the
+  Android Keystore, gated behind device authentication, and reaches Rust as bytes at open.
 - On-device parsing, allow-list before read, no raw SMS off the device, ever. (§5)
 - Tenant isolation enforced in the repository layer with no exceptions. (§6)
 - Argon2id for passwords, rotating refresh tokens, rate limiting on auth.
@@ -359,33 +527,71 @@ is the main reason the architecture is shaped this way.
 
 ## 9. Build and test
 
-| Target | Core | Notes |
+| Target | Triple | Produces |
 |---|---|---|
-| Android | native, NDK | arm64 + x86_64 for emulators |
-| iOS | native | no SMS path exists on this platform |
-| macOS / Windows / Linux | native | desktop |
-| Web | WASM | proved in phase 0, server fallback if it disappoints |
-| Server | native | same crate, linked directly |
+| Android arm64 | `aarch64-linux-android` | `.so` via cargo-ndk, in a Gradle module |
+| Android x86_64 | `x86_64-linux-android` | emulator |
+| iOS device | `aarch64-apple-ios` | staticlib, into an XCFramework |
+| iOS simulator | `aarch64-apple-ios-sim` | staticlib, into the same XCFramework |
+| Server / dev | host | native, same crates linked directly |
 
-Testing follows the boundary. `mt-core` carries the rule tests — the balance walk, transfer
-netting, the categorisation ladder, recurrence scopes, duplicate scoring, budget thresholds,
-and a corpus of real anonymised SMS bodies per supported format. These run on every commit in
-seconds, with no device, no database and no screen. Flutter carries widget and integration
-tests for the flows. The server carries API tests against a real Postgres, including an
-explicit cross-tenant access test.
+No WASM and no desktop triples, which is most of what dropping web bought. Bindings are
+generated in the same step as the libraries, checked for drift in CI, and never hand-edited.
+
+Testing follows the boundary, and the boundary has moved down, which means more of the product
+is testable without a device than before:
+
+- **`mt-core`** carries the rule tests — the balance walk, transfer netting, the categorisation
+  ladder, recurrence scopes, duplicate scoring, budget thresholds, and a corpus of real
+  anonymised SMS bodies per supported format. Seconds, no device, no database, no screen.
+- **`mt-store`** carries migration tests against a temporary file and query tests against
+  seeded fixtures.
+- **`mt-sync`** carries the merge tests: two in-memory stores and a fake transport, driven
+  through the conflict cases.
+- **`mt-ffi`** carries a round-trip test per published function, so the surface is exercised in
+  Rust before either app sees it.
+- **The apps** carry screen tests, and one round trip each that opens a real encrypted
+  database, writes a transaction and reads the balance back out of Rust. Both run on the
+  laptop rather than on a device: the XCFramework carries a macOS slice so `swift test` takes
+  a second, and the Kotlin tests run on the JVM against the same library through JNA. That is
+  what the Flutter `round_trip_test.dart` was for, and the only thing worth keeping from it.
+
+The three commands, in the order a clean checkout needs them:
+
+```
+tools/bindings.sh         # writes the Swift and the Kotlin from the library itself
+tools/ffi-build.sh        # the three Apple slices, assembled into an XCFramework
+tools/android-libs.sh     # a .so per ABI, into android/core/src/main/jniLibs
+```
+
+Then `cargo test --workspace`, `swift test` in `ios/MoneytrackKit`, and `./gradlew test` in
+`android`.
 
 Parser tests are fixtures, not mocks: one file per bank format, with the expected `Candidate`
 beside it. When a bank changes its wording, the fix is a fixture and a pattern, and the
 regression is caught permanently.
 
+### Keeping two apps honest
+
+At the end of every phase, a parity pass: each screen in that phase exists on both platforms,
+the numbers on it come from the same FFI call on both, and the only intentional divergence is
+the SMS path and the platform idioms `design/ADAPTIVE.md` prescribes. Divergence found later
+than that gets expensive.
+
 ---
 
 ## 10. Open decisions
 
-1. **Web client: WASM or server-computed?** Decided empirically in phase 0 by building it.
-2. **Is the web client needed at all,** or does desktop cover the sit-down case? Dropping it
-   removes the storage asymmetry and a chunk of phase 5.
+1. **How wide the store surface gets.** Every screen-shaped query in Rust is one
+   implementation and one more published function; a generic row reader is fewer functions and
+   tempts the apps into writing logic. Twenty-four published today, against a line in the
+   sand at about thirty. Phase 1b is where it gets tested, because that is where the screens are.
+2. ~~**UniFFI async arrangement.**~~ Settled: `async_runtime = "tokio"`, which wraps the
+   future the foreign side polls in a Tokio context, and the database work runs on
+   `spawn_blocking` inside it.
 3. **Self-hosted option alongside the published product?** Costs little given the server is one
    binary, and it is a credible answer to "where is my financial data".
 4. **Rule pack signing** — simple detached signature, or full transparency log? Start simple.
-5. **Working name.** `moneytrack` is a placeholder.
+5. **Does the sit-down case ever come back,** as a web client against the server or as a
+   SwiftUI Mac app? Deferred, not refused; nothing below the FFI would have to change.
+6. **Working name.** `moneytrack` is a placeholder.

@@ -1,0 +1,1134 @@
+//! The published surface, exercised the way Dart will call it.
+//!
+//! These tests do not re-prove the rules — `mt-core` has its own suite for the balance walk,
+//! the ladder and the rest. What is proved here is that the surface hands the right values
+//! in and the right values back: that the walk's shortfall survives the crossing, that a
+//! generated row carries an id Dart can store, and that a refusal arrives as an error rather
+//! than as a plausible wrong number.
+
+// Restated although the workspace already forbids it: an integration test is its own crate
+// root, and a test is exactly where someone reaches for a shortcut.
+#![forbid(unsafe_code)]
+#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+
+mod common;
+
+use common::{
+    NOW, TODAY, account, accra, budget, candidate, category, london, money, recurring, rule,
+    transaction, uuid,
+};
+use mt_ffi::api::{
+    account_balances, categorise_candidate, compile_rules, currency_totals, evaluate_budgets,
+    expand_recurrence, format_amount, instances_in_scope, parse_amount, period_flows,
+    score_duplicates, validate_transfer, walk_balance,
+};
+use mt_ffi::dto::MatchRulesDto;
+use mt_ffi::enums::{
+    BalanceBasis, BudgetLevel, Direction, DuplicateSignal, RecurrenceFreq, RecurrenceScope,
+    TxStatus, VerdictBasis,
+};
+use mt_ffi::error::BridgeError;
+use mt_ffi::scalar::MoneyDto;
+use mt_ffi::zone::ZoneDto;
+
+// --------------------------------------------------------------------------- the walk ---
+
+#[test]
+fn a_walk_returns_the_running_balance_in_booked_order() {
+    let wallet = account(1, 10_000);
+    let rows = vec![
+        transaction(3, &wallet, Direction::Out, 3_000, "2026-11-12T09:00:00Z"),
+        transaction(2, &wallet, Direction::In, 5_000, "2026-11-11T09:00:00Z"),
+    ];
+
+    let walk = walk_balance(wallet, rows, BalanceBasis::Confirmed).unwrap();
+
+    let balances: Vec<i64> = walk
+        .entries
+        .iter()
+        .map(|entry| entry.balance_after.minor_units)
+        .collect();
+    assert_eq!(balances, vec![15_000, 12_000]);
+    assert_eq!(walk.opening, money(10_000));
+    assert_eq!(walk.closing, money(12_000));
+    assert_eq!(walk.currency, "GHS");
+    assert!(walk.first_shortfall.is_none());
+}
+
+#[test]
+fn history_and_forecast_are_the_same_call() {
+    let wallet = account(1, 10_000);
+    let spent = transaction(2, &wallet, Direction::Out, 4_000, "2026-11-09T09:00:00Z");
+    let mut expected = transaction(3, &wallet, Direction::Out, 9_000, "2026-11-28T09:00:00Z");
+    expected.status = TxStatus::Pending;
+    let rows = vec![spent, expected];
+
+    let history = walk_balance(wallet.clone(), rows.clone(), BalanceBasis::Confirmed).unwrap();
+    let outlook = walk_balance(wallet, rows, BalanceBasis::Projected).unwrap();
+
+    // The confirmed walk stops at what has happened; the projected walk carries on into the
+    // future-dated pending row and finds the day the wallet runs out.
+    assert_eq!(history.entries.len(), 1);
+    assert_eq!(history.closing, money(6_000));
+    assert_eq!(outlook.entries.len(), 2);
+    assert_eq!(outlook.closing, money(-3_000));
+
+    let shortfall = outlook.first_shortfall.unwrap();
+    assert_eq!(shortfall.transaction_id, uuid(3));
+    assert_eq!(shortfall.booked_at, "2026-11-28T09:00:00Z");
+    assert_eq!(shortfall.balance_after, money(-3_000));
+}
+
+#[test]
+fn a_row_belonging_to_another_account_is_refused_rather_than_skipped() {
+    let wallet = account(1, 10_000);
+    let other = account(9, 0);
+    let stray = transaction(2, &other, Direction::Out, 1_000, NOW);
+
+    let error = walk_balance(wallet, vec![stray], BalanceBasis::Confirmed).unwrap_err();
+
+    match error {
+        BridgeError::Rule { rule, reason } => {
+            assert_eq!(rule, "walk");
+            assert!(reason.contains(&uuid(2)), "reason names no row: {reason}");
+        }
+        other => panic!("expected a refused walk, got {other:?}"),
+    }
+}
+
+#[test]
+fn balances_come_back_per_account_and_totals_per_currency() {
+    let wallet = account(1, 10_000);
+    let mut bank = account(2, 50_000);
+    bank.name = "Bank".to_owned();
+    let mut dollars = account(3, 20_000);
+    dollars.name = "Dollars".to_owned();
+    dollars.currency = "USD".to_owned();
+    dollars.opening_balance.currency = "USD".to_owned();
+
+    let rows = vec![transaction(4, &wallet, Direction::Out, 2_500, NOW)];
+    let accounts = vec![wallet, bank, dollars];
+
+    let balances = account_balances(accounts.clone(), rows.clone(), BalanceBasis::Confirmed)
+        .unwrap()
+        .into_iter()
+        .map(|balance| (balance.account_id, balance.balance.minor_units))
+        .collect::<Vec<_>>();
+    let totals = currency_totals(accounts, rows, BalanceBasis::Confirmed).unwrap();
+
+    assert!(balances.contains(&(uuid(1), 7_500)));
+    assert!(balances.contains(&(uuid(2), 50_000)));
+    assert!(balances.contains(&(uuid(3), 20_000)));
+
+    // Two currencies, two figures. Never one converted number.
+    assert_eq!(totals.len(), 2);
+    assert!(
+        totals
+            .iter()
+            .any(|total| total.currency == "GHS" && total.minor_units == 57_500)
+    );
+    assert!(
+        totals
+            .iter()
+            .any(|total| total.currency == "USD" && total.minor_units == 20_000)
+    );
+}
+
+#[test]
+fn flows_drop_both_legs_of_a_transfer() {
+    let wallet = account(1, 0);
+    let mut bank = account(9, 0);
+    bank.name = "Bank".to_owned();
+    let mut out_leg = transaction(2, &bank, Direction::Out, 5_000, NOW);
+    let mut in_leg = transaction(3, &wallet, Direction::In, 5_000, NOW);
+    out_leg.transfer_id = Some(uuid(0xaa));
+    in_leg.transfer_id = Some(uuid(0xaa));
+    let salary = transaction(4, &wallet, Direction::In, 200_000, NOW);
+    let lunch = transaction(5, &wallet, Direction::Out, 3_000, NOW);
+
+    let flows = period_flows(
+        "GHS".to_owned(),
+        vec![out_leg, in_leg, salary, lunch],
+        BalanceBasis::Confirmed,
+    )
+    .unwrap();
+
+    assert_eq!(flows.income, money(200_000));
+    assert_eq!(flows.spending, money(3_000));
+    assert_eq!(flows.net, money(197_000));
+}
+
+// ------------------------------------------------------------------------- the budget ---
+
+#[test]
+fn a_budget_reports_where_spending_stands_against_its_cap() {
+    let wallet = account(1, 100_000);
+    let transport = category(2, "Transport");
+    let mut fare = transaction(3, &wallet, Direction::Out, 45_000, "2026-11-05T09:00:00Z");
+    fare.category_id = Some(transport.id.clone());
+
+    let statuses = evaluate_budgets(
+        vec![budget(4, 50_000, Some(&transport))],
+        vec![transport],
+        vec![fare],
+        TODAY.to_owned(),
+        BalanceBasis::Confirmed,
+        accra(),
+    )
+    .unwrap();
+
+    assert_eq!(statuses.len(), 1);
+    let status = &statuses[0];
+    assert_eq!(status.budget_id, uuid(4));
+    assert_eq!(status.period_starts_on, "2026-11-01");
+    assert_eq!(status.period_ends_on, "2026-11-30");
+    assert_eq!(status.spent, money(45_000));
+    assert_eq!(status.remaining, money(5_000));
+    assert_eq!(status.used_bps, 9_000);
+    assert_eq!(status.level, BudgetLevel::Warning);
+}
+
+#[test]
+fn spending_the_whole_cap_counts_as_over_it() {
+    let wallet = account(1, 100_000);
+    let transport = category(2, "Transport");
+    let mut fare = transaction(3, &wallet, Direction::Out, 50_000, "2026-11-05T09:00:00Z");
+    fare.category_id = Some(transport.id.clone());
+
+    let statuses = evaluate_budgets(
+        vec![budget(4, 50_000, Some(&transport))],
+        vec![transport],
+        vec![fare],
+        TODAY.to_owned(),
+        BalanceBasis::Confirmed,
+        accra(),
+    )
+    .unwrap();
+
+    assert_eq!(statuses[0].level, BudgetLevel::Over);
+    assert_eq!(statuses[0].remaining, money(0));
+}
+
+#[test]
+fn a_budget_that_has_not_started_is_left_out_rather_than_reported_empty() {
+    let next_year = mt_ffi::dto::BudgetDto {
+        starts_on: "2027-01-01".to_owned(),
+        ..budget(4, 50_000, None)
+    };
+
+    let statuses = evaluate_budgets(
+        vec![next_year],
+        Vec::new(),
+        Vec::new(),
+        TODAY.to_owned(),
+        BalanceBasis::Confirmed,
+        accra(),
+    )
+    .unwrap();
+
+    assert!(statuses.is_empty());
+}
+
+// --------------------------------------------------------------------- the recurrence ---
+
+#[test]
+fn a_template_expands_into_pending_rows_with_fresh_ids() {
+    let wallet = account(1, 500_000);
+    let rent = recurring(2, &wallet, 120_000);
+
+    let generation =
+        expand_recurrence(rent, "2026-12-31".to_owned(), NOW.to_owned(), accra()).unwrap();
+
+    assert_eq!(generation.generated_through, "2026-12-31");
+    let booked: Vec<&str> = generation
+        .rows
+        .iter()
+        .map(|row| row.booked_at.as_str())
+        .collect();
+    assert_eq!(
+        booked,
+        vec!["2026-11-15T00:00:00Z", "2026-12-15T00:00:00Z"],
+        "rows land at local midnight in the rule's own zone"
+    );
+
+    for row in &generation.rows {
+        assert_eq!(row.status, TxStatus::Pending);
+        assert_eq!(row.recurring_id, Some(uuid(2)));
+        assert_eq!(row.amount, money(120_000));
+        assert!(row.to_core().is_ok(), "a generated row must be storable");
+    }
+    assert_ne!(
+        generation.rows[0].id, generation.rows[1].id,
+        "every generated row needs its own id"
+    );
+}
+
+#[test]
+fn a_template_already_generated_this_far_produces_nothing_a_second_time() {
+    let wallet = account(1, 500_000);
+    let rent = mt_ffi::dto::RecurringRuleDto {
+        generated_through: Some("2026-12-31".to_owned()),
+        ..recurring(2, &wallet, 120_000)
+    };
+
+    let generation =
+        expand_recurrence(rent, "2026-12-31".to_owned(), NOW.to_owned(), accra()).unwrap();
+
+    assert!(generation.rows.is_empty());
+    assert_eq!(generation.generated_through, "2026-12-31");
+}
+
+// ----------------------------------------------------------------------- the ladder ---
+
+#[test]
+fn a_stored_pattern_categorises_a_candidate_and_says_which_rule_did_it() {
+    let groceries = category(2, "Groceries");
+    let melcom = rule(3, "melcom", &groceries);
+
+    let verdict =
+        categorise_candidate(candidate(12_000, NOW), vec![melcom], Vec::new(), None).unwrap();
+
+    assert_eq!(verdict.category_id, Some(uuid(2)));
+    assert_eq!(verdict.basis, VerdictBasis::Rule);
+    assert_eq!(verdict.source_id, Some(uuid(3)));
+    assert!(verdict.confidence_bps > 0);
+    assert!(verdict.skipped_rules.is_empty());
+}
+
+#[test]
+fn the_users_own_last_row_for_a_counterparty_categorises_the_next_one() {
+    let wallet = account(1, 0);
+    let groceries = category(2, "Groceries");
+    let mut earlier = transaction(3, &wallet, Direction::Out, 8_000, "2026-10-01T09:00:00Z");
+    earlier.counterparty = Some("Melcom".to_owned());
+    earlier.category_id = Some(groceries.id.clone());
+
+    let verdict =
+        categorise_candidate(candidate(12_000, NOW), Vec::new(), vec![earlier], None).unwrap();
+
+    assert_eq!(verdict.category_id, Some(uuid(2)));
+    assert_eq!(verdict.basis, VerdictBasis::History);
+    assert_eq!(verdict.source_id, Some(uuid(3)));
+}
+
+#[test]
+fn nothing_matching_is_a_verdict_and_not_an_error() {
+    let verdict =
+        categorise_candidate(candidate(12_000, NOW), Vec::new(), Vec::new(), None).unwrap();
+
+    assert_eq!(verdict.category_id, None);
+    assert_eq!(verdict.basis, VerdictBasis::Unmatched);
+    assert_eq!(verdict.confidence_bps, 0);
+}
+
+#[test]
+fn a_stored_rule_that_no_longer_compiles_is_reported_rather_than_swallowed() {
+    let groceries = category(2, "Groceries");
+    let broken = mt_ffi::dto::CategoryRuleDto {
+        is_regex: true,
+        pattern: "melcom(".to_owned(),
+        ..rule(3, "melcom(", &groceries)
+    };
+
+    let verdict =
+        categorise_candidate(candidate(12_000, NOW), vec![broken], Vec::new(), None).unwrap();
+
+    // The ladder still answers — it just answers without that rung, and says so, because a
+    // rule that quietly stopped matching changes the answer with no sign on the screen.
+    assert_eq!(verdict.basis, VerdictBasis::Unmatched);
+    assert_eq!(verdict.skipped_rules.len(), 1);
+    assert!(verdict.skipped_rules[0].contains(&uuid(3)));
+}
+
+#[test]
+fn a_rule_that_will_not_compile_is_refused_at_save_time() {
+    let groceries = category(2, "Groceries");
+    let broken = mt_ffi::dto::CategoryRuleDto {
+        is_regex: true,
+        pattern: "melcom(".to_owned(),
+        ..rule(3, "melcom(", &groceries)
+    };
+
+    let error = compile_rules(vec![broken]).unwrap_err();
+
+    assert!(matches!(error, BridgeError::Rule { ref rule, .. } if rule == "category_rule"));
+    assert!(compile_rules(vec![rule(4, "melcom", &groceries)]).is_ok());
+}
+
+// ------------------------------------------------------------------------- duplicates ---
+
+#[test]
+fn a_candidate_matching_an_existing_row_is_reported_and_never_merged() {
+    let wallet = account(1, 0);
+    let mut existing = transaction(2, &wallet, Direction::Out, 12_000, NOW);
+    existing.counterparty = Some("Melcom".to_owned());
+    let mut arriving = candidate(12_000, NOW);
+    arriving.account_id = Some(wallet.id.clone());
+
+    let reports = score_duplicates(vec![arriving], vec![existing], None).unwrap();
+
+    assert_eq!(reports.len(), 1);
+    let suspects = &reports[0].suspects;
+    assert_eq!(suspects.len(), 1);
+    assert_eq!(suspects[0].transaction_id, uuid(2));
+    assert!(suspects[0].signals.contains(&DuplicateSignal::SameAmount));
+    assert!(suspects[0].signals.contains(&DuplicateSignal::SameAccount));
+    assert!(suspects[0].score_bps > 0);
+}
+
+#[test]
+fn two_separate_fares_for_the_same_amount_days_apart_are_not_suspected() {
+    let wallet = account(1, 0);
+    let mut existing = transaction(2, &wallet, Direction::Out, 2_000, "2026-11-01T09:00:00Z");
+    existing.counterparty = Some("Melcom".to_owned());
+    let mut arriving = candidate(2_000, "2026-11-10T09:00:00Z");
+    arriving.account_id = Some(wallet.id.clone());
+
+    let reports = score_duplicates(vec![arriving], vec![existing.clone()], None).unwrap();
+    let mut hour_later = candidate(2_000, "2026-11-01T10:00:00Z");
+    hour_later.account_id = Some(wallet.id.clone());
+    let same_day = score_duplicates(vec![hour_later], vec![existing], None).unwrap();
+
+    // Nine days apart is two fares; an hour apart is one purchase arriving twice.
+    assert!(reports[0].suspects.is_empty());
+    assert_eq!(same_day[0].suspects.len(), 1);
+}
+
+#[test]
+fn reports_come_back_in_candidate_order() {
+    let wallet = account(1, 0);
+    let mut existing = transaction(2, &wallet, Direction::Out, 12_000, NOW);
+    existing.counterparty = Some("Melcom".to_owned());
+    let unrelated = candidate(777, "2026-11-10T10:00:00Z");
+    let matching = candidate(12_000, NOW);
+
+    let reports = score_duplicates(vec![unrelated, matching], vec![existing], None).unwrap();
+
+    assert_eq!(reports.len(), 2);
+    assert!(reports[0].suspects.is_empty());
+    assert_eq!(reports[1].suspects.len(), 1);
+}
+
+#[test]
+fn a_caller_may_tighten_the_thresholds() {
+    let wallet = account(1, 0);
+    let mut existing = transaction(2, &wallet, Direction::Out, 12_000, NOW);
+    existing.counterparty = Some("Melcom".to_owned());
+    let arriving = candidate(12_000, "2026-11-10T20:00:00Z");
+
+    let strict = MatchRulesDto {
+        window_seconds: 60,
+        close_window_seconds: 60,
+        report_at_or_above_bps: 9_000,
+    };
+    let loose = score_duplicates(vec![arriving.clone()], vec![existing.clone()], None).unwrap();
+    let reports = score_duplicates(vec![arriving], vec![existing], Some(strict)).unwrap();
+
+    // The pair is a suspect on the core's own defaults, so the empty report below is the
+    // tightened window doing the work rather than the rows never having matched.
+    assert_eq!(loose[0].suspects.len(), 1);
+    assert!(reports[0].suspects.is_empty());
+}
+
+// ----------------------------------------------------------------- the two refusals ---
+
+#[test]
+fn a_transfer_whose_legs_disagree_is_refused_before_it_is_written() {
+    let wallet = account(1, 0);
+    let mut bank = account(2, 0);
+    bank.name = "Bank".to_owned();
+    let mut out_leg = transaction(3, &wallet, Direction::Out, 5_000, NOW);
+    let mut in_leg = transaction(4, &bank, Direction::In, 4_000, NOW);
+    out_leg.transfer_id = Some(uuid(0xaa));
+    in_leg.transfer_id = Some(uuid(0xaa));
+
+    let error = validate_transfer(vec![out_leg.clone(), in_leg]).unwrap_err();
+    assert!(matches!(error, BridgeError::InvalidRow { ref row, .. } if row == "transfer"));
+
+    let mut balanced = transaction(5, &bank, Direction::In, 5_000, NOW);
+    balanced.transfer_id = Some(uuid(0xaa));
+    assert!(validate_transfer(vec![out_leg, balanced]).is_ok());
+}
+
+#[test]
+fn an_amount_renders_at_its_own_currencys_decimal_places() {
+    let cedis = MoneyDto {
+        minor_units: 125_000,
+        currency: "GHS".to_owned(),
+    };
+    let francs = MoneyDto {
+        minor_units: 125_000,
+        currency: "XOF".to_owned(),
+    };
+
+    // The same number of minor units, two currencies, two right answers. A screen dividing
+    // by a hundred in Dart would be wrong by a factor of a hundred for the second.
+    assert_eq!(format_amount(cedis).unwrap(), "1250.00");
+    assert_eq!(format_amount(francs).unwrap(), "125000");
+
+    // How a negative, or the floor of i64 where `abs()` would overflow, is rendered is the
+    // core's own question and `crates/core/tests/money.rs` asks it. What belongs here is
+    // that the boundary delegates rather than deciding, and what it does with a code the
+    // registry does not know.
+    assert!(matches!(
+        format_amount(MoneyDto {
+            minor_units: 1,
+            currency: "cedi".to_owned()
+        })
+        .unwrap_err(),
+        BridgeError::InvalidCurrency { .. }
+    ));
+}
+
+#[test]
+fn an_amount_survives_a_round_trip_through_both_halves_of_the_boundary() {
+    let typed = parse_amount("12.50".to_owned(), "GHS".to_owned()).unwrap();
+
+    assert_eq!(format_amount(typed).unwrap(), "12.50");
+}
+
+#[test]
+fn typed_text_becomes_minor_units_without_ever_being_a_float() {
+    assert_eq!(
+        parse_amount("12.50".to_owned(), "GHS".to_owned()).unwrap(),
+        money(1_250)
+    );
+    assert_eq!(
+        parse_amount("0.05".to_owned(), "GHS".to_owned()).unwrap(),
+        money(5)
+    );
+
+    // Three decimal places in a two-decimal currency is a typo, not a rounding problem.
+    assert!(parse_amount("12.555".to_owned(), "GHS".to_owned()).is_err());
+    assert!(parse_amount("1,200".to_owned(), "GHS".to_owned()).is_err());
+    assert!(parse_amount("1e3".to_owned(), "GHS".to_owned()).is_err());
+    assert!(matches!(
+        parse_amount("12.50".to_owned(), "cedi".to_owned()).unwrap_err(),
+        BridgeError::InvalidCurrency { .. }
+    ));
+}
+
+// ------------------------------------------------------- what the rules refuse to guess ---
+
+#[test]
+fn a_row_in_another_currency_is_refused_rather_than_counted_at_face_value() {
+    let wallet = account(1, 10_000);
+    let mut dollars = transaction(2, &wallet, Direction::Out, 1_000, NOW);
+    dollars.amount.currency = "USD".to_owned();
+
+    let error = walk_balance(wallet, vec![dollars], BalanceBasis::Confirmed).unwrap_err();
+
+    match error {
+        BridgeError::Rule { rule, reason } => {
+            assert_eq!(rule, "walk");
+            assert!(reason.contains("USD"), "reason names no currency: {reason}");
+        }
+        other => panic!("expected a refused walk, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_row_whose_account_was_not_supplied_is_an_error_not_a_missing_balance() {
+    let wallet = account(1, 10_000);
+    let unsupplied = account(9, 0);
+    let orphan = transaction(2, &unsupplied, Direction::Out, 1_000, NOW);
+
+    let error = account_balances(
+        vec![wallet.clone()],
+        vec![orphan.clone()],
+        BalanceBasis::Confirmed,
+    )
+    .unwrap_err();
+    assert!(matches!(error, BridgeError::Rule { ref rule, .. } if rule == "balances"));
+
+    let error = currency_totals(vec![wallet], vec![orphan], BalanceBasis::Confirmed).unwrap_err();
+    assert!(matches!(error, BridgeError::Rule { ref rule, .. } if rule == "totals"));
+}
+
+#[test]
+fn one_unusable_budget_stops_the_set_rather_than_being_skipped() {
+    // A cap of zero is caught by the row's own validation, before evaluation is reached —
+    // so this is the conversion refusing, not the rule. Either way the good budget beside
+    // it does not render: a store handing out rows that cannot be trusted is not a screen
+    // to show three quarters of.
+    let unusable = mt_ffi::dto::BudgetDto {
+        cap: money(0),
+        ..budget(4, 0, None)
+    };
+
+    let error = evaluate_budgets(
+        vec![unusable, budget(5, 50_000, None)],
+        Vec::new(),
+        Vec::new(),
+        TODAY.to_owned(),
+        BalanceBasis::Confirmed,
+        accra(),
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, BridgeError::InvalidRow { ref row, .. } if row == "budget"));
+}
+
+#[test]
+fn a_malformed_date_or_currency_is_refused_at_the_call_itself() {
+    let bad_date = evaluate_budgets(
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        "today".to_owned(),
+        BalanceBasis::Confirmed,
+        accra(),
+    )
+    .unwrap_err();
+    assert!(matches!(bad_date, BridgeError::InvalidDate { ref field, .. } if field == "on"));
+
+    let bad_currency =
+        period_flows("cedi".to_owned(), Vec::new(), BalanceBasis::Confirmed).unwrap_err();
+    assert!(matches!(bad_currency, BridgeError::InvalidCurrency { .. }));
+
+    let wallet = account(1, 0);
+    let bad_through = expand_recurrence(
+        recurring(2, &wallet, 120_000),
+        "31/12/2026".to_owned(),
+        NOW.to_owned(),
+        accra(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(bad_through, BridgeError::InvalidDate { ref field, .. } if field == "through")
+    );
+
+    let bad_now = expand_recurrence(
+        recurring(2, &wallet, 120_000),
+        "2026-12-31".to_owned(),
+        "half past nine".to_owned(),
+        accra(),
+    )
+    .unwrap_err();
+    assert!(matches!(bad_now, BridgeError::InvalidTimestamp { ref field, .. } if field == "now"));
+}
+
+#[test]
+fn thresholds_that_do_not_make_sense_are_refused_rather_than_quietly_narrowing_the_search() {
+    let negative = MatchRulesDto {
+        window_seconds: -3_600,
+        close_window_seconds: 60,
+        report_at_or_above_bps: 5_000,
+    };
+    let inverted = MatchRulesDto {
+        window_seconds: 60,
+        close_window_seconds: 3_600,
+        report_at_or_above_bps: 5_000,
+    };
+
+    let unreachable_threshold = MatchRulesDto {
+        window_seconds: 3_600,
+        close_window_seconds: 60,
+        report_at_or_above_bps: 10_001,
+    };
+
+    assert!(matches!(
+        score_duplicates(Vec::new(), Vec::new(), Some(negative)).unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. } if field == "match_rules.window_seconds"
+    ));
+    assert!(matches!(
+        score_duplicates(Vec::new(), Vec::new(), Some(inverted)).unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. } if field == "match_rules.close_window_seconds"
+    ));
+    // Basis points stop at 10_000 across the project, and a threshold above the ceiling
+    // could never be met by anything. 10_000 itself is left usable: scored suspects clamp
+    // one below it, so it reads as "only a match on the institution's own reference".
+    assert!(matches!(
+        score_duplicates(Vec::new(), Vec::new(), Some(unreachable_threshold)).unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. }
+            if field == "match_rules.report_at_or_above_bps"
+    ));
+}
+
+#[test]
+fn the_top_of_the_scale_reports_only_a_reference_match() {
+    let wallet = account(1, 0);
+    let mut existing = transaction(2, &wallet, Direction::Out, 12_000, NOW);
+    existing.external_id = Some("MP261110.0912.A54321".to_owned());
+    existing.counterparty = Some("Melcom".to_owned());
+
+    let mut same_reference = candidate(12_000, NOW);
+    same_reference.account_id = Some(wallet.id.clone());
+    same_reference.external_id = existing.external_id.clone();
+    let mut merely_alike = candidate(12_000, NOW);
+    merely_alike.account_id = Some(wallet.id.clone());
+
+    // The accepted end of the bound, and the setting it exists for: nothing the scoring
+    // path can reach clears 10_000, and a reference match never consults the threshold. A
+    // bound written as `>=` would take this away and no other test would notice.
+    let reference_only = MatchRulesDto {
+        window_seconds: 86_400,
+        close_window_seconds: 3_600,
+        report_at_or_above_bps: 10_000,
+    };
+
+    let reports = score_duplicates(
+        vec![same_reference, merely_alike],
+        vec![existing],
+        Some(reference_only),
+    )
+    .unwrap();
+
+    assert_eq!(reports[0].suspects.len(), 1);
+    assert!(reports[0].suspects[0].is_certain);
+    assert!(reports[1].suspects.is_empty());
+}
+
+// ------------------------------------------------------------------- the weekly cadence ---
+
+#[test]
+fn a_weekly_template_fires_on_the_weekday_it_names_counting_monday_as_zero() {
+    let wallet = account(1, 500_000);
+    let monday = mt_ffi::dto::RecurringRuleDto {
+        freq: RecurrenceFreq::Weekly,
+        by_month_day: None,
+        by_weekday: Some(0),
+        starts_on: "2026-11-02".to_owned(),
+        ..recurring(2, &wallet, 5_000)
+    };
+
+    let generation =
+        expand_recurrence(monday, "2026-11-16".to_owned(), NOW.to_owned(), accra()).unwrap();
+
+    // 2 November 2026 is a Monday. A one-based reading of this field would put every one of
+    // these a day late, for ever, with nothing on screen to say so.
+    let booked: Vec<&str> = generation
+        .rows
+        .iter()
+        .map(|row| row.booked_at.as_str())
+        .collect();
+    assert_eq!(
+        booked,
+        vec![
+            "2026-11-02T00:00:00Z",
+            "2026-11-09T00:00:00Z",
+            "2026-11-16T00:00:00Z"
+        ]
+    );
+}
+
+#[test]
+fn sunday_is_reachable_and_seven_is_not_a_day() {
+    let wallet = account(1, 500_000);
+    let template = |weekday: u8| mt_ffi::dto::RecurringRuleDto {
+        freq: RecurrenceFreq::Weekly,
+        by_month_day: None,
+        by_weekday: Some(weekday),
+        starts_on: "2026-11-02".to_owned(),
+        ..recurring(2, &wallet, 5_000)
+    };
+
+    let sunday = expand_recurrence(
+        template(6),
+        "2026-11-08".to_owned(),
+        NOW.to_owned(),
+        accra(),
+    )
+    .unwrap();
+    assert_eq!(
+        sunday
+            .rows
+            .iter()
+            .map(|row| row.booked_at.as_str())
+            .collect::<Vec<_>>(),
+        vec!["2026-11-08T00:00:00Z"],
+        "6 is Sunday, so the week is covered"
+    );
+
+    assert!(matches!(
+        expand_recurrence(
+            template(7),
+            "2026-11-08".to_owned(),
+            NOW.to_owned(),
+            accra()
+        )
+        .unwrap_err(),
+        BridgeError::InvalidRow { ref row, .. } if row == "recurring"
+    ));
+}
+
+// ------------------------------------------------- the rungs and signals left uncovered ---
+
+#[test]
+fn a_category_named_by_the_source_wins_before_any_pattern_is_tried() {
+    let groceries = category(2, "Groceries");
+    let transport = category(5, "Transport");
+    let stated = mt_ffi::dto::CandidateDto {
+        category_id: Some(transport.id.clone()),
+        ..candidate(12_000, NOW)
+    };
+
+    let verdict = categorise_candidate(
+        stated,
+        vec![rule(3, "melcom", &groceries)],
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(verdict.category_id, Some(uuid(5)));
+    assert_eq!(verdict.basis, VerdictBasis::Explicit);
+    assert_eq!(verdict.source_id, None);
+}
+
+#[test]
+fn a_shared_reference_from_the_bank_is_certain_and_everything_else_is_not() {
+    let wallet = account(1, 0);
+    let mut existing = transaction(2, &wallet, Direction::Out, 12_000, NOW);
+    existing.external_id = Some("MP261110.0912.A54321".to_owned());
+    existing.counterparty = Some("Melcom".to_owned());
+
+    let mut same_reference = candidate(12_000, NOW);
+    same_reference.account_id = Some(wallet.id.clone());
+    same_reference.external_id = existing.external_id.clone();
+    let mut merely_alike = candidate(12_000, NOW);
+    merely_alike.account_id = Some(wallet.id.clone());
+    // A second row both candidates resemble, so the counts below say something.
+    let mut lookalike = transaction(3, &wallet, Direction::Out, 12_000, NOW);
+    lookalike.counterparty = Some("Melcom".to_owned());
+
+    let reports = score_duplicates(
+        vec![same_reference, merely_alike],
+        vec![existing, lookalike],
+        None,
+    )
+    .unwrap();
+
+    assert!(reports[0].suspects[0].is_certain);
+    assert_eq!(reports[0].suspects[0].transaction_id, uuid(2));
+    assert!(
+        reports[0].suspects[0]
+            .signals
+            .contains(&DuplicateSignal::SameExternalId)
+    );
+    // A shared reference answers alone: the core stops there rather than padding the list
+    // with rows that merely look like it. The candidate without one sees both rows, and
+    // neither is certain — certainty licenses a pre-ticked box, never a silent merge, so
+    // even the certain one is reported rather than acted on.
+    assert_eq!(reports[0].suspects.len(), 1);
+    assert_eq!(reports[1].suspects.len(), 2);
+    assert!(
+        reports[1]
+            .suspects
+            .iter()
+            .all(|suspect| !suspect.is_certain)
+    );
+}
+
+#[test]
+fn an_amount_bigger_than_any_row_may_carry_is_refused_without_quoting_it() {
+    // Inside i64, outside what a row may carry: the guard this function adds, not the
+    // core's overflow check.
+    let error = parse_amount("10000000000000.01".to_owned(), "GHS".to_owned()).unwrap_err();
+
+    match error {
+        BridgeError::InvalidAmount { field, reason } => {
+            assert_eq!(field, "amount");
+            assert!(
+                !reason.contains("10000000000000"),
+                "the rejection quotes what was typed: {reason}"
+            );
+        }
+        other => panic!("expected a refused amount, got {other:?}"),
+    }
+
+    // The same applies to ordinary typos: the reason says what is wrong, not what it was.
+    match parse_amount("12.555".to_owned(), "GHS".to_owned()).unwrap_err() {
+        BridgeError::InvalidAmount { reason, .. } => {
+            assert!(
+                !reason.contains("12.555"),
+                "the rejection quotes the input: {reason}"
+            );
+        }
+        other => panic!("expected a refused amount, got {other:?}"),
+    }
+}
+
+// --------------------------------------------------------- what the zone table admits to ---
+
+#[test]
+fn a_question_outside_the_zone_tables_window_is_refused_rather_than_guessed() {
+    // The London table is built for 2026 and says so. Reading the local day of a 2027 row
+    // would otherwise be answered from the base offset — right half the year, wrong the
+    // other half, and silent either way.
+    let wallet_2027 = account(5, 100_000);
+    let next_year = evaluate_budgets(
+        vec![mt_ffi::dto::BudgetDto {
+            starts_on: "2027-06-01".to_owned(),
+            ..budget(4, 50_000, None)
+        }],
+        Vec::new(),
+        vec![transaction(
+            6,
+            &wallet_2027,
+            Direction::Out,
+            20_000,
+            "2027-06-15T09:00:00Z",
+        )],
+        "2027-06-15".to_owned(),
+        BalanceBasis::Confirmed,
+        london(),
+    )
+    .unwrap_err();
+    assert!(matches!(next_year, BridgeError::ZoneCoverage { .. }));
+
+    let wallet = account(1, 500_000);
+    let beyond = expand_recurrence(
+        recurring(2, &wallet, 120_000),
+        "2027-12-31".to_owned(),
+        NOW.to_owned(),
+        london(),
+    )
+    .unwrap_err();
+    assert!(matches!(beyond, BridgeError::ZoneCoverage { .. }));
+}
+
+#[test]
+fn a_question_inside_the_window_is_answered_from_the_table_and_not_the_base_offset() {
+    let wallet = account(1, 500_000);
+    let summer = mt_ffi::dto::RecurringRuleDto {
+        starts_on: "2026-05-15".to_owned(),
+        timezone: "Europe/London".to_owned(),
+        ..recurring(2, &wallet, 120_000)
+    };
+
+    let generation =
+        expand_recurrence(summer, "2026-07-15".to_owned(), NOW.to_owned(), london()).unwrap();
+
+    // Deliberately on the far side of a transition — London's 29 March shift is behind
+    // this window, so the offset in force is not the base one. These land at local
+    // midnight in BST, an hour east of UTC, and the wire keeps the offset they happened
+    // at, so an implementation that ignored the table and stood on the base offset would
+    // say `00:00:00Z` and fail here.
+    assert_eq!(
+        generation
+            .rows
+            .iter()
+            .map(|row| row.booked_at.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "2026-05-15T00:00:00+01:00",
+            "2026-06-15T00:00:00+01:00",
+            "2026-07-15T00:00:00+01:00"
+        ]
+    );
+}
+
+#[test]
+fn a_budget_counts_a_row_against_the_local_day_the_shifting_zone_puts_it_on() {
+    let wallet = account(1, 100_000);
+    let transport = category(2, "Transport");
+    // 23:30 UTC on 30 June is half past midnight on 1 July in BST, so this row belongs to
+    // July's cap and not to June's. Standing on the base offset would put it in June.
+    let mut late_fare = transaction(3, &wallet, Direction::Out, 20_000, "2026-06-30T23:30:00Z");
+    late_fare.category_id = Some(transport.id.clone());
+    let july = mt_ffi::dto::BudgetDto {
+        starts_on: "2026-07-01".to_owned(),
+        ..budget(4, 50_000, Some(&transport))
+    };
+
+    let statuses = evaluate_budgets(
+        vec![july],
+        vec![transport],
+        vec![late_fare],
+        "2026-07-15".to_owned(),
+        BalanceBasis::Confirmed,
+        london(),
+    )
+    .unwrap();
+
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0].spent, money(20_000));
+    assert_eq!(statuses[0].period_starts_on, "2026-07-01");
+}
+
+#[test]
+fn a_budget_in_the_last_month_a_table_claims_is_still_evaluated() {
+    // The window covers the rows being counted, not the period a cap happens to span. This
+    // budget runs to 31 December and the table's claim ends two days into January, so an
+    // implementation that put the period in the claim would refuse a perfectly ordinary
+    // December — which is what the one before this commit did.
+    let wallet = account(1, 100_000);
+    let statuses = evaluate_budgets(
+        vec![mt_ffi::dto::BudgetDto {
+            starts_on: "2026-12-01".to_owned(),
+            ..budget(4, 50_000, None)
+        }],
+        Vec::new(),
+        vec![transaction(
+            5,
+            &wallet,
+            Direction::Out,
+            20_000,
+            "2026-12-20T09:00:00Z",
+        )],
+        "2026-12-15".to_owned(),
+        BalanceBasis::Confirmed,
+        london(),
+    )
+    .unwrap();
+
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0].period_ends_on, "2026-12-31");
+    assert_eq!(statuses[0].spent, money(20_000));
+}
+
+#[test]
+fn a_date_at_the_end_of_the_calendar_is_refused_rather_than_overflowing_the_calendar() {
+    // `time` panics on an ordinary addition that leaves the calendar, and a panic unwinding
+    // into Dart is the worst failure this crate has. Year 9999 arrives as an ordinary
+    // string, so it is answered with an error like any other input.
+    let wallet = account(1, 500_000);
+
+    for zone in [london(), accra()] {
+        assert!(matches!(
+            expand_recurrence(
+                recurring(2, &wallet, 120_000),
+                "9999-12-31".to_owned(),
+                NOW.to_owned(),
+                zone,
+            )
+            .unwrap_err(),
+            BridgeError::OutOfRange { ref field, .. } if field == "through"
+        ));
+    }
+}
+
+#[test]
+fn a_window_reaching_past_the_ledgers_own_dates_generates_nothing() {
+    // Rows are generated to be written, and 2200 is where the ledger stops accepting them.
+    // Without this the call returns Ok with rows that the very next conversion refuses,
+    // one at a time, with no sign of where they came from.
+    let wallet = account(1, 500_000);
+    let rule = mt_ffi::dto::RecurringRuleDto {
+        starts_on: "2199-01-15".to_owned(),
+        ..recurring(2, &wallet, 120_000)
+    };
+
+    assert!(matches!(
+        expand_recurrence(
+            rule.clone(),
+            "2200-01-02".to_owned(),
+            NOW.to_owned(),
+            accra(),
+        )
+        .unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. } if field == "through"
+    ));
+
+    // Just inside it is ordinary work.
+    let generated = expand_recurrence(
+        rule.clone(),
+        "2199-03-31".to_owned(),
+        NOW.to_owned(),
+        accra(),
+    )
+    .unwrap();
+    assert_eq!(generated.rows.len(), 3);
+
+    // The edge is where the bound says it is: a row for 1 January 2200 is one the ledger
+    // would refuse, so the window that would produce it is refused first.
+    assert!(matches!(
+        expand_recurrence(rule, "2200-01-01".to_owned(), NOW.to_owned(), accra()).unwrap_err(),
+        BridgeError::OutOfRange { ref field, .. } if field == "through"
+    ));
+}
+
+#[test]
+fn the_ledger_bound_is_read_in_the_rules_own_zone_and_not_in_utc() {
+    // A generated row is booked at local midnight, which is hours away from its date's UTC
+    // midnight. Comparing dates to dates threw that away and let the boundary day through
+    // in both directions — invisibly, because every other test here uses a zone at UTC.
+    let wallet = account(1, 500_000);
+    let monthly_first = |starts_on: &str| mt_ffi::dto::RecurringRuleDto {
+        starts_on: starts_on.to_owned(),
+        by_month_day: Some(1),
+        ..recurring(2, &wallet, 120_000)
+    };
+
+    // Five hours west: local midnight on 1 January 2200 is 05:00 UTC, past the last
+    // instant a row may carry.
+    let west = expand_recurrence(
+        monthly_first("2199-12-01"),
+        "2200-01-01".to_owned(),
+        NOW.to_owned(),
+        ZoneDto::fixed(-5 * 3_600),
+    )
+    .unwrap_err();
+    assert!(matches!(west, BridgeError::OutOfRange { ref field, .. } if field == "through"));
+
+    // An hour east: local midnight on 1 January 1900 is 23:00 UTC the day before, which is
+    // earlier than the first instant a row may carry.
+    let east = expand_recurrence(
+        monthly_first("1900-01-01"),
+        "1900-03-01".to_owned(),
+        NOW.to_owned(),
+        ZoneDto::fixed(3_600),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(east, BridgeError::OutOfRange { ref field, .. } if field == "rule.starts_on"),
+        "the refusal must name the field at fault, got {east:?}"
+    );
+}
+
+// ------------------------------------------------------------------ editing a recurrence ---
+
+#[test]
+fn an_edit_reaches_the_instances_its_scope_names() {
+    let wallet = account(1, 500_000);
+    let rent = recurring(2, &wallet, 120_000);
+    let instance = |n: u128, booked_at: &str| mt_ffi::dto::TransactionDto {
+        recurring_id: Some(rent.id.clone()),
+        ..transaction(n, &wallet, Direction::Out, 120_000, booked_at)
+    };
+    let october = instance(10, "2026-10-15T00:00:00Z");
+    let november = instance(11, "2026-11-15T00:00:00Z");
+    let december = instance(12, "2026-12-15T00:00:00Z");
+    let rows = vec![october, november.clone(), december];
+    let pivot = november.booked_at.clone();
+
+    let selected =
+        |scope| instances_in_scope(rent.clone(), scope, pivot.clone(), rows.clone()).unwrap();
+
+    // The four answers "change the rent" can mean, each asked for rather than guessed.
+    assert_eq!(selected(RecurrenceScope::This), vec![uuid(11)]);
+    assert_eq!(selected(RecurrenceScope::Future), vec![uuid(11), uuid(12)]);
+    assert_eq!(selected(RecurrenceScope::Past), vec![uuid(10), uuid(11)]);
+    assert_eq!(
+        selected(RecurrenceScope::All),
+        vec![uuid(10), uuid(11), uuid(12)]
+    );
+}
+
+#[test]
+fn an_edit_does_not_reach_a_deleted_instance_or_another_templates_rows() {
+    let wallet = account(1, 500_000);
+    let rent = recurring(2, &wallet, 120_000);
+    let mut deleted = mt_ffi::dto::TransactionDto {
+        recurring_id: Some(rent.id.clone()),
+        ..transaction(10, &wallet, Direction::Out, 120_000, "2026-10-15T00:00:00Z")
+    };
+    deleted.sync.deleted_at = Some("2026-11-11T00:00:00Z".to_owned());
+    let other_template = mt_ffi::dto::TransactionDto {
+        recurring_id: Some(uuid(0xbb)),
+        ..transaction(11, &wallet, Direction::Out, 120_000, "2026-10-15T00:00:00Z")
+    };
+    let standalone = transaction(12, &wallet, Direction::Out, 120_000, "2026-10-15T00:00:00Z");
+
+    let selected = instances_in_scope(
+        rent,
+        RecurrenceScope::All,
+        NOW.to_owned(),
+        vec![deleted, other_template, standalone],
+    )
+    .unwrap();
+
+    // An edit should not resurrect something removed, nor reach another template's rows.
+    assert!(selected.is_empty());
+}
