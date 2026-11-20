@@ -15,7 +15,8 @@ use time::OffsetDateTime;
 
 use crate::AppState;
 use crate::api::dto::{
-    self, AccountOut, MoneyOut, NewAccountIn, NewTransactionIn, TransactionOut, account_out,
+    self, AccountOut, CurrencyOut, LedgerOut, MoneyOut, NewAccountIn, NewTransactionIn,
+    TransactionOut, account_out, ledger_out,
 };
 use crate::error::{ApiError, ApiResult};
 use crate::repo::{accounts, transactions, users};
@@ -66,7 +67,13 @@ pub async fn create_account(
         name: body.name,
         kind: dto::variant::<AccountKind>("kind", &body.kind)?,
         currency,
-        opening_balance: Money::new(body.opening_balance_minor, currency),
+        opening_balance: dto::amount(
+            "opening_balance",
+            body.opening_balance_minor,
+            body.opening_balance.as_deref(),
+            currency,
+        )?
+        .unwrap_or_else(|| Money::zero(currency)),
     };
     let device = users::web_device(&state.pool, session.user).await?;
     let account = accounts::create(&state.pool, session.user, device, &new).await?;
@@ -135,7 +142,16 @@ pub async fn create_transaction(
     let new = transactions::NewTransaction {
         account_id,
         direction: dto::variant::<Direction>("direction", &body.direction)?,
-        amount: Money::new(body.amount_minor, account.currency),
+        amount: dto::amount(
+            "amount",
+            body.amount_minor,
+            body.amount.as_deref(),
+            account.currency,
+        )?
+        .ok_or_else(|| ApiError::Invalid {
+            field: "amount".to_owned(),
+            reason: "it is missing".to_owned(),
+        })?,
         booked_at,
         category_id: None,
         label: body.label,
@@ -149,6 +165,64 @@ pub async fn create_transaction(
     let device = users::web_device(&state.pool, session.user).await?;
     let written = transactions::create(&state.pool, session.user, device, &new).await?;
     Ok(Json(TransactionOut::try_from(&written)?))
+}
+
+/// Which account a ledger is about, and on which basis.
+#[derive(Debug, Deserialize)]
+pub struct LedgerQuery {
+    /// The account.
+    pub account_id: String,
+    /// `confirmed` or `projected`. Absent means projected: the ledger runs through today
+    /// into the rows still expected, which is the screen's whole shape.
+    pub basis: Option<String>,
+}
+
+/// One account's rows with the running balance beside each.
+///
+/// The running balance is the one number on the ledger screen a browser would be most
+/// tempted to compute for itself — it is only a sum — and the one that would most quietly
+/// disagree with a handset's when two rows share an instant. So the walk is `mt-core`'s,
+/// with its tiebreak, and the browser prints it.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if the account is not this user's, or [`ApiError::Rule`] if the
+/// rows will not walk.
+pub async fn account_ledger(
+    State(state): State<AppState>,
+    session: Session,
+    Query(query): Query<LedgerQuery>,
+) -> ApiResult<Json<LedgerOut>> {
+    let account_id: AccountId = dto::id("account_id", &query.account_id)?;
+    let basis = basis_from(Some(query.basis.as_deref().unwrap_or("projected")))?;
+    let account = accounts::get(&state.pool, session.user, account_id).await?;
+    let rows = transactions::for_account(&state.pool, session.user, account_id).await?;
+
+    let walk = |basis| {
+        ledger::walk(&account, &rows, basis).map_err(|reason| ApiError::Rule {
+            rule: "walk",
+            reason: reason.to_string(),
+        })
+    };
+    let confirmed = walk(BalanceBasis::Confirmed)?;
+    let projected = walk(BalanceBasis::Projected)?;
+    let summary = account_out(&account, confirmed.closing, projected.closing);
+
+    let (chosen, name) = match basis {
+        BalanceBasis::Confirmed => (&confirmed, "confirmed"),
+        BalanceBasis::Projected => (&projected, "projected"),
+    };
+    Ok(Json(ledger_out(summary, name, chosen)?))
+}
+
+/// Every currency an account may be opened in.
+pub async fn currencies() -> Json<Vec<CurrencyOut>> {
+    Json(
+        mt_core::money::Currency::ALL
+            .iter()
+            .copied()
+            .map(CurrencyOut::from)
+            .collect(),
+    )
 }
 
 /// Which rows a balance counts.

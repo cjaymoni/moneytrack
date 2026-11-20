@@ -93,7 +93,9 @@ pub fn router(state: AppState) -> Router {
             "/transactions",
             get(api::ledger::list_transactions).post(api::ledger::create_transaction),
         )
+        .route("/ledger", get(api::ledger::account_ledger))
         .route("/totals", get(api::ledger::currency_totals))
+        .route("/currencies", get(api::ledger::currencies))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             csrf::guard,

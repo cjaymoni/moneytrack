@@ -8,8 +8,14 @@
 //! `display` string is rendered here, by `mt-core`, because where the decimal point goes is
 //! a property of the currency — two places for the cedi, none for the CFA franc. A browser
 //! that divides by a hundred is right until the first West African row arrives.
+//!
+//! The same holds in the other direction. A person types `12.50`, and turning that into
+//! minor units is the same rule read backwards, so an amount may arrive as the decimal text
+//! the person typed and be read here by [`Money::parse`]. A browser that multiplied by a
+//! hundred would be wrong for the same franc.
 
 use core::str::FromStr;
+use mt_core::ledger::Walk;
 use mt_core::model::{Account, Transaction};
 use mt_core::money::{Currency, Money};
 use serde::{Deserialize, Serialize};
@@ -129,6 +135,76 @@ impl TryFrom<&Transaction> for TransactionOut {
     }
 }
 
+/// A currency the server knows how to scale, for a picker.
+#[derive(Debug, Clone, Serialize)]
+pub struct CurrencyOut {
+    /// ISO 4217 code.
+    pub code: String,
+    /// The English name, so a person can find the code.
+    pub name: String,
+}
+
+impl From<Currency> for CurrencyOut {
+    fn from(currency: Currency) -> Self {
+        Self {
+            code: currency.code().to_owned(),
+            name: currency.name().to_owned(),
+        }
+    }
+}
+
+/// One row of an account's ledger and what the account held once it was applied.
+#[derive(Debug, Clone, Serialize)]
+pub struct LedgerEntryOut {
+    /// The row.
+    pub transaction: TransactionOut,
+    /// The running balance after it, walked by `mt-core`.
+    pub balance_after: MoneyOut,
+}
+
+/// An account's ledger: its rows in booked order with the running balance beside each.
+#[derive(Debug, Clone, Serialize)]
+pub struct LedgerOut {
+    /// The account, with both balances.
+    pub account: AccountOut,
+    /// `confirmed` or `projected`: which rows the walk admitted.
+    pub basis: String,
+    /// What the account held before any row.
+    pub opening: MoneyOut,
+    /// Every admitted row, oldest first.
+    pub entries: Vec<LedgerEntryOut>,
+    /// What it holds after the last row.
+    pub closing: MoneyOut,
+}
+
+/// Renders a walk.
+///
+/// # Errors
+/// [`ApiError::Internal`] if an instant will not render.
+pub fn ledger_out(
+    account: AccountOut,
+    basis: &str,
+    walk: &Walk<'_>,
+) -> Result<LedgerOut, ApiError> {
+    let entries = walk
+        .entries
+        .iter()
+        .map(|entry| {
+            Ok(LedgerEntryOut {
+                transaction: TransactionOut::try_from(entry.transaction)?,
+                balance_after: entry.balance_after.into(),
+            })
+        })
+        .collect::<Result<Vec<_>, ApiError>>()?;
+    Ok(LedgerOut {
+        account,
+        basis: basis.to_owned(),
+        opening: walk.opening.into(),
+        entries,
+        closing: walk.closing.into(),
+    })
+}
+
 /// Renders an account with the two balances the screens want.
 pub fn account_out(account: &Account, confirmed: Money, projected: Money) -> AccountOut {
     AccountOut {
@@ -160,8 +236,11 @@ pub struct NewAccountIn {
     pub kind: String,
     /// ISO 4217 code.
     pub currency: String,
-    /// What it holds before any transaction, in minor units.
-    pub opening_balance_minor: i64,
+    /// What it holds before any transaction, in minor units. This or `opening_balance`.
+    pub opening_balance_minor: Option<i64>,
+    /// The same, as the decimal text a person typed, read by `mt-core` in the account's
+    /// currency. This or `opening_balance_minor`; neither means zero.
+    pub opening_balance: Option<String>,
 }
 
 /// What a browser sends to record a transaction.
@@ -171,8 +250,11 @@ pub struct NewTransactionIn {
     pub account_id: String,
     /// `in` or `out`.
     pub direction: String,
-    /// Always positive; `direction` carries the sign.
-    pub amount_minor: i64,
+    /// Always positive; `direction` carries the sign. This or `amount`.
+    pub amount_minor: Option<i64>,
+    /// The same, as the decimal text a person typed, read by `mt-core` in the account's
+    /// currency. This or `amount_minor`.
+    pub amount: Option<String>,
     /// When it happened, RFC 3339. Absent means now.
     pub booked_at: Option<String>,
     /// What it was.
@@ -198,6 +280,41 @@ where
         field: field.to_owned(),
         reason: error.to_string(),
     })
+}
+
+/// Reads an amount offered either as minor units or as decimal text, never both.
+///
+/// The text goes through [`Money::parse`], which refuses more decimal places than the
+/// currency has rather than rounding — a person who typed `5.005` cedis meant something,
+/// and it is not the server's place to guess what.
+///
+/// # Errors
+/// [`ApiError::Invalid`] naming `field` if both or neither are given, or the text will not
+/// parse. The reason never quotes the text: it is someone's money.
+pub fn amount(
+    field: &str,
+    minor: Option<i64>,
+    text: Option<&str>,
+    currency: Currency,
+) -> Result<Option<Money>, ApiError> {
+    let refuse = |reason: String| ApiError::Invalid {
+        field: field.to_owned(),
+        reason,
+    };
+    match (minor, text) {
+        (Some(_), Some(_)) => Err(refuse(
+            "give it in minor units or as decimal text, not both".to_owned(),
+        )),
+        (Some(minor), None) => Ok(Some(Money::new(minor, currency))),
+        (None, Some(text)) => match Money::parse(text.trim(), currency) {
+            Ok(money) => Ok(Some(money)),
+            Err(mt_core::money::MoneyError::Parse { reason, .. }) => {
+                Err(refuse(format!("{reason} ({currency})")))
+            }
+            Err(other) => Err(refuse(other.to_string())),
+        },
+        (None, None) => Ok(None),
+    }
 }
 
 /// Reads an ISO 4217 code.

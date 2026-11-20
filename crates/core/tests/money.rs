@@ -50,6 +50,16 @@ fn every_registry_currency_has_a_consistent_scale() {
 }
 
 #[test]
+fn every_registry_currency_has_a_name() {
+    // The fallback arm of `name` returns "", which only a value built around `parse` could
+    // reach. A blank in a currency picker would be this test failing late.
+    for currency in Currency::ALL {
+        assert!(!currency.name().is_empty(), "{currency} has no name");
+    }
+    assert_eq!(Currency::GHS.name(), "Ghanaian cedi");
+}
+
+#[test]
 fn parses_decimal_strings_into_minor_units() {
     let cases = [
         ("12.50", 1250),

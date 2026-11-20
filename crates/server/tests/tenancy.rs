@@ -88,6 +88,17 @@ async fn naming_someone_elses_account_finds_nothing() {
 }
 
 #[tokio::test]
+async fn someone_elses_ledger_finds_nothing() {
+    let (_ama, kofi, account) = two_people().await;
+
+    let response = kofi.get(&format!("/ledger?account_id={account}")).await;
+
+    assert_eq!(response.status(), 404);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "not_found");
+}
+
+#[tokio::test]
 async fn writing_into_someone_elses_account_is_refused() {
     let (ama, kofi, account) = two_people().await;
 
