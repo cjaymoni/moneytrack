@@ -81,6 +81,7 @@ impl std::fmt::Debug for AppState {
 pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/health", get(api::health))
+        .route("/csrf", get(csrf::token))
         .route("/auth/register", post(api::auth::register))
         .route("/auth/login", post(api::auth::login))
         .route("/auth/logout", post(api::auth::logout))

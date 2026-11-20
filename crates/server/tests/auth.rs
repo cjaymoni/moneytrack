@@ -169,6 +169,41 @@ async fn a_state_changing_request_without_the_csrf_token_is_refused() {
 }
 
 #[tokio::test]
+async fn the_token_is_handed_back_as_the_cookie_holds_it() {
+    let server = TestServer::start().await;
+
+    // A first visit holds no cookie: the token in the body is the one being issued.
+    let first = server.get("/csrf").await;
+    let issued = first
+        .headers()
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .find_map(|value| value.strip_prefix("mt_csrf="))
+        .and_then(|value| value.split(';').next())
+        .map(str::to_owned)
+        .expect("a token is issued on the first visit");
+    let body: Value = first.json().await.unwrap();
+    assert_eq!(body["token"], issued.as_str());
+
+    // A second visit holds it already, and is told the same value, not a new one.
+    let again: Value = server.get("/csrf").await.json().await.unwrap();
+    assert_eq!(again["token"], issued.as_str());
+
+    // And it is the token the guard checks: a page that knows only what this endpoint said
+    // can register.
+    let response = server
+        .client
+        .post(format!("{}/auth/register", server.base))
+        .header("x-csrf-token", issued)
+        .json(&json!({ "email": "abena@example.test", "password": "a long enough password" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+}
+
+#[tokio::test]
 async fn health_says_nothing_about_the_database() {
     let server = TestServer::start().await;
 
