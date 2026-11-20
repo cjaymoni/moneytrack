@@ -30,6 +30,11 @@ export function Shell({ user }: { user: User }) {
       <nav className="rail" aria-label="Accounts">
         <Accounts />
         <Totals />
+        <section className="rail__section rail__more">
+          <NavLink to="/categories" className="rail__link">
+            Categories
+          </NavLink>
+        </section>
       </nav>
 
       <main className="main">

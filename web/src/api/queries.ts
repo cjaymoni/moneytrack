@@ -7,6 +7,8 @@ import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/re
 import { ApiError, get, post } from "./client";
 import type {
   Account,
+  Category,
+  NewCategory,
   Currency,
   Ledger,
   Money,
@@ -22,6 +24,7 @@ export const keys = {
   ledger: (accountId: string) => ["ledger", accountId] as const,
   totals: ["totals"] as const,
   currencies: ["currencies"] as const,
+  categories: ["categories"] as const,
 };
 
 /** Who is signed in, or `null` for nobody. Any other failure is an error. */
@@ -64,6 +67,30 @@ export function useCurrencies() {
     queryKey: keys.currencies,
     queryFn: () => get<Currency[]>("/currencies"),
     staleTime: Infinity,
+  });
+}
+
+export function useCategories() {
+  return useQuery({ queryKey: keys.categories, queryFn: () => get<Category[]>("/categories") });
+}
+
+export function useCreateCategory() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (category: NewCategory) => post<Category>("/categories", category),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.categories }),
+  });
+}
+
+/** Files a row under a category, or under none. Moves no balance, so only the ledger is asked again. */
+export function useSetCategory() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, categoryId }: { id: string; categoryId: string | null }) =>
+      post<Transaction>(`/transactions/${encodeURIComponent(id)}/category`, {
+        category_id: categoryId,
+      }),
+    onSuccess: (row) => void client.invalidateQueries({ queryKey: keys.ledger(row.account_id) }),
   });
 }
 

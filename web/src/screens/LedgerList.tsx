@@ -1,6 +1,9 @@
-import { useEffect, useRef } from "react";
-import type { LedgerEntry, Money } from "../api/types";
+import { useEffect, useId, useRef, useState } from "react";
+import type { Category, LedgerEntry, Money } from "../api/types";
+import { useSetCategory } from "../api/queries";
+import { CategoryPicker, fullName, kindFor } from "../ui/CategoryPicker";
 import { balance, gutterDate, isNegative, longDate, signed } from "../ui/format";
+import { FormError } from "../ui/states";
 
 /**
  * The ledger: one list, oldest first, running through a ruled TODAY line into the rows still
@@ -13,11 +16,13 @@ export function LedgerList({
   entries,
   opening,
   currency,
+  categories = [],
   now = new Date(),
 }: {
   entries: LedgerEntry[];
   opening: Money;
   currency: string;
+  categories?: Category[];
   now?: Date;
 }) {
   const todayRef = useRef<HTMLDivElement>(null);
@@ -57,7 +62,7 @@ export function LedgerList({
       </p>
       <ol className="ledger__rows">
         {past.map((entry) => (
-          <Row key={entry.transaction.id} entry={entry} future={false} />
+          <Row key={entry.transaction.id} entry={entry} future={false} categories={categories} />
         ))}
       </ol>
       <div className="mt-today" ref={todayRef} role="separator" aria-label="Today">
@@ -67,7 +72,7 @@ export function LedgerList({
       {future.length > 0 && (
         <ol className="ledger__rows">
           {future.map((entry) => (
-            <Row key={entry.transaction.id} entry={entry} future />
+            <Row key={entry.transaction.id} entry={entry} future categories={categories} />
           ))}
         </ol>
       )}
@@ -75,10 +80,22 @@ export function LedgerList({
   );
 }
 
-function Row({ entry, future }: { entry: LedgerEntry; future: boolean }) {
+function Row({
+  entry,
+  future,
+  categories,
+}: {
+  entry: LedgerEntry;
+  future: boolean;
+  categories: Category[];
+}) {
   const { transaction, balance_after } = entry;
   const pending = transaction.status === "pending";
   const classes = ["mt-row", future || pending ? "mt-row--future" : ""].join(" ").trim();
+  const [filing, setFiling] = useState(false);
+  const setCategory = useSetCategory();
+  const pickerId = useId();
+  const category = categories.find((each) => each.id === transaction.category_id);
 
   return (
     <li className={classes}>
@@ -88,8 +105,23 @@ function Row({ entry, future }: { entry: LedgerEntry; future: boolean }) {
       <div>
         <div className="label">{transaction.label}</div>
         <div className="sub">
-          {transaction.counterparty && <span>{transaction.counterparty}</span>}
-          {transaction.counterparty && pending && <span aria-hidden="true"> · </span>}
+          {transaction.counterparty && (
+            <>
+              <span>{transaction.counterparty}</span>
+              <span aria-hidden="true"> · </span>
+            </>
+          )}
+          <button
+            type="button"
+            className={category ? "filed" : "filed filed--none"}
+            aria-expanded={filing}
+            aria-controls={pickerId}
+            onClick={() => setFiling(!filing)}
+          >
+            <span className="visually-hidden">Category: </span>
+            {category ? fullName(category, categories) : "Uncategorised"}
+          </button>
+          {pending && <span aria-hidden="true"> · </span>}
           {pending && <span>expected</span>}
           <Verification source={transaction.source} pending={pending} />
         </div>
@@ -103,6 +135,24 @@ function Row({ entry, future }: { entry: LedgerEntry; future: boolean }) {
           {balance(balance_after)}
         </div>
       </div>
+      {filing && (
+        <div className="refile" id={pickerId}>
+          <CategoryPicker
+            categories={categories}
+            kind={kindFor(transaction.direction)}
+            value={transaction.category_id}
+            disabled={setCategory.isPending}
+            label={`Category for ${transaction.label}`}
+            onChange={(categoryId) =>
+              setCategory.mutate(
+                { id: transaction.id, categoryId },
+                { onSuccess: () => setFiling(false) },
+              )
+            }
+          />
+          <FormError error={setCategory.error} />
+        </div>
+      )}
     </li>
   );
 }

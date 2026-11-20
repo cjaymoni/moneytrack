@@ -65,6 +65,23 @@ export interface Ledger {
   closing: Money;
 }
 
+export type CategoryKind = "income" | "expense";
+
+export interface Category {
+  id: string;
+  name: string;
+  /** The category it sits under. Nesting is one level. */
+  parent_id: string | null;
+  kind: CategoryKind;
+  sort_order: number;
+}
+
+export interface NewCategory {
+  name: string;
+  kind: CategoryKind;
+  parent_id?: string;
+}
+
 export interface Currency {
   code: string;
   name: string;
@@ -89,4 +106,5 @@ export interface NewTransaction {
   /** RFC 3339. Absent means now. */
   booked_at?: string;
   status?: Status;
+  category_id?: string;
 }

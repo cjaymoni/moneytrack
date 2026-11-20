@@ -116,6 +116,21 @@ a { color: inherit; }
 }
 .check input { width: 18px; height: 18px; accent-color: var(--mt-ink); cursor: pointer; }
 
+/* ---------- category chips: painted, 48px tall, oxblood when chosen ---------- */
+.chips { display: flex; flex-wrap: wrap; gap: var(--mt-target-gap); }
+.chip {
+  min-height: var(--mt-target); padding: var(--mt-c2) 14px;
+  font: inherit; font-size: var(--mt-body-sm); font-weight: 500; color: var(--mt-ink);
+  background: transparent; border: var(--mt-hairline) solid var(--mt-rule-strong);
+  border-radius: var(--mt-r-sm); cursor: pointer;
+  transition: background var(--mt-fast) var(--mt-ease);
+}
+.chip:hover { background: var(--mt-sunk); }
+.chip[aria-pressed="true"] { background: var(--mt-grade); border-color: var(--mt-grade); color: var(--mt-ground); }
+.chip[aria-pressed="true"]:hover { background: var(--mt-grade-hover); }
+.chip[aria-pressed="true"]:focus-visible { outline-color: var(--mt-ink); }
+.chip:disabled { cursor: default; opacity: 0.6; }
+
 /* ---------- loading and failure ---------- */
 .state { display: grid; gap: var(--mt-c4); justify-items: start; padding: var(--mt-c6) 0; }
 .state--full { min-height: 100vh; place-content: center; justify-items: center; padding: var(--mt-gutter); }
@@ -159,6 +174,17 @@ a { color: inherit; }
 .rail__section { display: grid; gap: var(--mt-c3); }
 .rail__heading { padding-bottom: var(--mt-c1); }
 .rail__open { justify-self: start; margin-top: var(--mt-c2); }
+.rail__more { border-top: var(--mt-hairline) solid var(--mt-rule); padding-top: var(--mt-c4); }
+.rail__link {
+  display: flex; align-items: center; min-height: var(--mt-target);
+  font-size: var(--mt-label); font-weight: 600; letter-spacing: var(--mt-track-label);
+  text-transform: uppercase; text-decoration: none; color: var(--mt-ink-secondary);
+}
+.rail__link:hover { color: var(--mt-ink); }
+.rail__link[aria-current="page"] {
+  color: var(--mt-ink); border-left: 2px solid var(--mt-ink);
+  padding-left: var(--mt-c3); margin-left: calc(var(--mt-c3) * -1 - 2px);
+}
 
 .accounts { list-style: none; display: grid; }
 .account-link {
@@ -200,6 +226,8 @@ a { color: inherit; }
 .screen--narrow { max-width: 460px; gap: var(--mt-c4); }
 .screen__title { font-size: var(--mt-amount-lg); font-weight: 600; letter-spacing: var(--mt-track-hero); line-height: 1.05; }
 .screen__lede { color: var(--mt-ink-secondary); margin-bottom: var(--mt-c4); max-width: 34ch; }
+.screen__head { display: grid; gap: var(--mt-c3); }
+.screen__head .screen__lede { margin-bottom: 0; max-width: 52ch; }
 .screen--narrow .form .btn { justify-self: start; }
 
 /* ---------- the balance ---------- */
@@ -278,6 +306,34 @@ a { color: inherit; }
 .mt-row--future .amt { color: var(--mt-ink-future); }
 .mt-row--future .amt.in { color: var(--mt-income); }
 
+/* The category in a row's sub line is also the control that refiles it. Underlined on
+   hover only: a dashed line would say "unverified", which is not what this means. */
+.mt-row .filed {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer;
+  border-radius: var(--mt-r-sm);
+}
+.mt-row .filed:hover { color: var(--mt-ink); text-decoration: underline; text-underline-offset: 2px; }
+.mt-row .filed--none { color: var(--mt-ink-muted); }
+.mt-row .refile { grid-column: 2 / 4; padding: var(--mt-c3) 0 var(--mt-c1); display: grid; gap: var(--mt-c3); }
+
+/* ---------- categories ---------- */
+.add-category {
+  display: grid; gap: var(--mt-c4); padding: var(--mt-c5) 0;
+  border-top: var(--mt-hairline) solid var(--mt-rule-strong);
+  border-bottom: var(--mt-hairline) solid var(--mt-rule-strong);
+}
+.add-category .segments--pair { max-width: 320px; }
+.add-category__fields {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--mt-c6); align-items: end;
+}
+.sides { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mt-c10); }
+.side__title { padding-bottom: var(--mt-c2); border-bottom: var(--mt-hairline) solid var(--mt-rule-strong); }
+.tree { list-style: none; }
+.tree li { padding: var(--mt-c3) 0; border-top: var(--mt-hairline) solid var(--mt-rule); font-size: 14.5px; font-weight: 500; }
+.tree li:first-child { border-top: 0; }
+.tree .tree__child { padding-left: var(--mt-c6); color: var(--mt-ink-secondary); font-weight: 400; }
+
 .mt-byhand {
   display: inline-block; margin-left: var(--mt-c2);
   font-size: var(--mt-micro); font-weight: 500;
@@ -309,5 +365,8 @@ a { color: inherit; }
   .entry__top { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c4); }
   .entry__fields { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c4); }
   .entry__submit { flex: 1; }
+  .add-category__fields { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c4); }
+  .sides { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c8); }
+  .rail__more { padding-top: var(--mt-c2); }
   .mt-row, .ledger__head { grid-template-columns: 46px minmax(0, 1fr) auto; }
 }

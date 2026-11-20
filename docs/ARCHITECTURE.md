@@ -535,8 +535,11 @@ GET    /currencies               the registry, for a picker
 GET    /accounts                 every account with both balances
 POST   /accounts
 GET    /ledger                   one account's walk: rows in booked order, balance after each
+GET    /categories               every category, in display order; a new ledger has eighteen
+POST   /categories               one level of nesting, judged by mt-core
 GET    /transactions             the rows, optionally for one account
-POST   /transactions
+POST   /transactions             optionally under a category
+POST   /transactions/{id}/category   file a row under a category, or under none
 GET    /totals                   per currency, on a basis — never converted into one number
 
 later:

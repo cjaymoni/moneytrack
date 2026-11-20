@@ -19,7 +19,9 @@ in with Argon2id and opaque session cookies, and answers the accounts, transacti
 balance endpoints — every query scoped to a user, with tests that try to read and write
 across the boundary and must fail. Phase 2b is built too: `web/` signs a person up, opens
 accounts, records rows and shows the ledger through today into the forecast, with the
-running balance walked by `mt-core` on the server. Phase 3 is next.
+running balance walked by `mt-core` on the server. Phase 3 has begun with categories: a
+starting set of eighteen at registration, one level of nesting, a chip picker in the entry
+form, and refiling a row from the ledger. The breakdown is next.
 
 ## What it has to do
 

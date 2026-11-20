@@ -41,7 +41,10 @@ Built so far:
   rows still expected, with what the account held after each. It computes no number — the
   running balance is `mt-core`'s walk and a typed amount is read by `mt-core` on the server.
 
-Being built next: phase 3 — budgets, the outlook and the category breakdown.
+Categories are in: a new ledger starts with eighteen, rows are filed under one from the
+entry form or refiled from the ledger, and a category can hold others one level down.
+
+Being built next: the rest of phase 3 — the category breakdown, the outlook and budgets.
 
 `cargo test --workspace` covers the Rust, `db/tests/` covers the database constraints, and
 each app has a round trip that runs on the laptop rather than on a device.

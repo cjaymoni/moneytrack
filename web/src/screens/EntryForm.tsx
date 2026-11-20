@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import type { Account, Direction } from "../api/types";
-import { useCreateTransaction } from "../api/queries";
+import { useCategories, useCreateTransaction } from "../api/queries";
+import { CategoryPicker, kindFor } from "../ui/CategoryPicker";
 import { FormError } from "../ui/states";
 
 /** Today's date as an `<input type="date">` writes it, in the reader's own zone. */
@@ -23,9 +24,17 @@ function bookedAt(picked: string, today: string): string | undefined {
   return new Date(year, month - 1, day, 12, 0, 0).toISOString();
 }
 
-/** One line to record a row: out or in, how much, what it was. */
+/**
+ * One line to record a row: out or in, how much, which category, what it was.
+ *
+ * The fast path is amount, category, done. A row with a category and no words of its own
+ * is labelled with the category's name — the label is required, and making someone type
+ * "Transport" under the Transport chip they just pressed is the slow path the plan warns
+ * about.
+ */
 export function EntryForm({ account }: { account: Account }) {
   const create = useCreateTransaction();
+  const categories = useCategories();
   const amountRef = useRef<HTMLInputElement>(null);
   const today = localDate(new Date());
 
@@ -35,6 +44,15 @@ export function EntryForm({ account }: { account: Account }) {
   const [counterparty, setCounterparty] = useState("");
   const [date, setDate] = useState(today);
   const [expected, setExpected] = useState(false);
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+
+  const chosen = categories.data?.find((category) => category.id === categoryId) ?? null;
+
+  function pickDirection(value: Direction) {
+    setDirection(value);
+    // A spending category does not carry over to money in, or the other way.
+    if (value !== direction) setCategoryId(null);
+  }
 
   function pickDate(value: string) {
     setDate(value);
@@ -46,12 +64,14 @@ export function EntryForm({ account }: { account: Account }) {
     event.preventDefault();
     const at = bookedAt(date, today);
     const who = counterparty.trim();
+    const words = label.trim() || chosen?.name || "";
     create.mutate(
       {
         account_id: account.id,
         direction,
         amount: amount.trim(),
-        label: label.trim(),
+        label: words,
+        ...(chosen ? { category_id: chosen.id } : {}),
         ...(who ? { counterparty: who } : {}),
         ...(at ? { booked_at: at } : {}),
         status: expected ? "pending" : "confirmed",
@@ -63,6 +83,7 @@ export function EntryForm({ account }: { account: Account }) {
           setCounterparty("");
           setDate(today);
           setExpected(false);
+          setCategoryId(null);
           amountRef.current?.focus();
         },
       },
@@ -80,7 +101,7 @@ export function EntryForm({ account }: { account: Account }) {
                 name="direction"
                 value={option}
                 checked={direction === option}
-                onChange={() => setDirection(option)}
+                onChange={() => pickDirection(option)}
               />
               <span>{option === "out" ? "Out" : "In"}</span>
             </label>
@@ -105,13 +126,23 @@ export function EntryForm({ account }: { account: Account }) {
         </label>
       </div>
 
+      {categories.data && (
+        <CategoryPicker
+          categories={categories.data}
+          kind={kindFor(direction)}
+          value={categoryId}
+          onChange={setCategoryId}
+          label="Category"
+        />
+      )}
+
       <div className="entry__fields">
         <label className="field">
           <span className="mt-label">What it was</span>
           <input
-            required
+            required={!chosen}
             maxLength={200}
-            placeholder={direction === "out" ? "Trotro, Madina–Circle" : "Salary"}
+            placeholder={chosen ? chosen.name : direction === "out" ? "Trotro, Madina–Circle" : "Salary"}
             value={label}
             onChange={(event) => setLabel(event.target.value)}
           />

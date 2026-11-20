@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import { renderWithClient as render } from "../test-utils";
 import type { LedgerEntry, Money } from "../api/types";
 import { LedgerList } from "./LedgerList";
 
@@ -100,5 +101,28 @@ describe("LedgerList", () => {
 
     expect(screen.getByText("Nothing recorded yet.")).toBeTruthy();
     expect(screen.getByText(/Opened with 5,000 XOF/)).toBeTruthy();
+  });
+
+  it("shows each row's category, and says so when there is none", () => {
+    const filed = entry("1", "Kenkey", "2026-11-02T09:00:00Z", "out", cedis(500, "5.00"), cedis(-500, "-5.00"));
+    filed.transaction.category_id = "c-child";
+    render(
+      <LedgerList
+        now={NOW}
+        opening={cedis(0, "0.00")}
+        currency="GHS"
+        categories={[
+          { id: "c-root", name: "Food & groceries", parent_id: null, kind: "expense", sort_order: 0 },
+          { id: "c-child", name: "Chop bar", parent_id: "c-root", kind: "expense", sort_order: 1 },
+        ]}
+        entries={[
+          filed,
+          entry("2", "Trotro", "2026-11-03T09:00:00Z", "out", cedis(500, "5.00"), cedis(-1_000, "-10.00")),
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Food & groceries · Chop bar/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Uncategorised/ })).toBeTruthy();
   });
 });

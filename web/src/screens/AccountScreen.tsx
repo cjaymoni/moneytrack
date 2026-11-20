@@ -1,6 +1,6 @@
 import { useParams } from "react-router";
 import { ApiError } from "../api/client";
-import { useLedger } from "../api/queries";
+import { useCategories, useLedger } from "../api/queries";
 import { KIND_NAMES, balance, isNegative } from "../ui/format";
 import { Failure, Loading } from "../ui/states";
 import { EntryForm } from "./EntryForm";
@@ -10,6 +10,7 @@ import { LedgerList } from "./LedgerList";
 export function AccountScreen() {
   const { accountId = "" } = useParams();
   const ledger = useLedger(accountId);
+  const categories = useCategories();
 
   if (ledger.isPending) return <Loading />;
   if (ledger.isError) {
@@ -48,7 +49,12 @@ export function AccountScreen() {
 
       <EntryForm account={account} />
 
-      <LedgerList entries={entries} opening={ledger.data.opening} currency={account.currency} />
+      <LedgerList
+        entries={entries}
+        opening={ledger.data.opening}
+        currency={account.currency}
+        categories={categories.data ?? []}
+      />
     </section>
   );
 }

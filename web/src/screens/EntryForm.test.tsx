@@ -16,6 +16,12 @@ const account: Account = {
   projected: { minor_units: 0, currency: "GHS", display: "0.00" },
 };
 
+const CATEGORIES = [
+  { id: "c-food", name: "Food & groceries", parent_id: null, kind: "expense", sort_order: 0 },
+  { id: "c-transport", name: "Transport", parent_id: null, kind: "expense", sort_order: 1 },
+  { id: "c-salary", name: "Salary", parent_id: null, kind: "income", sort_order: 2 },
+];
+
 interface Call {
   url: string;
   init: RequestInit | undefined;
@@ -31,6 +37,7 @@ beforeEach(() => {
     vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
       if (url === "/api/csrf") return new Response(JSON.stringify({ token: "tok-123" }));
+      if (url === "/api/categories") return new Response(JSON.stringify(CATEGORIES));
       if (url === "/api/transactions") {
         const sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
         return new Response(
@@ -90,6 +97,37 @@ describe("EntryForm", () => {
 
     // Cleared for the next row.
     await waitFor(() => expect((screen.getByLabelText(/Amount in GHS/) as HTMLInputElement).value).toBe(""));
+  });
+
+  it("files the row under the chosen category, and names it after the category if left blank", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.type(screen.getByLabelText(/Amount in GHS/), "5");
+    await user.click(await screen.findByRole("button", { name: "Transport" }));
+    await user.click(screen.getByRole("button", { name: "Record" }));
+
+    await waitFor(() => expect(calls.some((call) => call.url === "/api/transactions")).toBe(true));
+    const post = calls.find((call) => call.url === "/api/transactions");
+    const body = JSON.parse(String(post?.init?.body)) as Record<string, unknown>;
+    expect(body.category_id).toBe("c-transport");
+    expect(body.label).toBe("Transport");
+  });
+
+  it("offers spending categories for money out and income ones for money in", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    expect(await screen.findByRole("button", { name: "Transport" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Salary" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Transport" }));
+    await user.click(screen.getByText("In"));
+
+    expect(screen.getByRole("button", { name: "Salary" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Transport" })).toBeNull();
+    // Nothing carried over from the other side.
+    expect(screen.getByRole("button", { name: "Salary" }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("treats a day still to come as expected", async () => {
