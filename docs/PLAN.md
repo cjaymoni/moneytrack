@@ -17,7 +17,9 @@ open a real encrypted database and read a balance back out of Rust.
 it. Phase 2a is built: `crates/server` runs the Postgres schema, registers and signs people
 in with Argon2id and opaque session cookies, and answers the accounts, transactions and
 balance endpoints — every query scoped to a user, with tests that try to read and write
-across the boundary and must fail. `web/` is next.
+across the boundary and must fail. Phase 2b is built too: `web/` signs a person up, opens
+accounts, records rows and shows the ledger through today into the forecast, with the
+running balance walked by `mt-core` on the server. Phase 3 is next.
 
 ## What it has to do
 
@@ -244,7 +246,7 @@ tempted it.
 
 ## Phasing
 
-Phases 0 and 1a are built. What follows is reordered around the browser, because that is the
+Phases 0, 1a, 2a and 2b are built. What follows is reordered around the browser, because that is the
 channel that is open. Nothing in 1a is wasted: the apps resume against the same server.
 
 | Phase | Deliverable | Rough size |
@@ -252,7 +254,7 @@ channel that is open. Nothing in 1a is wasted: the apps resume against the same 
 | 0 | `core`: money, balance walk, categorisation ladder, recurrence, budgets, dedup — tested | small ✅ |
 | 1a | The turn to native: `crates/ffi` over UniFFI, `crates/store` with the SQLite schema and the change bus, an app on each platform that opens an encrypted ledger and reads a balance back | medium ✅ |
 | 2a | The server's spine: Axum, Postgres, the schema migrated, sign-up and sign-in, sessions, and tenant-scoped repositories with no accessor that takes no `UserId` | medium ✅ |
-| 2b | The first useful screen, end to end: accounts, manual entry, the ledger list and a running balance, in the browser against the server | medium |
+| 2b | The first useful screen, end to end: accounts, manual entry, the ledger list and a running balance, in the browser against the server | medium ✅ |
 | 3 | Budgets, the outlook, the category breakdown, reconciliation entries — the analysis the product exists for | medium |
 | 4 | CSV + OFX import, the review inbox, duplicate merging | medium |
 | 5 | Deletion, export, and the compliance furniture a hosted service cannot open without | medium |
