@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 
 use crate::api::dto::{Credentials, UserOut};
 use crate::error::{ApiError, ApiResult};
-use crate::repo::users;
+use crate::repo::{categories, users};
 use crate::session::{self, Session};
 use crate::{AppState, password};
 
@@ -44,7 +44,11 @@ pub async fn register(
     let user = users::create(&state.pool, &email, &hash).await?;
     // The device row every write from this browser is attributed to. Created here so the
     // first transaction does not have to.
-    users::web_device(&state.pool, user.id).await?;
+    let device = users::web_device(&state.pool, user.id).await?;
+    // A ledger with no categories makes the first entry ask a question nobody can answer
+    // yet. Seeded in a transaction of its own and idempotent, so a failure here leaves a
+    // registered person with no categories rather than half of them.
+    categories::seed(&state.pool, user.id, device).await?;
 
     sign_in(&state, jar, user).await
 }

@@ -16,7 +16,7 @@
 
 use core::str::FromStr;
 use mt_core::ledger::Walk;
-use mt_core::model::{Account, Transaction};
+use mt_core::model::{Account, Category, Transaction};
 use mt_core::money::{Currency, Money};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -133,6 +133,51 @@ impl TryFrom<&Transaction> for TransactionOut {
             source: transaction.source.as_str().to_owned(),
         })
     }
+}
+
+/// A category.
+#[derive(Debug, Clone, Serialize)]
+pub struct CategoryOut {
+    /// Row id.
+    pub id: String,
+    /// What it is called.
+    pub name: String,
+    /// The category it sits under, absent for a root.
+    pub parent_id: Option<String>,
+    /// `income` or `expense`.
+    pub kind: String,
+    /// Ordering within its level.
+    pub sort_order: i32,
+}
+
+impl From<&Category> for CategoryOut {
+    fn from(category: &Category) -> Self {
+        Self {
+            id: category.id.to_string(),
+            name: category.name.clone(),
+            parent_id: category.parent_id.map(|id| id.to_string()),
+            kind: category.kind.as_str().to_owned(),
+            sort_order: category.sort_order,
+        }
+    }
+}
+
+/// What a browser sends to add a category.
+#[derive(Debug, Deserialize)]
+pub struct NewCategoryIn {
+    /// What to call it.
+    pub name: String,
+    /// `income` or `expense`.
+    pub kind: String,
+    /// The category to put it under, if any.
+    pub parent_id: Option<String>,
+}
+
+/// What a browser sends to file a row under a category.
+#[derive(Debug, Deserialize)]
+pub struct SetCategoryIn {
+    /// The category, or null to leave the row uncategorised.
+    pub category_id: Option<String>,
 }
 
 /// A currency the server knows how to scale, for a picker.
@@ -265,6 +310,8 @@ pub struct NewTransactionIn {
     pub note: Option<String>,
     /// `pending` or `confirmed`. Absent means confirmed.
     pub status: Option<String>,
+    /// The category, absent for uncategorised.
+    pub category_id: Option<String>,
 }
 
 /// Reads one of the closed sets, naming the field when it is not one of them.

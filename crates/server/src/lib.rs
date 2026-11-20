@@ -94,6 +94,14 @@ pub fn router(state: AppState) -> Router {
             "/transactions",
             get(api::ledger::list_transactions).post(api::ledger::create_transaction),
         )
+        .route(
+            "/transactions/{id}/category",
+            post(api::ledger::set_category),
+        )
+        .route(
+            "/categories",
+            get(api::ledger::list_categories).post(api::ledger::create_category),
+        )
         .route("/ledger", get(api::ledger::account_ledger))
         .route("/totals", get(api::ledger::currency_totals))
         .route("/currencies", get(api::ledger::currencies))

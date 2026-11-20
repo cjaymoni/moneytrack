@@ -11,8 +11,8 @@ use uuid::Uuid;
 
 use crate::db;
 use crate::error::ApiError;
-use crate::repo::accounts;
 use crate::repo::rows::Reader;
+use crate::repo::{accounts, categories};
 
 /// The table, for error messages.
 const ENTITY: &str = "transaction";
@@ -65,6 +65,11 @@ pub async fn create(
     new: &NewTransaction,
 ) -> Result<Transaction, ApiError> {
     let account = accounts::get(pool, user, new.account_id).await?;
+    // Read under this user's id for the same reason as the account: someone else's category
+    // is not found, rather than a foreign-key refusal that would confirm it exists.
+    if let Some(category) = new.category_id {
+        categories::get(pool, user, category).await?;
+    }
     if new.amount.currency() != account.currency {
         return Err(ApiError::Invalid {
             field: "amount".to_owned(),
@@ -177,6 +182,86 @@ pub async fn for_account(
         .map_err(|error| ApiError::database("list transactions", &error))?;
 
     rows.iter().map(read).collect()
+}
+
+/// One live row of this user's.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if there is no such row or it belongs to someone else.
+pub async fn get(pool: &Pool, user: UserId, id: TxId) -> Result<Transaction, ApiError> {
+    let client = db::client(pool).await?;
+    let found = client
+        .query_opt(
+            &format!(
+                "SELECT {COLUMNS} FROM transactions
+                  WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL"
+            ),
+            &[user.as_uuid(), id.as_uuid()],
+        )
+        .await
+        .map_err(|error| ApiError::database("read a transaction", &error))?;
+
+    match found {
+        Some(row) => read(&row),
+        None => Err(ApiError::NotFound { entity: ENTITY }),
+    }
+}
+
+/// Files a row under a category, or under none.
+///
+/// The row's `updated_at` and `device_id` move with it, because sync decides which of two
+/// edits wins by when they were made and on which device.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if the row or the category is not this user's,
+/// [`ApiError::Invalid`] for a transfer leg, or [`ApiError::Internal`].
+pub async fn set_category(
+    pool: &Pool,
+    user: UserId,
+    device: DeviceId,
+    id: TxId,
+    category: Option<CategoryId>,
+) -> Result<Transaction, ApiError> {
+    let existing = get(pool, user, id).await?;
+    if let Some(category) = category {
+        categories::get(pool, user, category).await?;
+        // A transfer is netted, not spent: filing one leg under a category would count
+        // moving money between your own accounts as spending. The schema refuses it too.
+        if existing.transfer_id.is_some() {
+            return Err(ApiError::Invalid {
+                field: "category_id".to_owned(),
+                reason: "a transfer between your own accounts is not filed under a category"
+                    .to_owned(),
+            });
+        }
+    }
+
+    let now = OffsetDateTime::now_utc();
+    let category = category.map(|id| *id.as_uuid());
+    let client = db::client(pool).await?;
+    let row = client
+        .query_one(
+            &format!(
+                "UPDATE transactions
+                    SET category_id = $3,
+                        updated_at = greatest($4::timestamptz, created_at::timestamptz)
+                                     ::ledger_instant,
+                        device_id = $5
+                  WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL
+                  RETURNING {COLUMNS}"
+            ),
+            &[
+                user.as_uuid(),
+                id.as_uuid(),
+                &category,
+                &now,
+                device.as_uuid(),
+            ],
+        )
+        .await
+        .map_err(|error| ApiError::database("file a transaction", &error))?;
+
+    read(&row)
 }
 
 /// Every live row this user has, across every account.

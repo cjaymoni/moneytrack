@@ -5,9 +5,9 @@
 //! themselves, and there is nothing in this file that decides what counts as spending.
 
 use axum::Json;
-use axum::extract::{Query, State};
-use mt_core::enums::{AccountKind, Direction, TxSource, TxStatus};
-use mt_core::ids::AccountId;
+use axum::extract::{Path, Query, State};
+use mt_core::enums::{AccountKind, CategoryKind, Direction, TxSource, TxStatus};
+use mt_core::ids::{AccountId, CategoryId, TxId};
 use mt_core::ledger::{self, BalanceBasis};
 use mt_core::money::Money;
 use serde::Deserialize;
@@ -15,11 +15,11 @@ use time::OffsetDateTime;
 
 use crate::AppState;
 use crate::api::dto::{
-    self, AccountOut, CurrencyOut, LedgerOut, MoneyOut, NewAccountIn, NewTransactionIn,
-    TransactionOut, account_out, ledger_out,
+    self, AccountOut, CategoryOut, CurrencyOut, LedgerOut, MoneyOut, NewAccountIn, NewCategoryIn,
+    NewTransactionIn, SetCategoryIn, TransactionOut, account_out, ledger_out,
 };
 use crate::error::{ApiError, ApiResult};
-use crate::repo::{accounts, transactions, users};
+use crate::repo::{accounts, categories, transactions, users};
 use crate::session::Session;
 
 /// Every account, with what it holds on both bases.
@@ -153,7 +153,11 @@ pub async fn create_transaction(
             reason: "it is missing".to_owned(),
         })?,
         booked_at,
-        category_id: None,
+        category_id: body
+            .category_id
+            .as_deref()
+            .map(|id| dto::id::<CategoryId>("category_id", id))
+            .transpose()?,
         label: body.label,
         counterparty: body.counterparty,
         note: body.note,
@@ -223,6 +227,64 @@ pub async fn currencies() -> Json<Vec<CurrencyOut>> {
             .map(CurrencyOut::from)
             .collect(),
     )
+}
+
+/// Every category, in display order.
+///
+/// # Errors
+/// [`ApiError::Internal`].
+pub async fn list_categories(
+    State(state): State<AppState>,
+    session: Session,
+) -> ApiResult<Json<Vec<CategoryOut>>> {
+    let rows = categories::list(&state.pool, session.user).await?;
+    Ok(Json(rows.iter().map(CategoryOut::from).collect()))
+}
+
+/// Adds a category.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if the parent is not this user's, or [`ApiError::Invalid`].
+pub async fn create_category(
+    State(state): State<AppState>,
+    session: Session,
+    Json(body): Json<NewCategoryIn>,
+) -> ApiResult<Json<CategoryOut>> {
+    let new = categories::NewCategory {
+        name: body.name,
+        kind: dto::variant::<CategoryKind>("kind", &body.kind)?,
+        parent_id: body
+            .parent_id
+            .as_deref()
+            .map(|id| dto::id::<CategoryId>("parent_id", id))
+            .transpose()?,
+    };
+    let device = users::web_device(&state.pool, session.user).await?;
+    let category = categories::create(&state.pool, session.user, device, &new).await?;
+    Ok(Json(CategoryOut::from(&category)))
+}
+
+/// Files a row under a category, or takes it out of one.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if the row or the category is not this user's, or
+/// [`ApiError::Invalid`] for a transfer leg.
+pub async fn set_category(
+    State(state): State<AppState>,
+    session: Session,
+    Path(id): Path<String>,
+    Json(body): Json<SetCategoryIn>,
+) -> ApiResult<Json<TransactionOut>> {
+    let id: TxId = dto::id("id", &id)?;
+    let category = body
+        .category_id
+        .as_deref()
+        .map(|id| dto::id::<CategoryId>("category_id", id))
+        .transpose()?;
+    let device = users::web_device(&state.pool, session.user).await?;
+    let written =
+        transactions::set_category(&state.pool, session.user, device, id, category).await?;
+    Ok(Json(TransactionOut::try_from(&written)?))
 }
 
 /// Which rows a balance counts.

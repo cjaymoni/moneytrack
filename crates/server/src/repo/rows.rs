@@ -58,6 +58,11 @@ impl<'a> Reader<'a> {
         self.column(column)
     }
 
+    /// A `BOOLEAN` column.
+    pub(crate) fn flag(&self, column: &'static str) -> Result<bool, ApiError> {
+        self.column(column)
+    }
+
     /// An `INTEGER` column narrowed to the width its field wants.
     pub(crate) fn narrowed<T: TryFrom<i32>>(&self, column: &'static str) -> Result<T, ApiError> {
         let value: i32 = self.column(column)?;
