@@ -21,7 +21,9 @@ across the boundary and must fail. Phase 2b is built too: `web/` signs a person 
 accounts, records rows and shows the ledger through today into the forecast, with the
 running balance walked by `mt-core` on the server. Phase 3 has begun with categories: a
 starting set of eighteen at registration, one level of nesting, a chip picker in the entry
-form, and refiling a row from the ledger. The breakdown is next.
+form, and refiling a row from the ledger. The breakdown is built too: `mt-core` groups a
+month's rows by category on each side, transfers out, children rolled into their parent,
+and the browser draws it from the shares the core works out. The outlook is next.
 
 ## What it has to do
 

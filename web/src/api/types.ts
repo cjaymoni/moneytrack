@@ -82,6 +82,49 @@ export interface NewCategory {
   parent_id?: string;
 }
 
+/** A share of one side of a breakdown, worked out by `mt-core`. */
+export interface Share {
+  /** 0 to 10 000. Used for the width of a bar and nothing else. */
+  basis_points: number;
+  /** For a person to read: "23%", or "<1%". */
+  display: string;
+}
+
+export interface BreakdownPart {
+  category_id: string;
+  name: string;
+  total: Money;
+  share: Share;
+}
+
+export interface BreakdownLine {
+  /** Absent for rows filed under no category. */
+  category_id: string | null;
+  name: string | null;
+  /** Everything in it, children included. */
+  total: Money;
+  share: Share;
+  /** Filed under this category itself rather than one of its children. */
+  own: Money;
+  own_share: Share;
+  children: BreakdownPart[];
+}
+
+export interface BreakdownSide {
+  total: Money;
+  lines: BreakdownLine[];
+}
+
+/** One month in one currency. Never converted into another. */
+export interface Breakdown {
+  currency: string;
+  starts_on: string;
+  ends_on: string;
+  spending: BreakdownSide;
+  income: BreakdownSide;
+  net: Money;
+}
+
 export interface Currency {
   code: string;
   name: string;

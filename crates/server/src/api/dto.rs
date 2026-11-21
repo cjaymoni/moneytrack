@@ -229,6 +229,8 @@ pub struct LineOut {
     pub share: ShareOut,
     /// Filed under this category itself rather than a child.
     pub own: MoneyOut,
+    /// Its share of the side.
+    pub own_share: ShareOut,
     /// Each child with anything in it, largest first.
     pub children: Vec<PartOut>,
 }
@@ -268,6 +270,7 @@ pub fn breakdown_out(
                 total: line.total.into(),
                 share: share(line.share_bps),
                 own: line.own.into(),
+                own_share: share(line.own_share_bps),
                 children: line
                     .children
                     .iter()

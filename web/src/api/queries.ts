@@ -7,6 +7,7 @@ import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/re
 import { ApiError, get, post } from "./client";
 import type {
   Account,
+  Breakdown,
   Category,
   NewCategory,
   Currency,
@@ -25,6 +26,7 @@ export const keys = {
   totals: ["totals"] as const,
   currencies: ["currencies"] as const,
   categories: ["categories"] as const,
+  breakdown: (month: string) => ["breakdown", month] as const,
 };
 
 /** Who is signed in, or `null` for nobody. Any other failure is an error. */
@@ -70,6 +72,24 @@ export function useCurrencies() {
   });
 }
 
+/**
+ * Where the money went in a month, one breakdown per currency held.
+ *
+ * The reader's offset goes with it, so a row near midnight lands in the month on their own
+ * clock. Grouping, totals and shares are all `mt-core`'s.
+ */
+export function useBreakdown(month: string) {
+  return useQuery({
+    queryKey: keys.breakdown(month),
+    queryFn: () => {
+      const offset = -new Date().getTimezoneOffset();
+      return get<Breakdown[]>(
+        `/breakdown?month=${encodeURIComponent(month)}&offset_minutes=${offset}`,
+      );
+    },
+  });
+}
+
 export function useCategories() {
   return useQuery({ queryKey: keys.categories, queryFn: () => get<Category[]>("/categories") });
 }
@@ -78,11 +98,17 @@ export function useCreateCategory() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (category: NewCategory) => post<Category>("/categories", category),
-    onSuccess: () => void client.invalidateQueries({ queryKey: keys.categories }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.categories });
+      void client.invalidateQueries({ queryKey: ["breakdown"] });
+    },
   });
 }
 
-/** Files a row under a category, or under none. Moves no balance, so only the ledger is asked again. */
+/**
+ * Files a row under a category, or under none. Moves no balance, so the accounts and totals
+ * stand; the ledger and the breakdowns, which name the category, are asked again.
+ */
 export function useSetCategory() {
   const client = useQueryClient();
   return useMutation({
@@ -90,7 +116,10 @@ export function useSetCategory() {
       post<Transaction>(`/transactions/${encodeURIComponent(id)}/category`, {
         category_id: categoryId,
       }),
-    onSuccess: (row) => void client.invalidateQueries({ queryKey: keys.ledger(row.account_id) }),
+    onSuccess: (row) => {
+      void client.invalidateQueries({ queryKey: keys.ledger(row.account_id) });
+      void client.invalidateQueries({ queryKey: ["breakdown"] });
+    },
   });
 }
 
@@ -153,6 +182,7 @@ export function useCreateTransaction() {
       void client.invalidateQueries({ queryKey: keys.ledger(row.account_id) });
       void client.invalidateQueries({ queryKey: keys.accounts });
       void client.invalidateQueries({ queryKey: keys.totals });
+      void client.invalidateQueries({ queryKey: ["breakdown"] });
     },
   });
 }

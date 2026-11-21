@@ -316,6 +316,43 @@ a { color: inherit; }
 .mt-row .filed--none { color: var(--mt-ink-muted); }
 .mt-row .refile { grid-column: 2 / 4; padding: var(--mt-c3) 0 var(--mt-c1); display: grid; gap: var(--mt-c3); }
 
+/* ---------- where it went ---------- */
+.month-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mt-c4); flex-wrap: wrap; }
+.month-nav { display: flex; align-items: center; gap: var(--mt-target-gap); }
+.month-nav__step { width: var(--mt-target); padding: 0; font-size: var(--mt-body); }
+.month-nav__name { min-width: 15ch; text-align: center; color: var(--mt-ink); }
+.currency-pick { max-width: 360px; }
+
+.split { display: grid; gap: var(--mt-c2); }
+.split__title {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding-bottom: var(--mt-c2); border-bottom: var(--mt-hairline) solid var(--mt-rule-strong);
+}
+.split__total { color: var(--mt-ink); font-size: var(--mt-amount); letter-spacing: -0.02em; text-transform: none; }
+.split__lines, .split__parts { list-style: none; }
+.split__line { border-top: var(--mt-hairline) solid var(--mt-rule); }
+.split__line:first-child { border-top: 0; }
+.split__parts { padding: 0 0 var(--mt-c2) var(--mt-c6); }
+
+/* A bar is the list drawing itself: name, share and amount on one line, the magnitude
+   beneath. The fill is decoration, so it may be a transparency; the text never is. */
+.bar {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+  column-gap: var(--mt-c4); row-gap: 6px; align-items: baseline;
+  padding: var(--mt-c3) 0 var(--mt-c3);
+}
+.bar__name { font-size: 14.5px; font-weight: 500; overflow-wrap: anywhere; }
+.bar__share { font-size: var(--mt-micro); font-weight: 600; letter-spacing: 0.04em; color: var(--mt-ink-muted); }
+.bar__amt { font-size: var(--mt-amount); font-weight: 600; letter-spacing: -0.02em; text-align: right; white-space: nowrap; }
+.bar__track { grid-column: 1 / -1; height: 4px; background: var(--mt-sunk); border-radius: 1px; overflow: hidden; }
+.bar__fill { display: block; height: 100%; min-width: 2px; background: var(--mt-ink); opacity: 0.55; }
+.bar__fill--in { background: var(--mt-income); opacity: 0.75; }
+.bar--part { padding: var(--mt-c2) 0; }
+.bar--part .bar__name { font-size: var(--mt-body-sm); font-weight: 400; color: var(--mt-ink-secondary); }
+.bar--part .bar__amt { font-size: 13.5px; }
+.bar--part .bar__track { height: 2px; }
+.bar--muted .bar__name { color: var(--mt-ink-muted); }
+
 /* ---------- categories ---------- */
 .add-category {
   display: grid; gap: var(--mt-c4); padding: var(--mt-c5) 0;

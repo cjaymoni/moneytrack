@@ -44,7 +44,10 @@ Built so far:
 Categories are in: a new ledger starts with eighteen, rows are filed under one from the
 entry form or refiled from the ledger, and a category can hold others one level down.
 
-Being built next: the rest of phase 3 — the category breakdown, the outlook and budgets.
+"Where it went" shows a month's spending and income by category, one currency at a time,
+with transfers left out and each share worked out in `mt-core`.
+
+Being built next: the rest of phase 3 — the outlook and budgets.
 
 `cargo test --workspace` covers the Rust, `db/tests/` covers the database constraints, and
 each app has a round trip that runs on the laptop rather than on a device.

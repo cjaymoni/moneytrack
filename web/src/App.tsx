@@ -5,6 +5,7 @@ import { Shell } from "./screens/Shell";
 import { AccountScreen } from "./screens/AccountScreen";
 import { NewAccount } from "./screens/NewAccount";
 import { CategoriesScreen } from "./screens/CategoriesScreen";
+import { BreakdownScreen } from "./screens/BreakdownScreen";
 import { Failure, Loading } from "./ui/states";
 
 export function App() {
@@ -30,6 +31,7 @@ export function App() {
         <Route path="accounts/new" element={<NewAccount />} />
         <Route path="accounts/:accountId" element={<AccountScreen />} />
         <Route path="categories" element={<CategoriesScreen />} />
+        <Route path="breakdown" element={<BreakdownScreen />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

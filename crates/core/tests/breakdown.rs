@@ -133,6 +133,8 @@ fn a_childs_rows_count_toward_its_parent_and_are_listed_beside_its_own() {
     assert_eq!(line.category, Some(transport.id));
     assert_eq!(line.total.minor(), 11_000);
     assert_eq!(line.own.minor(), 1_000);
+    // 1 000 of 11 000, rounded down.
+    assert_eq!(line.own_share_bps, 909);
     let parts: Vec<(CategoryId, i64)> = line
         .children
         .iter()

@@ -31,6 +31,9 @@ export function Shell({ user }: { user: User }) {
         <Accounts />
         <Totals />
         <section className="rail__section rail__more">
+          <NavLink to="/breakdown" className="rail__link">
+            Where it went
+          </NavLink>
           <NavLink to="/categories" className="rail__link">
             Categories
           </NavLink>

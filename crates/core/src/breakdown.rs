@@ -77,6 +77,8 @@ pub struct Line {
     pub share_bps: u16,
     /// What was filed under this category itself rather than under one of its children.
     pub own: Money,
+    /// `own` as basis points of the side's total, on the same scale as the line.
+    pub own_share_bps: u16,
     /// Each child with anything in it, largest first.
     pub children: Vec<Part>,
 }
@@ -251,6 +253,7 @@ impl Piles {
                     total: line_total,
                     share_bps: share_bps(line_total, total),
                     own,
+                    own_share_bps: share_bps(own, total),
                     children,
                 }
             })

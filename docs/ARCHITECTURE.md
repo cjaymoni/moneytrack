@@ -541,6 +541,7 @@ GET    /transactions             the rows, optionally for one account
 POST   /transactions             optionally under a category
 POST   /transactions/{id}/category   file a row under a category, or under none
 GET    /totals                   per currency, on a basis — never converted into one number
+GET    /breakdown                a month by category, one per currency, shares from mt-core
 
 later:
 GET    /outlook                  the projected walk and the first shortfall
@@ -601,9 +602,10 @@ the caching; React Router the routes.
 or `−` from a row's `direction`, a word on the wire, not a negation. It reads whether a
 balance is below zero from the sign of `minor_units`. It splits history from forecast by
 comparing `booked_at` with the reader's clock, which is a question about time, not money. It
-does not draw the magnitude bar under each row the phone references show: a bar's width is
-an amount divided by the largest one, which is arithmetic on money, and when it comes back it
-should come back as a fraction the server sends.
+does not draw the magnitude bar under each ledger row the phone references show: a bar's
+width is an amount divided by the largest one, which is arithmetic on money. The breakdown
+shows the way back: `mt-core` works out each share in basis points and the screen turns that
+into a CSS width — a percentage of a bar, not of anyone's money.
 
 **Layout.** A laptop gets a top bar, a rail of accounts with what each holds and the totals
 per currency, and the account's screen: the hero balance, one ruled line to record a row, and
