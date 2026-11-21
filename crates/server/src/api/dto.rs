@@ -180,6 +180,158 @@ pub struct SetCategoryIn {
     pub category_id: Option<String>,
 }
 
+/// One period's earning and spending in one currency, by category.
+#[derive(Debug, Clone, Serialize)]
+pub struct BreakdownOut {
+    /// ISO 4217 code.
+    pub currency: String,
+    /// First local date counted, `YYYY-MM-DD`.
+    pub starts_on: String,
+    /// Last local date counted, inclusive.
+    pub ends_on: String,
+    /// Money that left.
+    pub spending: SideOut,
+    /// Money that arrived.
+    pub income: SideOut,
+    /// Income less spending.
+    pub net: MoneyOut,
+}
+
+/// One side of a breakdown.
+#[derive(Debug, Clone, Serialize)]
+pub struct SideOut {
+    /// Everything on this side.
+    pub total: MoneyOut,
+    /// Largest first.
+    pub lines: Vec<LineOut>,
+}
+
+/// A share of a side, for a bar and for a label beside it.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ShareOut {
+    /// Basis points of the side's total, 0 to 10 000, rounded down by `mt-core`.
+    pub basis_points: u16,
+    /// The same as a whole percentage for a person to read: "23%", or "<1%" for a sliver
+    /// that would otherwise read as nothing.
+    pub display: &'static str,
+}
+
+/// A top-level category, or the uncategorised pile.
+#[derive(Debug, Clone, Serialize)]
+pub struct LineOut {
+    /// The category, absent for uncategorised.
+    pub category_id: Option<String>,
+    /// Its name, absent for uncategorised.
+    pub name: Option<String>,
+    /// Everything in it, children included.
+    pub total: MoneyOut,
+    /// Its share of the side.
+    pub share: ShareOut,
+    /// Filed under this category itself rather than a child.
+    pub own: MoneyOut,
+    /// Each child with anything in it, largest first.
+    pub children: Vec<PartOut>,
+}
+
+/// A child within a line.
+#[derive(Debug, Clone, Serialize)]
+pub struct PartOut {
+    /// The child category.
+    pub category_id: String,
+    /// Its name.
+    pub name: String,
+    /// What was filed under it.
+    pub total: MoneyOut,
+    /// Its share of the side, on the same scale as the lines.
+    pub share: ShareOut,
+}
+
+/// Renders a breakdown, naming each category from the person's own list.
+pub fn breakdown_out(
+    breakdown: &mt_core::breakdown::Breakdown,
+    categories: &[Category],
+) -> BreakdownOut {
+    let name = |id: mt_core::ids::CategoryId| {
+        categories
+            .iter()
+            .find(|category| category.id == id)
+            .map(|category| category.name.clone())
+    };
+    let side = |side: &mt_core::breakdown::Side| SideOut {
+        total: side.total.into(),
+        lines: side
+            .lines
+            .iter()
+            .map(|line| LineOut {
+                category_id: line.category.map(|id| id.to_string()),
+                name: line.category.and_then(name),
+                total: line.total.into(),
+                share: share(line.share_bps),
+                own: line.own.into(),
+                children: line
+                    .children
+                    .iter()
+                    .map(|part| PartOut {
+                        category_id: part.category.to_string(),
+                        name: name(part.category).unwrap_or_default(),
+                        total: part.total.into(),
+                        share: share(part.share_bps),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    };
+    BreakdownOut {
+        currency: breakdown.currency.code().to_owned(),
+        starts_on: date(breakdown.period.starts_on),
+        ends_on: date(breakdown.period.ends_on),
+        spending: side(&breakdown.spending),
+        income: side(&breakdown.income),
+        net: breakdown.net.into(),
+    }
+}
+
+/// Basis points as a whole percentage a person can read.
+///
+/// The labels are a fixed table rather than formatted, so the share needs no division on
+/// either side of the wire and the output is a `&'static str`.
+fn share(basis_points: u16) -> ShareOut {
+    const PERCENT: [&str; 101] = [
+        "0%", "1%", "2%", "3%", "4%", "5%", "6%", "7%", "8%", "9%", "10%", "11%", "12%", "13%",
+        "14%", "15%", "16%", "17%", "18%", "19%", "20%", "21%", "22%", "23%", "24%", "25%", "26%",
+        "27%", "28%", "29%", "30%", "31%", "32%", "33%", "34%", "35%", "36%", "37%", "38%", "39%",
+        "40%", "41%", "42%", "43%", "44%", "45%", "46%", "47%", "48%", "49%", "50%", "51%", "52%",
+        "53%", "54%", "55%", "56%", "57%", "58%", "59%", "60%", "61%", "62%", "63%", "64%", "65%",
+        "66%", "67%", "68%", "69%", "70%", "71%", "72%", "73%", "74%", "75%", "76%", "77%", "78%",
+        "79%", "80%", "81%", "82%", "83%", "84%", "85%", "86%", "87%", "88%", "89%", "90%", "91%",
+        "92%", "93%", "94%", "95%", "96%", "97%", "98%", "99%", "100%",
+    ];
+    let display = if basis_points > 0 && basis_points < 100 {
+        "<1%"
+    } else {
+        // Rounded down to the whole percent, as the basis points were: a share shown as
+        // 100% is the whole side and nothing less.
+        PERCENT
+            .get(usize::from(basis_points / 100))
+            .copied()
+            .unwrap_or("100%")
+    };
+    ShareOut {
+        basis_points,
+        display,
+    }
+}
+
+/// A local date as `YYYY-MM-DD`.
+fn date(value: time::Date) -> String {
+    format!(
+        "{:04}-{:02}-{:02}",
+        value.year(),
+        u8::from(value.month()),
+        value.day()
+    )
+}
+
 /// A currency the server knows how to scale, for a picker.
 #[derive(Debug, Clone, Serialize)]
 pub struct CurrencyOut {

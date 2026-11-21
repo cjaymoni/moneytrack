@@ -40,6 +40,7 @@
     )
 )]
 
+pub mod breakdown;
 pub mod budget;
 pub mod categorise;
 pub mod dedup;

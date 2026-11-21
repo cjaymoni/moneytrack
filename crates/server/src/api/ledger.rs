@@ -218,6 +218,95 @@ pub async fn account_ledger(
     Ok(Json(ledger_out(summary, name, chosen)?))
 }
 
+/// Which month a breakdown is about, and on whose clock.
+#[derive(Debug, Deserialize)]
+pub struct BreakdownQuery {
+    /// `YYYY-MM`.
+    pub month: String,
+    /// The reader's offset from UTC in minutes, east positive — `0` in Accra. Decides
+    /// which month a row near midnight belongs to.
+    pub offset_minutes: Option<i32>,
+    /// `confirmed` or `projected`. Absent means confirmed: what happened.
+    pub basis: Option<String>,
+}
+
+/// Where the money went in a month: each currency the person holds, by category.
+///
+/// One breakdown per currency, never one converted total. The grouping, the dropping of
+/// transfers and the shares are `mt-core`'s; this handler reads rows and names categories.
+///
+/// The offset is one number for the whole month, which is exact for a zone that never
+/// shifts — Ghana's — and off by an hour at the edges of a month in which one does. The
+/// person's own zone stored on their profile is the fix, when there is a profile to put
+/// it on.
+///
+/// # Errors
+/// [`ApiError::Invalid`] for a month or offset that will not read, or [`ApiError::Rule`].
+pub async fn breakdown(
+    State(state): State<AppState>,
+    session: Session,
+    Query(query): Query<BreakdownQuery>,
+) -> ApiResult<Json<Vec<dto::BreakdownOut>>> {
+    let period = month_period(&query.month)?;
+    let zone = offset(query.offset_minutes.unwrap_or(0))?;
+    let basis = basis_from(Some(query.basis.as_deref().unwrap_or("confirmed")))?;
+
+    let held = accounts::list(&state.pool, session.user).await?;
+    let rows = transactions::all(&state.pool, session.user).await?;
+    let filed = categories::list(&state.pool, session.user).await?;
+
+    let mut currencies: Vec<mt_core::money::Currency> = Vec::new();
+    for account in &held {
+        if !currencies.contains(&account.currency) {
+            currencies.push(account.currency);
+        }
+    }
+
+    currencies
+        .into_iter()
+        .map(|currency| {
+            mt_core::breakdown::breakdown(currency, &rows, &filed, period, zone, basis)
+                .map(|result| dto::breakdown_out(&result, &filed))
+                .map_err(|reason| ApiError::Rule {
+                    rule: "breakdown",
+                    reason: reason.to_string(),
+                })
+        })
+        .collect::<ApiResult<Vec<_>>>()
+        .map(Json)
+}
+
+/// The first and last local dates of a `YYYY-MM` month.
+fn month_period(text: &str) -> ApiResult<mt_core::budget::Period> {
+    let refuse = || ApiError::Invalid {
+        field: "month".to_owned(),
+        reason: "expected YYYY-MM".to_owned(),
+    };
+    let (year, month) = text.split_once('-').ok_or_else(refuse)?;
+    if year.len() != 4 || month.len() != 2 {
+        return Err(refuse());
+    }
+    let year: i32 = year.parse().map_err(|_| refuse())?;
+    let month: u8 = month.parse().map_err(|_| refuse())?;
+    let month = time::Month::try_from(month).map_err(|_| refuse())?;
+    let starts_on = time::Date::from_calendar_date(year, month, 1).map_err(|_| refuse())?;
+    let last = month.length(year);
+    let ends_on = time::Date::from_calendar_date(year, month, last).map_err(|_| refuse())?;
+    Ok(mt_core::budget::Period { starts_on, ends_on })
+}
+
+/// A fixed offset from minutes east of UTC.
+fn offset(minutes: i32) -> ApiResult<time::UtcOffset> {
+    let refuse = || ApiError::Invalid {
+        field: "offset_minutes".to_owned(),
+        reason: "expected minutes east of UTC, between -720 and 840".to_owned(),
+    };
+    if !(-720..=840).contains(&minutes) {
+        return Err(refuse());
+    }
+    time::UtcOffset::from_whole_seconds(minutes.saturating_mul(60)).map_err(|_| refuse())
+}
+
 /// Every currency an account may be opened in.
 pub async fn currencies() -> Json<Vec<CurrencyOut>> {
     Json(

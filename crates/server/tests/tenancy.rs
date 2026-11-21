@@ -160,6 +160,20 @@ async fn one_persons_categories_are_not_anothers() {
 }
 
 #[tokio::test]
+async fn each_persons_breakdown_is_their_own() {
+    let (_ama, kofi, _account) = two_people().await;
+
+    // Ama spent this month; Kofi holds no account at all, so he has no breakdown.
+    let mine: Value = kofi
+        .get("/breakdown?month=2026-11")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(mine.as_array().unwrap().len(), 0, "{mine}");
+}
+
+#[tokio::test]
 async fn writing_into_someone_elses_account_is_refused() {
     let (ama, kofi, account) = two_people().await;
 
