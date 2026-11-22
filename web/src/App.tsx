@@ -7,6 +7,7 @@ import { NewAccount } from "./screens/NewAccount";
 import { CategoriesScreen } from "./screens/CategoriesScreen";
 import { BreakdownScreen } from "./screens/BreakdownScreen";
 import { OutlookScreen } from "./screens/OutlookScreen";
+import { BudgetsScreen } from "./screens/BudgetsScreen";
 import { Failure, Loading } from "./ui/states";
 
 export function App() {
@@ -34,6 +35,7 @@ export function App() {
         <Route path="categories" element={<CategoriesScreen />} />
         <Route path="breakdown" element={<BreakdownScreen />} />
         <Route path="outlook" element={<OutlookScreen />} />
+        <Route path="budgets" element={<BudgetsScreen />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

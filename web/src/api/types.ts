@@ -151,6 +151,46 @@ export interface Outlook {
   shortfall_transaction_id: string | null;
 }
 
+export type BudgetPeriod = "weekly" | "monthly" | "yearly";
+
+/** Where a budget stands on one basis, as `mt-core` worked it out. */
+export interface Standing {
+  period_starts_on: string;
+  period_ends_on: string;
+  spent: Money;
+  remaining: Money;
+  /** Positive, once past the cap. */
+  over_by: Money | null;
+  /** Basis points of the cap; past 10 000 once over. */
+  used_bps: number;
+  used_display: string;
+  level: "under" | "warning" | "over";
+}
+
+export interface Budget {
+  id: string;
+  category_id: string | null;
+  name: string;
+  period: BudgetPeriod;
+  cap: Money;
+  warn_at_bps: number;
+  starts_on: string;
+  ends_on: string | null;
+  /** Counting what has happened. Absent when it is not running today. */
+  now: Standing | null;
+  /** Counting this period's expected rows too. */
+  expected: Standing | null;
+}
+
+export interface NewBudget {
+  category_id?: string;
+  period: BudgetPeriod;
+  /** The decimal text a person typed. */
+  cap: string;
+  currency: string;
+  warn_at_bps?: number;
+}
+
 export interface Currency {
   code: string;
   name: string;

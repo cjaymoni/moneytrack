@@ -383,6 +383,44 @@ a { color: inherit; }
 .outlook__short { box-shadow: inset 2px 0 0 var(--mt-grade); padding-left: var(--mt-c3); }
 .outlook__flag { color: var(--mt-grade); font-weight: 600; }
 
+/* ---------- budgets: graded tiers, never a progress pill ---------- */
+.grades { list-style: none; }
+.grade { padding: var(--mt-c4) 0; border-top: var(--mt-hairline) solid var(--mt-rule); display: grid; gap: var(--mt-c3); }
+.grade:first-child { border-top: 0; }
+.grade__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--mt-c3); flex-wrap: wrap; }
+.grade__name {
+  font: inherit; font-size: 15.5px; font-weight: 600; color: var(--mt-ink);
+  background: none; border: 0; padding: 0; cursor: pointer; text-align: left; border-radius: var(--mt-r-sm);
+}
+.grade__name:hover { text-decoration: underline; text-underline-offset: 3px; }
+.grade__value { font-size: 15px; font-weight: 600; letter-spacing: -0.015em; white-space: nowrap; }
+.grade__of { font-weight: 400; color: var(--mt-ink-secondary); font-size: var(--mt-body-sm); letter-spacing: 0; }
+.grade__foot { display: flex; justify-content: space-between; gap: var(--mt-c3); flex-wrap: wrap; }
+.grade__foot .mt-micro { color: var(--mt-ink-secondary); }
+.grade__foot .over, .grade__expected.over { color: var(--mt-grade); }
+.grade__expected { font-size: var(--mt-body-sm); color: var(--mt-ink-secondary); }
+.grade__editor { margin-top: var(--mt-c2); }
+
+/* Every cell is the same width, so the cap sits in the same place on every row and a cell
+   past it is as big as a cell before it: 123% is visibly two and a half tenths past, not a
+   sliver. Past about 200% the row runs off the edge, which is the point. */
+.tiers { --tier: 40px; display: flex; align-items: stretch; gap: 3px; overflow: hidden; }
+.tier { flex: 0 0 var(--tier); height: 14px; background: var(--mt-rule); border-radius: 1px; }
+.tier.on { background: var(--mt-ink); }
+/* The cap is a drawn boundary, so "past it" is visible rather than implied. */
+.tiers .cap { flex: none; width: 2px; background: var(--mt-grade); border-radius: 1px; margin: 0 2px; }
+.tier.over { background: var(--mt-grade); }
+.tier.over--part { background: var(--mt-grade); flex: 0 0 calc(var(--tier) / 2); }
+
+.add-budget__period { max-width: 420px; }
+.add-budget__fields {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 96px 120px auto;
+  gap: var(--mt-c6); align-items: end;
+}
+.add-budget__currency { display: flex; align-items: center; min-height: var(--mt-target); font-weight: 600; }
+.earlier { display: grid; gap: var(--mt-c2); }
+.earlier ul { list-style: none; display: grid; gap: var(--mt-c1); }
+
 /* ---------- categories ---------- */
 .add-category {
   display: grid; gap: var(--mt-c4); padding: var(--mt-c5) 0;
@@ -469,6 +507,10 @@ a { color: inherit; }
   .row-editor__top, .row-editor__fields { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c4); }
   .row-editor { padding: var(--mt-c3); }
   .window-pick { min-width: 0; width: 100%; }
+  .add-budget__fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--mt-c4); }
+  .tiers { --tier: 22px; }
+  .add-budget__fields .field:first-child { grid-column: 1 / -1; }
+  .add-budget__fields .btn { grid-column: 1 / -1; }
   .line { height: 120px; margin-left: var(--mt-c4); }
   .row-editor__actions .btn--primary { flex: 1 0 100%; }
   .sides { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c8); }

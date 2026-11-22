@@ -25,7 +25,10 @@ form, and refiling a row from the ledger. The breakdown is built too: `mt-core` 
 month's rows by category on each side, transfers out, children rolled into their parent,
 and the browser draws it from the shares the core works out. So is the outlook: each
 account's projected walk read forward, its low, and the first row that runs it short, never
-pooled across accounts. Budgets are next, and close phase 3.
+pooled across accounts. And budgets: a cap per category and currency, evaluated by
+`mt-core` on the reader's today and again counting this period's expected rows, drawn as the
+design's graded tiers, and changed from the current period on so the past keeps its caps.
+Reconciliation entries are what is left of phase 3.
 
 ## What it has to do
 

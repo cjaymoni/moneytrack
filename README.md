@@ -54,7 +54,11 @@ with transfers left out and each share worked out in `mt-core`.
 and the expected row that first runs it below zero — one account at a time, because money in
 one does not cover a shortfall in another until someone moves it.
 
-Being built next: budgets, which close phase 3.
+"Budgets" caps spending per category and currency — weekly, monthly or yearly — and shows
+each as ten tiers up to a drawn cap line, running past it when over, with what the rows still
+expected this period would do. Changing a cap applies from the current period on.
+
+Being built next: reconciliation entries, the last of phase 3.
 
 `cargo test --workspace` covers the Rust, `db/tests/` covers the database constraints, and
 each app has a round trip that runs on the laptop rather than on a device.

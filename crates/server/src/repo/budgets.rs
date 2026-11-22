@@ -335,7 +335,7 @@ async fn insert(
         {
             Err(ApiError::Conflict {
                 reason: format!(
-                    "there is already a {} {} budget for this over those dates",
+                    "there is already a {} {} cap on this; change that one instead",
                     budget.period.as_str(),
                     budget.cap.currency().code()
                 ),

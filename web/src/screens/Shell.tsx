@@ -34,6 +34,9 @@ export function Shell({ user }: { user: User }) {
           <NavLink to="/outlook" className="rail__link">
             Outlook
           </NavLink>
+          <NavLink to="/budgets" className="rail__link">
+            Budgets
+          </NavLink>
           <NavLink to="/breakdown" className="rail__link">
             Where it went
           </NavLink>

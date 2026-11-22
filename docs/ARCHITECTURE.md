@@ -547,9 +547,10 @@ GET    /totals                   per currency, on a basis — never converted in
 GET    /breakdown                a month by category, one per currency, shares from mt-core
 
 GET    /outlook                  per account: the walk ahead, its low, the row that runs it short
-
-later:
-GET    /budgets                  where every cap stands on a date
+GET    /budgets                  every cap, where it stands now and once expected rows land
+POST   /budgets                  starts with the current period, so this month's spending counts
+PATCH  /budgets/{id}             a new cap from this period on; past periods keep theirs
+DELETE /budgets/{id}
 ```
 
 The CSRF cookie is scoped to `/api` like the session, and `document.cookie` on a page at `/`

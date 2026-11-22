@@ -8,6 +8,8 @@ import { ApiError, del, get, patch, post } from "./client";
 import type {
   Account,
   Breakdown,
+  Budget,
+  NewBudget,
   Outlook,
   Category,
   NewCategory,
@@ -30,6 +32,7 @@ export const keys = {
   categories: ["categories"] as const,
   breakdown: (month: string) => ["breakdown", month] as const,
   outlook: (days: number) => ["outlook", days] as const,
+  budgets: ["budgets"] as const,
 };
 
 /** Who is signed in, or `null` for nobody. Any other failure is an error. */
@@ -101,6 +104,48 @@ export function useOutlook(days: number) {
   });
 }
 
+/** The reader's offset from UTC in minutes, east positive — which day "today" is. */
+const offsetMinutes = () => -new Date().getTimezoneOffset();
+
+/** Every budget, with where it stands today on the reader's clock. */
+export function useBudgets() {
+  return useQuery({
+    queryKey: keys.budgets,
+    queryFn: () => get<Budget[]>(`/budgets?offset_minutes=${offsetMinutes()}`),
+  });
+}
+
+export function useCreateBudget() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (budget: NewBudget) =>
+      post<Budget>("/budgets", { ...budget, offset_minutes: offsetMinutes() }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.budgets }),
+  });
+}
+
+/** Changes a cap from the current period on; past periods keep theirs. */
+export function useChangeBudget() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, cap, warn_at_bps }: { id: string; cap: string; warn_at_bps: number }) =>
+      patch<Budget>(`/budgets/${encodeURIComponent(id)}`, {
+        cap,
+        warn_at_bps,
+        offset_minutes: offsetMinutes(),
+      }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.budgets }),
+  });
+}
+
+export function useDeleteBudget() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del<unknown>(`/budgets/${encodeURIComponent(id)}`),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.budgets }),
+  });
+}
+
 export function useCategories() {
   return useQuery({ queryKey: keys.categories, queryFn: () => get<Category[]>("/categories") });
 }
@@ -118,7 +163,8 @@ export function useCreateCategory() {
 
 /**
  * Files a row under a category, or under none. Moves no balance, so the accounts and totals
- * stand; the ledger and the breakdowns, which name the category, are asked again.
+ * stand; the ledger, the breakdowns and the budgets, which all group by category, are asked
+ * again.
  */
 export function useSetCategory() {
   const client = useQueryClient();
@@ -130,12 +176,14 @@ export function useSetCategory() {
     onSuccess: (row) => {
       void client.invalidateQueries({ queryKey: keys.ledger(row.account_id) });
       void client.invalidateQueries({ queryKey: ["breakdown"] });
+      void client.invalidateQueries({ queryKey: keys.budgets });
     },
   });
 }
 
 /** Every query a change to one row in one account can have changed. */
 function afterRowChange(client: QueryClient, accountId: string) {
+  void client.invalidateQueries({ queryKey: keys.budgets });
   void client.invalidateQueries({ queryKey: ["outlook"] });
   void client.invalidateQueries({ queryKey: keys.ledger(accountId) });
   void client.invalidateQueries({ queryKey: keys.accounts });
@@ -235,6 +283,7 @@ export function useCreateTransaction() {
       void client.invalidateQueries({ queryKey: keys.totals });
       void client.invalidateQueries({ queryKey: ["breakdown"] });
       void client.invalidateQueries({ queryKey: ["outlook"] });
+      void client.invalidateQueries({ queryKey: keys.budgets });
     },
   });
 }
