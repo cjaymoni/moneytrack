@@ -219,6 +219,65 @@ pub async fn account_ledger(
     Ok(Json(ledger_out(summary, name, chosen)?))
 }
 
+/// How far ahead an outlook looks.
+#[derive(Debug, Deserialize)]
+pub struct OutlookQuery {
+    /// Days from now, 1 to 366. Absent means 90.
+    pub days: Option<i64>,
+}
+
+/// Where each account is headed, and the first row that runs it short.
+///
+/// One per account, never pooled: money does not move between accounts by itself, so a
+/// surplus in the bank does not cover a shortfall in the wallet until someone moves it, and
+/// an outlook that pooled them would hide exactly the day that needs a transfer. Archived
+/// accounts are left out.
+///
+/// # Errors
+/// [`ApiError::Invalid`] for a window out of range, or [`ApiError::Rule`] if the rows will
+/// not walk.
+pub async fn outlook(
+    State(state): State<AppState>,
+    session: Session,
+    Query(query): Query<OutlookQuery>,
+) -> ApiResult<Json<Vec<dto::OutlookOut>>> {
+    let days = query.days.unwrap_or(90);
+    if !(1..=366).contains(&days) {
+        return Err(ApiError::Invalid {
+            field: "days".to_owned(),
+            reason: "expected a number of days from 1 to 366".to_owned(),
+        });
+    }
+    let from = OffsetDateTime::now_utc();
+    let until = from + time::Duration::days(days);
+
+    let held = accounts::list(&state.pool, session.user).await?;
+    let rows = transactions::all(&state.pool, session.user).await?;
+
+    held.iter()
+        .filter(|account| !account.is_archived())
+        .map(|account| {
+            let own: Vec<mt_core::model::Transaction> = rows
+                .iter()
+                .filter(|row| row.account_id == account.id)
+                .cloned()
+                .collect();
+            let walk = |basis| {
+                ledger::walk(account, &own, basis).map_err(|reason| ApiError::Rule {
+                    rule: "walk",
+                    reason: reason.to_string(),
+                })
+            };
+            let confirmed = walk(BalanceBasis::Confirmed)?;
+            let projected = walk(BalanceBasis::Projected)?;
+            let summary = account_out(account, confirmed.closing, projected.closing);
+            let ahead = mt_core::outlook::outlook(&projected, from, until);
+            dto::outlook_out(summary, &ahead)
+        })
+        .collect::<ApiResult<Vec<_>>>()
+        .map(Json)
+}
+
 /// Which month a breakdown is about, and on whose clock.
 #[derive(Debug, Deserialize)]
 pub struct BreakdownQuery {

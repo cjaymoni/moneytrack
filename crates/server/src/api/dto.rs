@@ -363,6 +363,87 @@ fn date(value: time::Date) -> String {
     )
 }
 
+/// One account's balance from now to the end of the window.
+#[derive(Debug, Clone, Serialize)]
+pub struct OutlookOut {
+    /// The account, with both balances.
+    pub account: AccountOut,
+    /// The start of the window, RFC 3339.
+    pub from: String,
+    /// The end of the window, RFC 3339, inclusive.
+    pub until: String,
+    /// What it stands at at the start, expected rows dated in the past included.
+    pub start: MoneyOut,
+    /// Where `start` sits on the line, 0 (the low) to 10 000 (the high).
+    pub start_level_bps: u16,
+    /// Every row ahead in the window, with the balance after each.
+    pub points: Vec<OutlookPointOut>,
+    /// The lowest balance over the window.
+    pub low: MoneyOut,
+    /// The row that brings it there, absent when the low is the start.
+    pub low_transaction_id: Option<String>,
+    /// The highest balance over the window.
+    pub high: MoneyOut,
+    /// Where zero sits on the line, when the line reaches or crosses it.
+    pub zero_level_bps: Option<u16>,
+    /// `none`, `already` or `at`.
+    pub shortfall: &'static str,
+    /// The row that first takes it below zero, when `shortfall` is `at`.
+    pub shortfall_transaction_id: Option<String>,
+}
+
+/// A row ahead, and where it leaves the account.
+#[derive(Debug, Clone, Serialize)]
+pub struct OutlookPointOut {
+    /// The row.
+    pub transaction: TransactionOut,
+    /// The balance after it, walked by `mt-core`.
+    pub balance_after: MoneyOut,
+    /// Where that balance sits on the line, 0 to 10 000.
+    pub level_bps: u16,
+}
+
+/// Renders an outlook.
+///
+/// # Errors
+/// [`ApiError::Internal`] if an instant will not render.
+pub fn outlook_out(
+    account: AccountOut,
+    outlook: &mt_core::outlook::Outlook<'_>,
+) -> Result<OutlookOut, ApiError> {
+    use mt_core::outlook::Shortfall;
+    let points = outlook
+        .points
+        .iter()
+        .map(|entry| {
+            Ok(OutlookPointOut {
+                transaction: TransactionOut::try_from(entry.transaction)?,
+                balance_after: entry.balance_after.into(),
+                level_bps: outlook.level_bps(entry.balance_after),
+            })
+        })
+        .collect::<Result<Vec<_>, ApiError>>()?;
+    let (shortfall, shortfall_transaction_id) = match outlook.shortfall {
+        Shortfall::None => ("none", None),
+        Shortfall::Already => ("already", None),
+        Shortfall::At(entry) => ("at", Some(entry.transaction.id.to_string())),
+    };
+    Ok(OutlookOut {
+        account,
+        from: instant("from", outlook.from)?,
+        until: instant("until", outlook.until)?,
+        start: outlook.start.into(),
+        start_level_bps: outlook.level_bps(outlook.start),
+        points,
+        low: outlook.low.into(),
+        low_transaction_id: outlook.low_at.map(|row| row.id.to_string()),
+        high: outlook.high.into(),
+        zero_level_bps: outlook.zero_level_bps(),
+        shortfall,
+        shortfall_transaction_id,
+    })
+}
+
 /// A currency the server knows how to scale, for a picker.
 #[derive(Debug, Clone, Serialize)]
 pub struct CurrencyOut {
