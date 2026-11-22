@@ -356,7 +356,7 @@ fn month_period(text: &str) -> ApiResult<mt_core::budget::Period> {
 }
 
 /// A fixed offset from minutes east of UTC.
-fn offset(minutes: i32) -> ApiResult<time::UtcOffset> {
+pub(crate) fn offset(minutes: i32) -> ApiResult<time::UtcOffset> {
     let refuse = || ApiError::Invalid {
         field: "offset_minutes".to_owned(),
         reason: "expected minutes east of UTC, between -720 and 840".to_owned(),

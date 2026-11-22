@@ -122,6 +122,19 @@ impl<'a> Reader<'a> {
         self.column(column)
     }
 
+    /// A `DATE` column.
+    pub(crate) fn date(&self, column: &'static str) -> Result<time::Date, ApiError> {
+        self.column(column)
+    }
+
+    /// A nullable `DATE` column.
+    pub(crate) fn optional_date(
+        &self,
+        column: &'static str,
+    ) -> Result<Option<time::Date>, ApiError> {
+        self.column(column)
+    }
+
     /// A nullable instant.
     pub(crate) fn optional_instant(
         &self,

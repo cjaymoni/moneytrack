@@ -114,6 +114,14 @@ pub fn router(state: AppState) -> Router {
         .route("/totals", get(api::ledger::currency_totals))
         .route("/breakdown", get(api::ledger::breakdown))
         .route("/outlook", get(api::ledger::outlook))
+        .route(
+            "/budgets",
+            get(api::budgets::list).post(api::budgets::create),
+        )
+        .route(
+            "/budgets/{id}",
+            patch(api::budgets::change).delete(api::budgets::delete),
+        )
         .route("/currencies", get(api::ledger::currencies))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),

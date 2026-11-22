@@ -128,6 +128,22 @@ impl TestServer {
         request.send().await.unwrap()
     }
 
+    /// Runs SQL on this server's own database, to set up history the API cannot create —
+    /// a budget that began months ago, say. Never used to check what the API did: that is
+    /// read back through the API, as a browser would.
+    pub async fn run_sql(&self, sql: &str) {
+        let url = swap_database(&admin_url(), &self.database);
+        let (client, connection) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
+            .await
+            .expect("connect to the test database");
+        let handle = tokio::spawn(async move {
+            connection.await.ok();
+        });
+        client.batch_execute(sql).await.expect("run test setup");
+        drop(client);
+        handle.abort();
+    }
+
     /// A PATCH carrying the CSRF token.
     pub async fn patch(&self, path: &str, body: Value) -> reqwest::Response {
         self.with_token(
