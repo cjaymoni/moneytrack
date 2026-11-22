@@ -50,7 +50,11 @@ can be undone, because the server keeps the row as a tombstone for sync anyway.
 "Where it went" shows a month's spending and income by category, one currency at a time,
 with transfers left out and each share worked out in `mt-core`.
 
-Being built next: the rest of phase 3 — the outlook and budgets.
+"Outlook" shows each account's balance over the next 30, 90 or 180 days, its lowest point,
+and the expected row that first runs it below zero — one account at a time, because money in
+one does not cover a shortfall in another until someone moves it.
+
+Being built next: budgets, which close phase 3.
 
 `cargo test --workspace` covers the Rust, `db/tests/` covers the database constraints, and
 each app has a round trip that runs on the laptop rather than on a device.

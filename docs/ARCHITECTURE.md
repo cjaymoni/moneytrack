@@ -546,8 +546,9 @@ POST   /transactions/{id}/restore    undo a deletion, exactly
 GET    /totals                   per currency, on a basis — never converted into one number
 GET    /breakdown                a month by category, one per currency, shares from mt-core
 
+GET    /outlook                  per account: the walk ahead, its low, the row that runs it short
+
 later:
-GET    /outlook                  the projected walk and the first shortfall
 GET    /budgets                  where every cap stands on a date
 ```
 

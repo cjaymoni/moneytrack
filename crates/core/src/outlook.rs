@@ -14,10 +14,14 @@
 //!
 //! ## Levels
 //!
-//! A screen drawing the line needs each balance as a height. Working that out is the balance
-//! minus the low, divided by the range — arithmetic on money, which the screen is not allowed
-//! to do — so every point carries its height here, in basis points of the range, along with
-//! where zero sits when the line crosses it.
+//! A screen drawing the line needs each balance as a height. Working that out is arithmetic on
+//! money, which the screen is not allowed to do, so every point carries its height here, in
+//! basis points, along with where zero sits.
+//!
+//! The scale always includes zero. Stretched from the low to the high alone, a dip of 200 on
+//! an account holding 6 000 fills the whole chart and reads as a collapse; measured from zero
+//! it reads as what it is. For a money line, where zero is the thing that matters, the honest
+//! axis starts there.
 
 use time::OffsetDateTime;
 
@@ -25,7 +29,8 @@ use crate::ledger::{Entry, Walk};
 use crate::model::Transaction;
 use crate::money::Money;
 
-/// Ten thousand basis points span the range from the lowest balance to the highest.
+/// Ten thousand basis points span the scale: from the lower of zero and the low, to the
+/// higher of zero and the high.
 pub const FULL_BPS: u16 = 10_000;
 
 /// Whether, and when, an account runs out over the window.
@@ -112,29 +117,27 @@ pub fn outlook<'a>(walk: &Walk<'a>, from: OffsetDateTime, until: OffsetDateTime)
 }
 
 impl Outlook<'_> {
-    /// Where `balance` sits between the low and the high, in basis points: 0 is the low,
-    /// [`FULL_BPS`] the high.
+    /// Where `balance` sits on the scale, in basis points: 0 is the lower of zero and the low,
+    /// [`FULL_BPS`] the higher of zero and the high.
     ///
-    /// A flat window — no rows ahead, or rows that cancel out — has no range to place
-    /// anything in, and every balance in it sits at the middle.
+    /// The only window with no scale is one that sits at exactly zero throughout, and it is
+    /// drawn in the middle.
     #[must_use]
     pub fn level_bps(&self, balance: Money) -> u16 {
-        let range = i128::from(self.high.minor()) - i128::from(self.low.minor());
+        let bottom = i128::from(self.low.minor()).min(0);
+        let top = i128::from(self.high.minor()).max(0);
+        let range = top - bottom;
         if range <= 0 {
             return FULL_BPS / 2;
         }
-        let above = (i128::from(balance.minor()) - i128::from(self.low.minor())).max(0);
+        let above = (i128::from(balance.minor()) - bottom).max(0);
         let level = above.saturating_mul(i128::from(FULL_BPS)) / range;
         u16::try_from(level).map_or(FULL_BPS, |bps| bps.min(FULL_BPS))
     }
 
-    /// Where zero sits on the same scale, when the line reaches or crosses it.
+    /// Where zero sits on the same scale. Always on it, by construction.
     #[must_use]
-    pub fn zero_level_bps(&self) -> Option<u16> {
-        if self.low.minor() <= 0 && self.high.minor() >= 0 {
-            Some(self.level_bps(Money::zero(self.low.currency())))
-        } else {
-            None
-        }
+    pub fn zero_level_bps(&self) -> u16 {
+        self.level_bps(Money::zero(self.low.currency()))
     }
 }

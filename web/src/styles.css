@@ -353,6 +353,36 @@ a { color: inherit; }
 .bar--part .bar__track { height: 2px; }
 .bar--muted .bar__name { color: var(--mt-ink-muted); }
 
+/* ---------- outlook ---------- */
+.window-pick { min-width: 300px; }
+.outlook {
+  display: grid; gap: var(--mt-c5); padding-top: var(--mt-c6);
+  border-top: var(--mt-hairline) solid var(--mt-rule-strong);
+}
+.outlook__name { color: var(--mt-ink); }
+.verdict { font-size: var(--mt-body); max-width: 60ch; }
+/* A shortfall is a limit crossed: the oxblood rule, and words that say so in greyscale. */
+.verdict--short { border-left: 2px solid var(--mt-grade); padding-left: var(--mt-c3); font-weight: 500; }
+
+.line { position: relative; height: 160px; margin-bottom: var(--mt-c6); }
+.line__svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.line__path { fill: none; stroke: var(--mt-ink); stroke-width: 2; stroke-linejoin: round; }
+.line__zero { stroke: var(--mt-grade); stroke-width: 1; opacity: 0.6; }
+.line__zero-label { position: absolute; right: 100%; margin-right: var(--mt-c2); transform: translateY(-50%); color: var(--mt-grade); }
+/* The one marker point in the system: the low. */
+.line__low {
+  position: absolute; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--mt-grade); box-shadow: 0 0 0 3px var(--mt-ground);
+  transform: translate(-50%, -50%);
+}
+.line__ends {
+  position: absolute; left: 0; right: 0; top: 100%; padding-top: var(--mt-c2);
+  display: flex; justify-content: space-between; color: var(--mt-ink-muted);
+}
+.outlook__rows { border-top: var(--mt-hairline) solid var(--mt-rule); }
+.outlook__short { box-shadow: inset 2px 0 0 var(--mt-grade); padding-left: var(--mt-c3); }
+.outlook__flag { color: var(--mt-grade); font-weight: 600; }
+
 /* ---------- categories ---------- */
 .add-category {
   display: grid; gap: var(--mt-c4); padding: var(--mt-c5) 0;
@@ -438,6 +468,8 @@ a { color: inherit; }
   .add-category__fields { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c4); }
   .row-editor__top, .row-editor__fields { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c4); }
   .row-editor { padding: var(--mt-c3); }
+  .window-pick { min-width: 0; width: 100%; }
+  .line { height: 120px; margin-left: var(--mt-c4); }
   .row-editor__actions .btn--primary { flex: 1 0 100%; }
   .sides { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c8); }
   .rail__more { padding-top: var(--mt-c2); }

@@ -8,6 +8,7 @@ import { ApiError, del, get, patch, post } from "./client";
 import type {
   Account,
   Breakdown,
+  Outlook,
   Category,
   NewCategory,
   Currency,
@@ -28,6 +29,7 @@ export const keys = {
   currencies: ["currencies"] as const,
   categories: ["categories"] as const,
   breakdown: (month: string) => ["breakdown", month] as const,
+  outlook: (days: number) => ["outlook", days] as const,
 };
 
 /** Who is signed in, or `null` for nobody. Any other failure is an error. */
@@ -91,6 +93,14 @@ export function useBreakdown(month: string) {
   });
 }
 
+/** Where each account is headed over the next `days`, and the row that runs it short. */
+export function useOutlook(days: number) {
+  return useQuery({
+    queryKey: keys.outlook(days),
+    queryFn: () => get<Outlook[]>(`/outlook?days=${days}`),
+  });
+}
+
 export function useCategories() {
   return useQuery({ queryKey: keys.categories, queryFn: () => get<Category[]>("/categories") });
 }
@@ -126,6 +136,7 @@ export function useSetCategory() {
 
 /** Every query a change to one row in one account can have changed. */
 function afterRowChange(client: QueryClient, accountId: string) {
+  void client.invalidateQueries({ queryKey: ["outlook"] });
   void client.invalidateQueries({ queryKey: keys.ledger(accountId) });
   void client.invalidateQueries({ queryKey: keys.accounts });
   void client.invalidateQueries({ queryKey: keys.totals });
@@ -209,6 +220,7 @@ export function useCreateAccount() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: keys.accounts });
       void client.invalidateQueries({ queryKey: keys.totals });
+      void client.invalidateQueries({ queryKey: ["outlook"] });
     },
   });
 }
@@ -222,6 +234,7 @@ export function useCreateTransaction() {
       void client.invalidateQueries({ queryKey: keys.accounts });
       void client.invalidateQueries({ queryKey: keys.totals });
       void client.invalidateQueries({ queryKey: ["breakdown"] });
+      void client.invalidateQueries({ queryKey: ["outlook"] });
     },
   });
 }

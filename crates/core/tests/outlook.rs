@@ -218,16 +218,48 @@ fn levels_span_the_range_and_zero_is_placed_when_the_line_crosses_it() {
     assert_eq!(ahead.level_bps(ahead.low), 0);
     assert_eq!(ahead.level_bps(ahead.high), FULL_BPS);
     assert_eq!(ahead.level_bps(ahead.start), 7_500);
-    assert_eq!(ahead.zero_level_bps(), Some(5_000));
+    assert_eq!(ahead.zero_level_bps(), 5_000);
 }
 
 #[test]
-fn a_flat_line_sits_in_the_middle_and_zero_is_not_placed_above_it() {
+fn a_small_dip_on_a_large_balance_is_drawn_small() {
+    // 6 000.00 falling to 5 800.00: measured from zero, a thirtieth of the height, not all
+    // of it.
+    let account = wallet(600_000);
+    let rows = vec![row(
+        &account,
+        Direction::Out,
+        20_000,
+        5,
+        TxStatus::Pending,
+        "Car service",
+    )];
+    let walked = walk(&account, &rows, BalanceBasis::Projected).unwrap();
+
+    let ahead = outlook(&walked, NOW, NOW + WEEKS);
+
+    assert_eq!(ahead.level_bps(ahead.start), FULL_BPS);
+    assert_eq!(ahead.level_bps(ahead.low), 9_666);
+    assert_eq!(ahead.zero_level_bps(), 0);
+}
+
+#[test]
+fn a_flat_line_sits_at_the_top_with_zero_at_the_bottom() {
     let account = wallet(10_000);
     let walked = walk(&account, &[], BalanceBasis::Projected).unwrap();
 
     let ahead = outlook(&walked, NOW, NOW + WEEKS);
 
+    assert_eq!(ahead.level_bps(ahead.start), FULL_BPS);
+    assert_eq!(ahead.zero_level_bps(), 0);
+}
+
+#[test]
+fn an_account_at_nothing_and_going_nowhere_sits_in_the_middle() {
+    let account = wallet(0);
+    let walked = walk(&account, &[], BalanceBasis::Projected).unwrap();
+
+    let ahead = outlook(&walked, NOW, NOW + WEEKS);
+
     assert_eq!(ahead.level_bps(ahead.start), FULL_BPS / 2);
-    assert_eq!(ahead.zero_level_bps(), None);
 }

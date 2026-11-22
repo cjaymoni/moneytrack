@@ -374,7 +374,7 @@ pub struct OutlookOut {
     pub until: String,
     /// What it stands at at the start, expected rows dated in the past included.
     pub start: MoneyOut,
-    /// Where `start` sits on the line, 0 (the low) to 10 000 (the high).
+    /// Where `start` sits on the line, 0 to 10 000, on a scale that always includes zero.
     pub start_level_bps: u16,
     /// Every row ahead in the window, with the balance after each.
     pub points: Vec<OutlookPointOut>,
@@ -384,8 +384,8 @@ pub struct OutlookOut {
     pub low_transaction_id: Option<String>,
     /// The highest balance over the window.
     pub high: MoneyOut,
-    /// Where zero sits on the line, when the line reaches or crosses it.
-    pub zero_level_bps: Option<u16>,
+    /// Where zero sits on the line. The scale always includes it.
+    pub zero_level_bps: u16,
     /// `none`, `already` or `at`.
     pub shortfall: &'static str,
     /// The row that first takes it below zero, when `shortfall` is `at`.
@@ -399,7 +399,7 @@ pub struct OutlookPointOut {
     pub transaction: TransactionOut,
     /// The balance after it, walked by `mt-core`.
     pub balance_after: MoneyOut,
-    /// Where that balance sits on the line, 0 to 10 000.
+    /// Where that balance sits on the line, 0 to 10 000, on a scale that includes zero.
     pub level_bps: u16,
 }
 

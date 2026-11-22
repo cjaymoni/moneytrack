@@ -128,7 +128,9 @@ async fn each_account_is_its_own_outlook_and_a_surplus_elsewhere_covers_nothing(
     assert_eq!(wallet_ahead["shortfall"], "at");
     assert_eq!(bank_ahead["shortfall"], "none");
     assert!(bank_ahead["low_transaction_id"].is_null());
-    assert!(bank_ahead["zero_level_bps"].is_null());
+    // A 10 000.00 balance going nowhere sits at the top, with zero at the bottom.
+    assert_eq!(bank_ahead["start_level_bps"], 10_000);
+    assert_eq!(bank_ahead["zero_level_bps"], 0);
 }
 
 #[tokio::test]

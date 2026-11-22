@@ -23,7 +23,9 @@ running balance walked by `mt-core` on the server. Phase 3 has begun with catego
 starting set of eighteen at registration, one level of nesting, a chip picker in the entry
 form, and refiling a row from the ledger. The breakdown is built too: `mt-core` groups a
 month's rows by category on each side, transfers out, children rolled into their parent,
-and the browser draws it from the shares the core works out. The outlook is next.
+and the browser draws it from the shares the core works out. So is the outlook: each
+account's projected walk read forward, its low, and the first row that runs it short, never
+pooled across accounts. Budgets are next, and close phase 3.
 
 ## What it has to do
 

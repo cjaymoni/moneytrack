@@ -125,6 +125,32 @@ export interface Breakdown {
   net: Money;
 }
 
+export interface OutlookPoint {
+  transaction: Transaction;
+  /** What the account holds once this row lands, walked by `mt-core`. */
+  balance_after: Money;
+  /** Height on the line, 0 to 10 000 on a scale that includes zero, worked out by `mt-core`. */
+  level_bps: number;
+}
+
+/** One account from now to the end of the window. Never pooled with another account. */
+export interface Outlook {
+  account: Account;
+  from: string;
+  until: string;
+  start: Money;
+  start_level_bps: number;
+  points: OutlookPoint[];
+  low: Money;
+  /** The row that brings the low; absent when the low is today. */
+  low_transaction_id: string | null;
+  high: Money;
+  /** Where zero sits on the line. The scale always includes it. */
+  zero_level_bps: number;
+  shortfall: "none" | "already" | "at";
+  shortfall_transaction_id: string | null;
+}
+
 export interface Currency {
   code: string;
   name: string;
