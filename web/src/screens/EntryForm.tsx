@@ -3,25 +3,12 @@ import type { Account, Direction } from "../api/types";
 import { useCategories, useCreateTransaction } from "../api/queries";
 import { CategoryPicker, kindFor } from "../ui/CategoryPicker";
 import { FormError } from "../ui/states";
+import { localDate, middayOn } from "../ui/dates";
 
-/** Today's date as an `<input type="date">` writes it, in the reader's own zone. */
-function localDate(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-/**
- * The instant to book a row at, from the date the person picked.
- *
- * Today means now — the server's own default, so it is left out. Any other day means midday
- * on that day in the reader's zone: far enough from midnight that no zone moves it onto a
- * neighbouring date.
- */
+/** Today means now — the server's own default, so it is left out. Any other day is midday. */
 function bookedAt(picked: string, today: string): string | undefined {
   if (!picked || picked === today) return undefined;
-  const [year, month, day] = picked.split("-").map(Number);
-  if (!year || !month || !day) return undefined;
-  return new Date(year, month - 1, day, 12, 0, 0).toISOString();
+  return middayOn(picked);
 }
 
 /**

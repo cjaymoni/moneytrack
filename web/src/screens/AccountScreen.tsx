@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { useParams } from "react-router";
+import type { Transaction } from "../api/types";
 import { ApiError } from "../api/client";
-import { useCategories, useLedger } from "../api/queries";
+import { useCategories, useLedger, useRestoreTransaction } from "../api/queries";
 import { KIND_NAMES, balance, isNegative } from "../ui/format";
-import { Failure, Loading } from "../ui/states";
+import { Failure, FormError, Loading } from "../ui/states";
 import { EntryForm } from "./EntryForm";
 import { LedgerList } from "./LedgerList";
 
@@ -11,6 +13,16 @@ export function AccountScreen() {
   const { accountId = "" } = useParams();
   const ledger = useLedger(accountId);
   const categories = useCategories();
+  const restore = useRestoreTransaction();
+  // The last row deleted here, held so it can be brought back. Cleared by undoing it or by
+  // leaving the account: an undo for a row on a screen you are no longer looking at is a
+  // surprise, not a convenience.
+  const [deleted, setDeleted] = useState<Transaction | null>(null);
+  const [heldFor, setHeldFor] = useState(accountId);
+  if (heldFor !== accountId) {
+    setHeldFor(accountId);
+    setDeleted(null);
+  }
 
   if (ledger.isPending) return <Loading />;
   if (ledger.isError) {
@@ -49,7 +61,33 @@ export function AccountScreen() {
 
       <EntryForm account={account} />
 
+      {deleted && (
+        <div className="undo" role="status">
+          <p>
+            Deleted <b>{deleted.label}</b>.
+          </p>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            disabled={restore.isPending}
+            onClick={() => restore.mutate(deleted.id, { onSuccess: () => setDeleted(null) })}
+          >
+            {restore.isPending ? "Bringing it back" : "Undo"}
+          </button>
+          <button
+            type="button"
+            className="btn btn--quiet"
+            onClick={() => setDeleted(null)}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+          <FormError error={restore.error} />
+        </div>
+      )}
+
       <LedgerList
+        onDeleted={setDeleted}
         entries={entries}
         opening={ledger.data.opening}
         currency={account.currency}

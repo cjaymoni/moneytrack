@@ -138,6 +138,20 @@ export interface NewAccount {
   opening_balance?: string;
 }
 
+/** A row as a person can change it: all of it, sent whole. */
+export interface TransactionEdit {
+  direction: Direction;
+  /** The decimal text the person typed. */
+  amount: string;
+  /** RFC 3339. Required: an edit never moves a row to now by leaving the date out. */
+  booked_at: string;
+  label: string;
+  counterparty: string | null;
+  note: string | null;
+  status: Status;
+  category_id: string | null;
+}
+
 export interface NewTransaction {
   account_id: string;
   direction: Direction;

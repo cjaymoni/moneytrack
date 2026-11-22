@@ -371,6 +371,39 @@ a { color: inherit; }
 .tree li:first-child { border-top: 0; }
 .tree .tree__child { padding-left: var(--mt-c6); color: var(--mt-ink-secondary); font-weight: 400; }
 
+/* The label is the way into changing a row. It looks like the label until it is pointed at. */
+.mt-row .label--edit {
+  display: block; width: 100%; text-align: left;
+  font: inherit; font-size: 14.5px; font-weight: 500; letter-spacing: -0.005em; color: inherit;
+  background: none; border: 0; padding: 0; cursor: pointer; border-radius: var(--mt-r-sm);
+  overflow-wrap: anywhere;
+}
+.mt-row .label--edit:hover { text-decoration: underline; text-underline-offset: 3px; }
+.mt-row--future .label--edit { color: var(--mt-ink-future); }
+
+.row-editor {
+  display: grid; gap: var(--mt-c4); padding: var(--mt-c4);
+  background: var(--mt-surface); border: var(--mt-hairline) solid var(--mt-rule-strong);
+  border-radius: var(--mt-r-md);
+}
+.row-editor__top { display: grid; grid-template-columns: 208px minmax(0, 1fr) 168px; gap: var(--mt-c6); align-items: end; }
+.row-editor__fields { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--mt-c6); }
+.row-editor__actions { display: flex; align-items: center; gap: var(--mt-target-gap); flex-wrap: wrap; }
+.row-editor__spacer { flex: 1; }
+.row-editor__delete { color: var(--mt-grade); border-color: var(--mt-grade); }
+.row-editor__delete:hover { background: var(--mt-sunk); }
+
+/* A deletion that can still be taken back. Neutral, not amber: amber means "awaiting your
+   check", and this is waiting for nothing. */
+.undo {
+  display: flex; align-items: center; gap: var(--mt-c3); flex-wrap: wrap;
+  padding: var(--mt-c2) var(--mt-c2) var(--mt-c2) var(--mt-c4);
+  background: var(--mt-surface); border: var(--mt-hairline) solid var(--mt-rule-strong);
+  border-radius: var(--mt-r-md);
+}
+.undo p { flex: 1; font-size: var(--mt-body-sm); }
+.undo .btn--quiet { width: var(--mt-target); padding: 0; font-size: var(--mt-title); }
+
 .mt-byhand {
   display: inline-block; margin-left: var(--mt-c2);
   font-size: var(--mt-micro); font-weight: 500;
@@ -403,6 +436,9 @@ a { color: inherit; }
   .entry__fields { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c4); }
   .entry__submit { flex: 1; }
   .add-category__fields { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c4); }
+  .row-editor__top, .row-editor__fields { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c4); }
+  .row-editor { padding: var(--mt-c3); }
+  .row-editor__actions .btn--primary { flex: 1 0 100%; }
   .sides { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c8); }
   .rail__more { padding-top: var(--mt-c2); }
   .mt-row, .ledger__head { grid-template-columns: 46px minmax(0, 1fr) auto; }

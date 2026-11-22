@@ -44,6 +44,9 @@ Built so far:
 Categories are in: a new ledger starts with eighteen, rows are filed under one from the
 entry form or refiled from the ledger, and a category can hold others one level down.
 
+A row is changed or deleted from the ledger itself — the label opens it — and a deletion
+can be undone, because the server keeps the row as a tombstone for sync anyway.
+
 "Where it went" shows a month's spending and income by category, one currency at a time,
 with transfers left out and each share worked out in `mt-core`.
 

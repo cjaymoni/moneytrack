@@ -4,7 +4,7 @@
 // changed are thrown away and asked again, and the server's walk is the only one there is.
 
 import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError, get, post } from "./client";
+import { ApiError, del, get, patch, post } from "./client";
 import type {
   Account,
   Breakdown,
@@ -16,6 +16,7 @@ import type {
   NewAccount,
   NewTransaction,
   Transaction,
+  TransactionEdit,
   User,
 } from "./types";
 
@@ -120,6 +121,44 @@ export function useSetCategory() {
       void client.invalidateQueries({ queryKey: keys.ledger(row.account_id) });
       void client.invalidateQueries({ queryKey: ["breakdown"] });
     },
+  });
+}
+
+/** Every query a change to one row in one account can have changed. */
+function afterRowChange(client: QueryClient, accountId: string) {
+  void client.invalidateQueries({ queryKey: keys.ledger(accountId) });
+  void client.invalidateQueries({ queryKey: keys.accounts });
+  void client.invalidateQueries({ queryKey: keys.totals });
+  void client.invalidateQueries({ queryKey: ["breakdown"] });
+}
+
+/** Changes a row, sent whole. */
+export function useEditTransaction() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, edit }: { id: string; edit: TransactionEdit }) =>
+      patch<Transaction>(`/transactions/${encodeURIComponent(id)}`, edit),
+    onSuccess: (row) => afterRowChange(client, row.account_id),
+  });
+}
+
+/** Deletes a row. The server keeps a tombstone, so it can be undone. */
+export function useDeleteTransaction() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (row: Transaction) =>
+      del<unknown>(`/transactions/${encodeURIComponent(row.id)}`).then(() => row),
+    onSuccess: (row) => afterRowChange(client, row.account_id),
+  });
+}
+
+/** Undoes a deletion, bringing the row back exactly as it was. */
+export function useRestoreTransaction() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      post<Transaction>(`/transactions/${encodeURIComponent(id)}/restore`, {}),
+    onSuccess: (row) => afterRowChange(client, row.account_id),
   });
 }
 

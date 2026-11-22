@@ -90,13 +90,27 @@ export function get<T>(path: string): Promise<T> {
  * expire under a page that is still open, and the person should not have to reload to
  * record a row. Anything else is the caller's to show.
  */
-export async function post<T>(path: string, body: unknown): Promise<T> {
+export function post<T>(path: string, body: unknown): Promise<T> {
+  return write<T>("POST", path, body);
+}
+
+/** A change to an existing thing, sent whole. Retried on `bad_csrf` like `post`. */
+export function patch<T>(path: string, body: unknown): Promise<T> {
+  return write<T>("PATCH", path, body);
+}
+
+/** A deletion. Retried on `bad_csrf` like `post`. */
+export function del<T>(path: string): Promise<T> {
+  return write<T>("DELETE", path);
+}
+
+async function write<T>(method: string, path: string, body?: unknown): Promise<T> {
   try {
-    return await request<T>("POST", path, body);
+    return await request<T>(method, path, body);
   } catch (error) {
     if (error instanceof ApiError && error.code === "bad_csrf") {
       csrf = null;
-      return request<T>("POST", path, body);
+      return request<T>(method, path, body);
     }
     throw error;
   }

@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
-import type { Category, LedgerEntry, Money } from "../api/types";
+import type { Category, LedgerEntry, Money, Transaction } from "../api/types";
 import { useSetCategory } from "../api/queries";
 import { CategoryPicker, fullName, kindFor } from "../ui/CategoryPicker";
 import { balance, gutterDate, isNegative, longDate, signed } from "../ui/format";
 import { FormError } from "../ui/states";
+import { RowEditor } from "./RowEditor";
 
 /**
  * The ledger: one list, oldest first, running through a ruled TODAY line into the rows still
@@ -18,12 +19,15 @@ export function LedgerList({
   currency,
   categories = [],
   now = new Date(),
+  onDeleted = () => {},
 }: {
   entries: LedgerEntry[];
   opening: Money;
   currency: string;
   categories?: Category[];
   now?: Date;
+  /** Told when a row is deleted, so the screen can offer to undo it. */
+  onDeleted?: (row: Transaction) => void;
 }) {
   const todayRef = useRef<HTMLDivElement>(null);
 
@@ -62,7 +66,13 @@ export function LedgerList({
       </p>
       <ol className="ledger__rows">
         {past.map((entry) => (
-          <Row key={entry.transaction.id} entry={entry} future={false} categories={categories} />
+          <Row
+            key={entry.transaction.id}
+            entry={entry}
+            future={false}
+            categories={categories}
+            onDeleted={onDeleted}
+          />
         ))}
       </ol>
       <div className="mt-today" ref={todayRef} role="separator" aria-label="Today">
@@ -72,7 +82,13 @@ export function LedgerList({
       {future.length > 0 && (
         <ol className="ledger__rows">
           {future.map((entry) => (
-            <Row key={entry.transaction.id} entry={entry} future categories={categories} />
+            <Row
+              key={entry.transaction.id}
+              entry={entry}
+              future
+              categories={categories}
+              onDeleted={onDeleted}
+            />
           ))}
         </ol>
       )}
@@ -84,17 +100,23 @@ function Row({
   entry,
   future,
   categories,
+  onDeleted,
 }: {
   entry: LedgerEntry;
   future: boolean;
   categories: Category[];
+  onDeleted: (row: Transaction) => void;
 }) {
   const { transaction, balance_after } = entry;
   const pending = transaction.status === "pending";
   const classes = ["mt-row", future || pending ? "mt-row--future" : ""].join(" ").trim();
-  const [filing, setFiling] = useState(false);
+  // One thing open under a row at a time: the quick refile, or the whole editor.
+  const [open, setOpen] = useState<"none" | "file" | "edit">("none");
+  const filing = open === "file";
+  const editing = open === "edit";
   const setCategory = useSetCategory();
   const pickerId = useId();
+  const editorId = useId();
   const category = categories.find((each) => each.id === transaction.category_id);
 
   return (
@@ -103,7 +125,16 @@ function Row({
         {gutterDate(transaction.booked_at)}
       </time>
       <div>
-        <div className="label">{transaction.label}</div>
+        <button
+          type="button"
+          className="label label--edit"
+          aria-expanded={editing}
+          aria-controls={editorId}
+          onClick={() => setOpen(editing ? "none" : "edit")}
+        >
+          {transaction.label}
+          <span className="visually-hidden">, change this row</span>
+        </button>
         <div className="sub">
           {transaction.counterparty && (
             <>
@@ -116,7 +147,7 @@ function Row({
             className={category ? "filed" : "filed filed--none"}
             aria-expanded={filing}
             aria-controls={pickerId}
-            onClick={() => setFiling(!filing)}
+            onClick={() => setOpen(filing ? "none" : "file")}
           >
             <span className="visually-hidden">Category: </span>
             {category ? fullName(category, categories) : "Uncategorised"}
@@ -146,11 +177,21 @@ function Row({
             onChange={(categoryId) =>
               setCategory.mutate(
                 { id: transaction.id, categoryId },
-                { onSuccess: () => setFiling(false) },
+                { onSuccess: () => setOpen("none") },
               )
             }
           />
           <FormError error={setCategory.error} />
+        </div>
+      )}
+      {editing && (
+        <div className="refile" id={editorId}>
+          <RowEditor
+            row={transaction}
+            categories={categories}
+            onDone={() => setOpen("none")}
+            onDeleted={onDeleted}
+          />
         </div>
       )}
     </li>

@@ -540,6 +540,9 @@ POST   /categories               one level of nesting, judged by mt-core
 GET    /transactions             the rows, optionally for one account
 POST   /transactions             optionally under a category
 POST   /transactions/{id}/category   file a row under a category, or under none
+PATCH  /transactions/{id}        change a row, sent whole; not its account, not a transfer leg
+DELETE /transactions/{id}        a tombstone, never a DELETE: sync must say the row is gone
+POST   /transactions/{id}/restore    undo a deletion, exactly
 GET    /totals                   per currency, on a basis — never converted into one number
 GET    /breakdown                a month by category, one per currency, shares from mt-core
 
