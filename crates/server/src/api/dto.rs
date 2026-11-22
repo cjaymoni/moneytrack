@@ -173,6 +173,34 @@ pub struct NewCategoryIn {
     pub parent_id: Option<String>,
 }
 
+/// What a browser sends to change a row: the whole of what a person can change, not a patch.
+///
+/// Whole rather than field-by-field because a form holds the whole row anyway, and a patch
+/// format has to spell "leave the note alone" differently from "clear the note", which is the
+/// kind of distinction that gets lost between two clients.
+#[derive(Debug, Deserialize)]
+pub struct EditTransactionIn {
+    /// `in` or `out`.
+    pub direction: String,
+    /// Minor units. This or `amount`.
+    pub amount_minor: Option<i64>,
+    /// The decimal text a person typed. This or `amount_minor`.
+    pub amount: Option<String>,
+    /// When it happened, RFC 3339. Required: an edit that forgot the date should not quietly
+    /// move the row to now.
+    pub booked_at: String,
+    /// What it was.
+    pub label: String,
+    /// Merchant, sender or recipient; null clears it.
+    pub counterparty: Option<String>,
+    /// Free text; null clears it.
+    pub note: Option<String>,
+    /// `pending` or `confirmed`.
+    pub status: String,
+    /// The category; null leaves the row uncategorised.
+    pub category_id: Option<String>,
+}
+
 /// What a browser sends to file a row under a category.
 #[derive(Debug, Deserialize)]
 pub struct SetCategoryIn {

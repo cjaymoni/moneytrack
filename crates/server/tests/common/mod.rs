@@ -128,6 +128,34 @@ impl TestServer {
         request.send().await.unwrap()
     }
 
+    /// A PATCH carrying the CSRF token.
+    pub async fn patch(&self, path: &str, body: Value) -> reqwest::Response {
+        self.with_token(
+            self.client
+                .patch(format!("{}{path}", self.base))
+                .json(&body),
+        )
+        .await
+    }
+
+    /// A DELETE carrying the CSRF token.
+    pub async fn delete(&self, path: &str) -> reqwest::Response {
+        self.with_token(self.client.delete(format!("{}{path}", self.base)))
+            .await
+    }
+
+    /// Sends a request with this client's CSRF token, fetching one first if it has none.
+    async fn with_token(&self, request: reqwest::RequestBuilder) -> reqwest::Response {
+        if self.csrf_token().is_none() {
+            self.prime().await;
+        }
+        let request = match self.csrf_token() {
+            Some(token) => request.header("x-csrf-token", token),
+            None => request,
+        };
+        request.send().await.unwrap()
+    }
+
     /// A POST with no CSRF header, as a cross-site form would send.
     pub async fn post_without_csrf(&self, path: &str, body: Value) -> reqwest::Response {
         self.client

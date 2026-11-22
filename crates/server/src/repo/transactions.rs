@@ -264,6 +264,217 @@ pub async fn set_category(
     read(&row)
 }
 
+/// What a caller may change about a row. Everything a person typed; not the account it is
+/// in, where it came from, or anything sync owns.
+///
+/// The account is fixed because moving a row between accounts can change its currency, and
+/// an amount typed in cedis does not become dollars by being moved. A wrong account is a
+/// delete and a new row.
+#[derive(Debug, Clone)]
+pub struct Edit {
+    /// In or out.
+    pub direction: Direction,
+    /// Always positive. Must be in the account's currency.
+    pub amount: Money,
+    /// When it happened, or is expected to.
+    pub booked_at: OffsetDateTime,
+    /// The category, absent for uncategorised.
+    pub category_id: Option<CategoryId>,
+    /// What it was.
+    pub label: String,
+    /// Merchant, sender or recipient.
+    pub counterparty: Option<String>,
+    /// Free text.
+    pub note: Option<String>,
+    /// Pending or confirmed.
+    pub status: TxStatus,
+}
+
+/// Refuses a change to one leg of a transfer.
+///
+/// The two legs must stay equal and opposite, and `mt-core` checks that over the pair. Changing
+/// one alone would leave a transfer that moves money out of existence, so it is refused here
+/// until transfers have an editor that edits both.
+fn not_a_transfer(row: &Transaction) -> Result<(), ApiError> {
+    if row.is_transfer() {
+        return Err(ApiError::Invalid {
+            field: "transaction".to_owned(),
+            reason: "it is one leg of a transfer, and the two legs change together".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+/// Changes a row.
+///
+/// The new values are checked by the model before they reach the schema, as a new row's are.
+/// `updated_at` and `device_id` move with the change, because sync decides between competing
+/// edits by both.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if the row or the category is not this user's,
+/// [`ApiError::Invalid`] for a transfer leg, a currency that does not match or values the
+/// model refuses, or [`ApiError::Internal`].
+pub async fn update(
+    pool: &Pool,
+    user: UserId,
+    device: DeviceId,
+    id: TxId,
+    edit: &Edit,
+) -> Result<Transaction, ApiError> {
+    let existing = get(pool, user, id).await?;
+    not_a_transfer(&existing)?;
+    if edit.amount.currency() != existing.amount.currency() {
+        return Err(ApiError::Invalid {
+            field: "amount".to_owned(),
+            reason: format!(
+                "it is in {} and the account holds {}",
+                edit.amount.currency().code(),
+                existing.amount.currency().code()
+            ),
+        });
+    }
+    if let Some(category) = edit.category_id {
+        categories::get(pool, user, category).await?;
+    }
+
+    let now = OffsetDateTime::now_utc();
+    let changed = Transaction {
+        direction: edit.direction,
+        amount: edit.amount,
+        booked_at: edit.booked_at,
+        category_id: edit.category_id,
+        label: edit.label.clone(),
+        counterparty: edit.counterparty.clone(),
+        note: edit.note.clone(),
+        status: edit.status,
+        sync: SyncMeta {
+            updated_at: now.max(existing.sync.created_at),
+            device_id: device,
+            ..existing.sync
+        },
+        ..existing
+    };
+    changed.validate().map_err(|reason| ApiError::Invalid {
+        field: "transaction".to_owned(),
+        reason: reason.to_string(),
+    })?;
+
+    let category = changed.category_id.map(|id| *id.as_uuid());
+    let client = db::client(pool).await?;
+    let row = client
+        .query_opt(
+            &format!(
+                "UPDATE transactions
+                    SET direction = $3,
+                        amount_minor = $4::bigint::amount_minor,
+                        booked_at = $5::timestamptz::ledger_instant,
+                        category_id = $6,
+                        label = $7,
+                        counterparty = $8,
+                        note = $9,
+                        status = $10,
+                        updated_at = $11::timestamptz::ledger_instant,
+                        device_id = $12
+                  WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL
+                  RETURNING {COLUMNS}"
+            ),
+            &[
+                user.as_uuid(),
+                id.as_uuid(),
+                &changed.direction.as_str(),
+                &changed.amount.minor(),
+                &changed.booked_at,
+                &category,
+                &changed.label,
+                &changed.counterparty,
+                &changed.note,
+                &changed.status.as_str(),
+                &changed.sync.updated_at,
+                device.as_uuid(),
+            ],
+        )
+        .await
+        .map_err(|error| ApiError::database("change a transaction", &error))?;
+
+    // Deleted between the read and the write, by another tab or another device.
+    match row {
+        Some(row) => read(&row),
+        None => Err(ApiError::NotFound { entity: ENTITY }),
+    }
+}
+
+/// Deletes a row, leaving a tombstone.
+///
+/// Never a `DELETE`: sync has to tell every other device the row is gone, and a row that no
+/// longer exists cannot say so. The balance walk, the breakdown and every listing already
+/// skip a row with `deleted_at` set.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if there is no such live row of this user's,
+/// [`ApiError::Invalid`] for a transfer leg, or [`ApiError::Internal`].
+pub async fn delete(pool: &Pool, user: UserId, device: DeviceId, id: TxId) -> Result<(), ApiError> {
+    let existing = get(pool, user, id).await?;
+    not_a_transfer(&existing)?;
+
+    let now = OffsetDateTime::now_utc().max(existing.sync.created_at);
+    let client = db::client(pool).await?;
+    let changed = client
+        .execute(
+            "UPDATE transactions
+                SET deleted_at = $3,
+                    updated_at = $3::timestamptz::ledger_instant,
+                    device_id = $4
+              WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL",
+            &[user.as_uuid(), id.as_uuid(), &now, device.as_uuid()],
+        )
+        .await
+        .map_err(|error| ApiError::database("delete a transaction", &error))?;
+
+    if changed == 0 {
+        return Err(ApiError::NotFound { entity: ENTITY });
+    }
+    Ok(())
+}
+
+/// Brings a deleted row back, as it was.
+///
+/// The undo behind "Deleted. Undo". A tombstone keeps every column, so nothing has to be
+/// remembered by the client to restore it.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if there is no deleted row of this user's with that id — a live
+/// row included, which has nothing to restore — or [`ApiError::Internal`].
+pub async fn restore(
+    pool: &Pool,
+    user: UserId,
+    device: DeviceId,
+    id: TxId,
+) -> Result<Transaction, ApiError> {
+    let now = OffsetDateTime::now_utc();
+    let client = db::client(pool).await?;
+    let row = client
+        .query_opt(
+            &format!(
+                "UPDATE transactions
+                    SET deleted_at = NULL,
+                        updated_at = greatest($3::timestamptz, created_at::timestamptz)
+                                     ::ledger_instant,
+                        device_id = $4
+                  WHERE user_id = $1 AND id = $2 AND deleted_at IS NOT NULL
+                  RETURNING {COLUMNS}"
+            ),
+            &[user.as_uuid(), id.as_uuid(), &now, device.as_uuid()],
+        )
+        .await
+        .map_err(|error| ApiError::database("restore a transaction", &error))?;
+
+    match row {
+        Some(row) => read(&row),
+        None => Err(ApiError::NotFound { entity: ENTITY }),
+    }
+}
+
 /// Every live row this user has, across every account.
 ///
 /// # Errors

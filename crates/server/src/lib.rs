@@ -36,7 +36,7 @@ pub mod session;
 
 use axum::Router;
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use deadpool_postgres::Pool;
 use std::sync::Arc;
 use std::time::Duration;
@@ -93,6 +93,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/transactions",
             get(api::ledger::list_transactions).post(api::ledger::create_transaction),
+        )
+        .route(
+            "/transactions/{id}",
+            patch(api::ledger::edit_transaction).delete(api::ledger::delete_transaction),
+        )
+        .route(
+            "/transactions/{id}/restore",
+            post(api::ledger::restore_transaction),
         )
         .route(
             "/transactions/{id}/category",

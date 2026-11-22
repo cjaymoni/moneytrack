@@ -14,6 +14,7 @@ use serde::Deserialize;
 use time::OffsetDateTime;
 
 use crate::AppState;
+use crate::api::dto::EditTransactionIn;
 use crate::api::dto::{
     self, AccountOut, CategoryOut, CurrencyOut, LedgerOut, MoneyOut, NewAccountIn, NewCategoryIn,
     NewTransactionIn, SetCategoryIn, TransactionOut, account_out, ledger_out,
@@ -374,6 +375,82 @@ pub async fn set_category(
     let written =
         transactions::set_category(&state.pool, session.user, device, id, category).await?;
     Ok(Json(TransactionOut::try_from(&written)?))
+}
+
+/// Changes a row.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if the row or the category is not this user's, or
+/// [`ApiError::Invalid`] for a value that will not convert, a transfer leg, or a row the
+/// model refuses.
+pub async fn edit_transaction(
+    State(state): State<AppState>,
+    session: Session,
+    Path(id): Path<String>,
+    Json(body): Json<EditTransactionIn>,
+) -> ApiResult<Json<TransactionOut>> {
+    let id: TxId = dto::id("id", &id)?;
+    // The amount is read in the row's own currency, which is its account's.
+    let existing = transactions::get(&state.pool, session.user, id).await?;
+    let currency = existing.amount.currency();
+
+    let edit = transactions::Edit {
+        direction: dto::variant::<Direction>("direction", &body.direction)?,
+        amount: dto::amount(
+            "amount",
+            body.amount_minor,
+            body.amount.as_deref(),
+            currency,
+        )?
+        .ok_or_else(|| ApiError::Invalid {
+            field: "amount".to_owned(),
+            reason: "it is missing".to_owned(),
+        })?,
+        booked_at: dto::parse_instant("booked_at", &body.booked_at)?,
+        category_id: body
+            .category_id
+            .as_deref()
+            .map(|id| dto::id::<CategoryId>("category_id", id))
+            .transpose()?,
+        label: body.label,
+        counterparty: body.counterparty,
+        note: body.note,
+        status: dto::variant::<TxStatus>("status", &body.status)?,
+    };
+    let device = users::web_device(&state.pool, session.user).await?;
+    let written = transactions::update(&state.pool, session.user, device, id, &edit).await?;
+    Ok(Json(TransactionOut::try_from(&written)?))
+}
+
+/// Deletes a row, leaving the tombstone sync needs.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if there is no such live row of this user's, or
+/// [`ApiError::Invalid`] for a transfer leg.
+pub async fn delete_transaction(
+    State(state): State<AppState>,
+    session: Session,
+    Path(id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let id: TxId = dto::id("id", &id)?;
+    let device = users::web_device(&state.pool, session.user).await?;
+    transactions::delete(&state.pool, session.user, device, id).await?;
+    Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+/// Brings a deleted row back.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if there is no deleted row of this user's with that id.
+pub async fn restore_transaction(
+    State(state): State<AppState>,
+    session: Session,
+    Path(id): Path<String>,
+) -> ApiResult<Json<TransactionOut>> {
+    let id: TxId = dto::id("id", &id)?;
+    let device = users::web_device(&state.pool, session.user).await?;
+    let restored = transactions::restore(&state.pool, session.user, device, id).await?;
+    Ok(Json(TransactionOut::try_from(&restored)?))
 }
 
 /// Which rows a balance counts.
