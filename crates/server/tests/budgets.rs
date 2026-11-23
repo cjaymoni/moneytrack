@@ -194,7 +194,12 @@ async fn one_scope_has_one_cap_at_a_time() {
     assert_eq!(again.status(), 409);
     let body: Value = again.json().await.unwrap();
     assert_eq!(body["code"], "conflict");
-    assert!(body["message"].as_str().unwrap().contains("already a monthly GHS cap"));
+    assert!(
+        body["message"]
+            .as_str()
+            .unwrap()
+            .contains("already a monthly GHS cap")
+    );
 
     // Another currency is another budget.
     assert_eq!(set(&server, cap("USD")).await.status(), 200);

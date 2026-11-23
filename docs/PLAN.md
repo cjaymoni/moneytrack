@@ -28,7 +28,15 @@ account's projected walk read forward, its low, and the first row that runs it s
 pooled across accounts. And budgets: a cap per category and currency, evaluated by
 `mt-core` on the reader's today and again counting this period's expected rows, drawn as the
 design's graded tiers, and changed from the current period on so the past keeps its caps.
-Reconciliation entries are what is left of phase 3.
+And reconciliation: a person enters what an account actually holds, and `mt-core` works out
+the one row that makes the ledger agree, recorded from the `adjustment` source and marked
+"Counted". Phase 3 is complete.
+
+Repeating rows are built too, ahead of phase 4 because the outlook was only as good as what
+someone had typed: a series writes real expected rows a year ahead through `mt-core`'s
+`recurrence::generate`, topped up lazily on every ledger read, and a due expected row is
+confirmed with one tap. Editing a series in place — "change the rent from March" — is not
+built yet; the core's scope rules for it are.
 
 ## What it has to do
 
@@ -264,7 +272,8 @@ channel that is open. Nothing in 1a is wasted: the apps resume against the same 
 | 1a | The turn to native: `crates/ffi` over UniFFI, `crates/store` with the SQLite schema and the change bus, an app on each platform that opens an encrypted ledger and reads a balance back | medium ✅ |
 | 2a | The server's spine: Axum, Postgres, the schema migrated, sign-up and sign-in, sessions, and tenant-scoped repositories with no accessor that takes no `UserId` | medium ✅ |
 | 2b | The first useful screen, end to end: accounts, manual entry, the ledger list and a running balance, in the browser against the server | medium ✅ |
-| 3 | Budgets, the outlook, the category breakdown, reconciliation entries — the analysis the product exists for | medium |
+| 3 | Budgets, the outlook, the category breakdown, reconciliation entries — the analysis the product exists for | medium ✅ |
+| 3b | Repeating rows: series, a year of expected rows, confirming one when it happens | small ✅ |
 | 4 | CSV + OFX import, the review inbox, duplicate merging | medium |
 | 5 | Deletion, export, and the compliance furniture a hosted service cannot open without | medium |
 | 6 | Mobile resumes: `crates/sync` and the push/pull cycle against this server, then the apps' screens | large |

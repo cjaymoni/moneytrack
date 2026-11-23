@@ -58,7 +58,14 @@ one does not cover a shortfall in another until someone moves it.
 each as ten tiers up to a drawn cap line, running past it when over, with what the rows still
 expected this period would do. Changing a cap applies from the current period on.
 
-Being built next: reconciliation entries, the last of phase 3.
+"Count it" on an account takes what it actually holds — the wallet, the MoMo balance, the
+bank — and records the one row that makes the ledger agree, marked "Counted". That completes
+phase 3.
+
+"Repeating" starts a series — rent on the 2nd, salary on the 7th, the market every Sunday —
+that writes its expected rows a year ahead, so the outlook and the budgets see them coming.
+When one falls due, "It happened" confirms it. The ledger lists the next 45 days of expected
+rows and counts the rest.
 
 `cargo test --workspace` covers the Rust, `db/tests/` covers the database constraints, and
 each app has a round trip that runs on the laptop rather than on a device.

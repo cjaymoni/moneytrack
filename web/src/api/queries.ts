@@ -9,7 +9,10 @@ import type {
   Account,
   Breakdown,
   Budget,
+  CountResult,
   NewBudget,
+  NewRecurring,
+  Recurring,
   Outlook,
   Category,
   NewCategory,
@@ -33,6 +36,7 @@ export const keys = {
   breakdown: (month: string) => ["breakdown", month] as const,
   outlook: (days: number) => ["outlook", days] as const,
   budgets: ["budgets"] as const,
+  recurring: ["recurring"] as const,
 };
 
 /** Who is signed in, or `null` for nobody. Any other failure is an error. */
@@ -189,6 +193,54 @@ function afterRowChange(client: QueryClient, accountId: string) {
   void client.invalidateQueries({ queryKey: keys.accounts });
   void client.invalidateQueries({ queryKey: keys.totals });
   void client.invalidateQueries({ queryKey: ["breakdown"] });
+}
+
+/**
+ * Makes an account agree with a count. The difference, and the row that closes it, are
+ * `mt-core`'s; this sends what was counted, as typed.
+ */
+export function useReconcile(accountId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (counted: string) =>
+      post<CountResult>(`/accounts/${encodeURIComponent(accountId)}/reconcile`, { counted }),
+    onSuccess: (result) => {
+      if (result.adjustment) afterRowChange(client, accountId);
+    },
+  });
+}
+
+export function useRecurring() {
+  return useQuery({ queryKey: keys.recurring, queryFn: () => get<Recurring[]>("/recurring") });
+}
+
+/** Everything a series starting or stopping can change: it writes or removes expected rows. */
+function afterSeriesChange(client: QueryClient) {
+  void client.invalidateQueries({ queryKey: keys.recurring });
+  void client.invalidateQueries({ queryKey: ["ledger"] });
+  void client.invalidateQueries({ queryKey: keys.accounts });
+  void client.invalidateQueries({ queryKey: keys.totals });
+  void client.invalidateQueries({ queryKey: ["outlook"] });
+  void client.invalidateQueries({ queryKey: ["breakdown"] });
+  void client.invalidateQueries({ queryKey: keys.budgets });
+}
+
+export function useStartRecurring() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (series: NewRecurring) =>
+      post<Recurring>("/recurring", { ...series, offset_minutes: offsetMinutes() }),
+    onSuccess: () => afterSeriesChange(client),
+  });
+}
+
+/** Stops a series. Its expected rows still to come go with it; what has happened stays. */
+export function useStopRecurring() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del<unknown>(`/recurring/${encodeURIComponent(id)}`),
+    onSuccess: () => afterSeriesChange(client),
+  });
 }
 
 /** Changes a row, sent whole. */

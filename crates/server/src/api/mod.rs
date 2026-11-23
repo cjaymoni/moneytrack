@@ -9,6 +9,7 @@ pub mod auth;
 pub mod budgets;
 pub mod dto;
 pub mod ledger;
+pub mod recurring;
 
 use axum::Json;
 

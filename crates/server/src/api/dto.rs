@@ -113,6 +113,8 @@ pub struct TransactionOut {
     pub status: String,
     /// Where the row came from.
     pub source: String,
+    /// The repeating row it was written by, if any.
+    pub recurring_id: Option<String>,
 }
 
 impl TryFrom<&Transaction> for TransactionOut {
@@ -131,6 +133,7 @@ impl TryFrom<&Transaction> for TransactionOut {
             note: transaction.note.clone(),
             status: transaction.status.as_str().to_owned(),
             source: transaction.source.as_str().to_owned(),
+            recurring_id: transaction.recurring_id.map(|id| id.to_string()),
         })
     }
 }

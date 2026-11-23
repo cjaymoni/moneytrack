@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import type { Transaction } from "../api/types";
 import { ApiError } from "../api/client";
 import { useCategories, useLedger, useRestoreTransaction } from "../api/queries";
 import { KIND_NAMES, balance, isNegative } from "../ui/format";
 import { Failure, FormError, Loading } from "../ui/states";
 import { EntryForm } from "./EntryForm";
+import { CountIt } from "./CountIt";
 import { LedgerList } from "./LedgerList";
 
 /** One account: what it holds, a line to record a row, and the ledger through today. */
@@ -33,7 +34,6 @@ export function AccountScreen() {
   }
 
   const { account, entries } = ledger.data;
-  const forecastDiffers = account.projected.minor_units !== account.confirmed.minor_units;
 
   return (
     <section className="screen">
@@ -47,16 +47,13 @@ export function AccountScreen() {
           </span>
           <span className="balance__cur">{account.currency}</span>
         </p>
+        {/* What it holds once every expected row lands is a year away now that series write a
+            year ahead, which is not a number anyone plans with. The outlook is where the
+            road ahead is read, with its low point and the row that runs it short. */}
         <p className="mt-label balance__meta">
-          {forecastDiffers ? (
-            <>
-              Held now · <span className="balance__then">{balance(account.projected)}</span> once
-              expected rows land
-            </>
-          ) : (
-            "Held now"
-          )}
+          Held now · <Link to="/outlook" className="balance__link">See the outlook</Link>
         </p>
+        <CountIt key={account.id} account={account} />
       </header>
 
       <EntryForm account={account} />

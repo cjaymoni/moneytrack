@@ -20,6 +20,7 @@ const ROW: Transaction = {
   note: null,
   status: "confirmed",
   source: "manual",
+  recurring_id: null,
 };
 
 const CATEGORIES: Category[] = [

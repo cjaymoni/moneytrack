@@ -110,10 +110,19 @@ pub fn router(state: AppState) -> Router {
             "/categories",
             get(api::ledger::list_categories).post(api::ledger::create_category),
         )
+        .route("/accounts/{id}/reconcile", post(api::ledger::reconcile))
         .route("/ledger", get(api::ledger::account_ledger))
         .route("/totals", get(api::ledger::currency_totals))
         .route("/breakdown", get(api::ledger::breakdown))
         .route("/outlook", get(api::ledger::outlook))
+        .route(
+            "/recurring",
+            get(api::recurring::list).post(api::recurring::create),
+        )
+        .route(
+            "/recurring/{id}",
+            axum::routing::delete(api::recurring::stop),
+        )
         .route(
             "/budgets",
             get(api::budgets::list).post(api::budgets::create),

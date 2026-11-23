@@ -534,6 +534,7 @@ GET    /me
 GET    /currencies               the registry, for a picker
 GET    /accounts                 every account with both balances
 POST   /accounts
+POST   /accounts/{id}/reconcile  a count: the one row that makes the ledger agree, from mt-core
 GET    /ledger                   one account's walk: rows in booked order, balance after each
 GET    /categories               every category, in display order; a new ledger has eighteen
 POST   /categories               one level of nesting, judged by mt-core
@@ -547,6 +548,9 @@ GET    /totals                   per currency, on a basis — never converted in
 GET    /breakdown                a month by category, one per currency, shares from mt-core
 
 GET    /outlook                  per account: the walk ahead, its low, the row that runs it short
+GET    /recurring                every repeating series, with its next date
+POST   /recurring                starts one; writes its expected rows a year ahead
+DELETE /recurring/{id}           stops one: its future expected rows go, its past stays
 GET    /budgets                  every cap, where it stands now and once expected rows land
 POST   /budgets                  starts with the current period, so this month's spending counts
 PATCH  /budgets/{id}             a new cap from this period on; past periods keep theirs

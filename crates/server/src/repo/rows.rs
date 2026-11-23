@@ -72,6 +72,11 @@ impl<'a> Reader<'a> {
         })
     }
 
+    /// A nullable `INTEGER` column.
+    pub(crate) fn optional_integer(&self, column: &'static str) -> Result<Option<i32>, ApiError> {
+        self.column(column)
+    }
+
     /// A typed id.
     pub(crate) fn uuid<T: From<Uuid>>(&self, column: &'static str) -> Result<T, ApiError> {
         self.column::<Uuid>(column).map(T::from)

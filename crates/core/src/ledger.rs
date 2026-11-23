@@ -412,3 +412,53 @@ pub fn counts_as_flow(transaction: &Transaction, currency: Currency, basis: Bala
         && basis.admits(transaction.status)
         && transaction.amount.currency() == currency
 }
+
+/// The one row that makes an account agree with a count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Correction {
+    /// What the ledger said the account held at the moment of the count.
+    pub ledger: Money,
+    /// What the person counted.
+    pub counted: Money,
+    /// `In` if the count found more than the ledger knew of, `Out` if less.
+    pub direction: Direction,
+    /// The difference, always positive; `direction` carries the sign.
+    pub amount: Money,
+}
+
+/// What correcting an account to a count would take, if anything.
+///
+/// "I counted my wallet, it's GHS 340 as of now." The ledger's figure is read off a
+/// [`BalanceBasis::Confirmed`] walk at the instant of the count — the rows known to have
+/// happened, which is what a count measures — and the difference becomes a single row in
+/// the direction that closes it. A count that agrees needs nothing, and says so with `None`
+/// rather than a row of zero.
+///
+/// The walk's basis is the caller's to get right: a projected walk would count expected
+/// rows that have not happened, and the correction would cancel money that is still coming.
+///
+/// # Errors
+/// [`MoneyError::CurrencyMismatch`] if the count is not in the account's currency, or
+/// [`MoneyError::Overflow`] if the difference does not fit.
+pub fn correction(
+    walk: &Walk<'_>,
+    counted: Money,
+    at: OffsetDateTime,
+) -> Result<Option<Correction>, MoneyError> {
+    let ledger = walk.balance_as_of(at);
+    let difference = counted.try_sub(ledger)?;
+    if difference.is_zero() {
+        return Ok(None);
+    }
+    let (direction, amount) = if difference.is_negative() {
+        (Direction::Out, difference.try_neg()?)
+    } else {
+        (Direction::In, difference)
+    };
+    Ok(Some(Correction {
+        ledger,
+        counted,
+        direction,
+        amount,
+    }))
+}
