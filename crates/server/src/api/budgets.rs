@@ -20,7 +20,7 @@ use crate::AppState;
 use crate::api::dto::{self, MoneyOut};
 use crate::api::ledger::offset;
 use crate::error::{ApiError, ApiResult};
-use crate::repo::{budgets, categories, transactions, users};
+use crate::repo::{budgets, categories, recurring, transactions, users};
 use crate::session::Session;
 
 /// The warning threshold a budget gets when none is asked for: 80% of the cap. The schema's
@@ -91,6 +91,7 @@ pub async fn list(
     session: Session,
     Query(clock): Query<Clock>,
 ) -> ApiResult<Json<Vec<BudgetOut>>> {
+    recurring::top_up(&state.pool, session.user).await?;
     let zone = offset(clock.offset_minutes.unwrap_or(0))?;
     let today = today_in(zone);
     let held = budgets::list(&state.pool, session.user).await?;

@@ -20,7 +20,7 @@ use crate::api::dto::{
     NewTransactionIn, SetCategoryIn, TransactionOut, account_out, ledger_out,
 };
 use crate::error::{ApiError, ApiResult};
-use crate::repo::{accounts, categories, transactions, users};
+use crate::repo::{accounts, categories, recurring, transactions, users};
 use crate::session::Session;
 
 /// Every account, with what it holds on both bases.
@@ -34,6 +34,7 @@ pub async fn list_accounts(
     State(state): State<AppState>,
     session: Session,
 ) -> ApiResult<Json<Vec<AccountOut>>> {
+    recurring::top_up(&state.pool, session.user).await?;
     let accounts = accounts::list(&state.pool, session.user).await?;
     let rows = transactions::all(&state.pool, session.user).await?;
 
@@ -103,6 +104,7 @@ pub async fn list_transactions(
     session: Session,
     Query(scope): Query<Scope>,
 ) -> ApiResult<Json<Vec<TransactionOut>>> {
+    recurring::top_up(&state.pool, session.user).await?;
     let rows = match scope.account_id {
         Some(id) => {
             let account: AccountId = dto::id("account_id", &id)?;
@@ -197,6 +199,7 @@ pub async fn account_ledger(
     session: Session,
     Query(query): Query<LedgerQuery>,
 ) -> ApiResult<Json<LedgerOut>> {
+    recurring::top_up(&state.pool, session.user).await?;
     let account_id: AccountId = dto::id("account_id", &query.account_id)?;
     let basis = basis_from(Some(query.basis.as_deref().unwrap_or("projected")))?;
     let account = accounts::get(&state.pool, session.user, account_id).await?;
@@ -241,6 +244,7 @@ pub async fn outlook(
     session: Session,
     Query(query): Query<OutlookQuery>,
 ) -> ApiResult<Json<Vec<dto::OutlookOut>>> {
+    recurring::top_up(&state.pool, session.user).await?;
     let days = query.days.unwrap_or(90);
     if !(1..=366).contains(&days) {
         return Err(ApiError::Invalid {
@@ -307,6 +311,7 @@ pub async fn breakdown(
     session: Session,
     Query(query): Query<BreakdownQuery>,
 ) -> ApiResult<Json<Vec<dto::BreakdownOut>>> {
+    recurring::top_up(&state.pool, session.user).await?;
     let period = month_period(&query.month)?;
     let zone = offset(query.offset_minutes.unwrap_or(0))?;
     let basis = basis_from(Some(query.basis.as_deref().unwrap_or("confirmed")))?;
@@ -627,6 +632,7 @@ pub async fn currency_totals(
     session: Session,
     Query(query): Query<Basis>,
 ) -> ApiResult<Json<Vec<MoneyOut>>> {
+    recurring::top_up(&state.pool, session.user).await?;
     let basis = basis_from(query.basis.as_deref())?;
     let accounts = accounts::list(&state.pool, session.user).await?;
     let rows = transactions::all(&state.pool, session.user).await?;

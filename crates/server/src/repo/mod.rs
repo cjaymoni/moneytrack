@@ -16,6 +16,7 @@
 pub mod accounts;
 pub mod budgets;
 pub mod categories;
+pub mod recurring;
 pub mod rows;
 pub mod transactions;
 pub mod users;

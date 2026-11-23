@@ -116,6 +116,14 @@ pub fn router(state: AppState) -> Router {
         .route("/breakdown", get(api::ledger::breakdown))
         .route("/outlook", get(api::ledger::outlook))
         .route(
+            "/recurring",
+            get(api::recurring::list).post(api::recurring::create),
+        )
+        .route(
+            "/recurring/{id}",
+            axum::routing::delete(api::recurring::stop),
+        )
+        .route(
             "/budgets",
             get(api::budgets::list).post(api::budgets::create),
         )

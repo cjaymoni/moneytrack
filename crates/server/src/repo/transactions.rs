@@ -395,7 +395,19 @@ pub async fn update(
             ],
         )
         .await
-        .map_err(|error| ApiError::database("change a transaction", &error))?;
+        .map_err(|error| {
+            // Two occurrences of one series cannot share a day: the schema's index on
+            // (recurring_id, booked_at) says so, and moving one onto another's date is the
+            // one way a person can run into it.
+            if error.code() == Some(&tokio_postgres::error::SqlState::UNIQUE_VIOLATION) {
+                ApiError::Conflict {
+                    reason: "another row of the same repeating series is already on that day"
+                        .to_owned(),
+                }
+            } else {
+                ApiError::database("change a transaction", &error)
+            }
+        })?;
 
     // Deleted between the read and the write, by another tab or another device.
     match row {
