@@ -31,6 +31,7 @@ function point(id: string, label: string, at: string, direction: "in" | "out", a
       note: null,
       status: "pending",
       source: "manual",
+      recurring_id: null,
     },
     balance_after: cedis(after[0], after[1]),
     level_bps: level,

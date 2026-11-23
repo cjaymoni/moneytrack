@@ -49,6 +49,8 @@ export interface Transaction {
   note: string | null;
   status: Status;
   source: string;
+  /** The repeating series that wrote it, if any. */
+  recurring_id: string | null;
 }
 
 export interface LedgerEntry {
@@ -198,6 +200,40 @@ export interface CountResult {
   counted: Money;
   /** The correcting row written; absent when the count agreed. */
   adjustment: Transaction | null;
+}
+
+export type Frequency = "daily" | "weekly" | "monthly" | "yearly";
+
+/** A repeating series, and the next day it falls on. */
+export interface Recurring {
+  id: string;
+  account_id: string;
+  account_name: string;
+  direction: Direction;
+  amount: Money;
+  label: string;
+  counterparty: string | null;
+  category_id: string | null;
+  freq: Frequency;
+  interval: number;
+  starts_on: string;
+  ends_on: string | null;
+  /** Absent once the series has ended. */
+  next_on: string | null;
+}
+
+export interface NewRecurring {
+  account_id: string;
+  direction: Direction;
+  /** The decimal text the person typed. */
+  amount: string;
+  label: string;
+  counterparty?: string;
+  category_id?: string;
+  freq: Frequency;
+  interval: number;
+  starts_on: string;
+  ends_on?: string;
 }
 
 export interface Currency {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { screen, within } from "@testing-library/react";
-import { renderWithClient as render } from "../test-utils";
+import { renderInApp as render } from "../test-utils";
 import type { LedgerEntry, Money } from "../api/types";
 import { LedgerList } from "./LedgerList";
 
@@ -32,6 +32,7 @@ function entry(
       note: null,
       status,
       source: "manual",
+      recurring_id: null,
     },
     balance_after: after,
   };
@@ -133,5 +134,58 @@ describe("LedgerList", () => {
 
     expect(screen.getByText("Counted")).toBeTruthy();
     expect(screen.queryByText("By hand")).toBeNull();
+  });
+
+  it("offers to confirm an expected row that is due, sending the row back whole", async () => {
+    const calls: { url: string; init: RequestInit | undefined }[] = [];
+    const fetchMock = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      if (url === "/api/csrf") return new Response(JSON.stringify({ token: "tok" }));
+      return new Response(JSON.stringify({ ...due.transaction, status: "confirmed" }));
+    };
+    const original = globalThis.fetch;
+    globalThis.fetch = fetchMock as typeof fetch;
+    const due = entry("1", "Rent", "2026-11-01T00:00:00Z", "out", cedis(140_000, "1400.00"), cedis(-140_000, "-1400.00"), "pending");
+    due.transaction.recurring_id = "r-rent";
+    due.transaction.source = "recurring";
+    const later = entry("2", "Rent", "2026-12-01T00:00:00Z", "out", cedis(140_000, "1400.00"), cedis(-280_000, "-2800.00"), "pending");
+    later.transaction.recurring_id = "r-rent";
+    try {
+      render(<LedgerList now={NOW} opening={cedis(0, "0.00")} currency="GHS" entries={[due, later]} />);
+
+      // Only the one that is due gets the button; both say they repeat.
+      expect(screen.getAllByRole("button", { name: "It happened" })).toHaveLength(1);
+      expect(screen.getAllByText("repeats")).toHaveLength(2);
+
+      screen.getByRole("button", { name: "It happened" }).click();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const sent = calls.find((call) => call.init?.method === "PATCH");
+      expect(sent?.url).toBe("/api/transactions/1");
+      expect(JSON.parse(String(sent?.init?.body))).toEqual({
+        direction: "out",
+        amount: "1400.00",
+        booked_at: "2026-11-01T00:00:00Z",
+        label: "Rent",
+        counterparty: null,
+        note: null,
+        status: "confirmed",
+        category_id: null,
+      });
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("lists the weeks ahead and counts the rest of a year a series has written", () => {
+    const soon = entry("1", "Market", "2026-11-29T00:00:00Z", "out", cedis(2_500, "25.00"), cedis(0, "0.00"), "pending");
+    const far = [1, 2, 3].map((month) =>
+      entry(`f${month}`, "Rent", `2027-0${month + 1}-02T00:00:00Z`, "out", cedis(1, "1.00"), cedis(0, "0.00"), "pending"),
+    );
+    render(<LedgerList now={NOW} opening={cedis(0, "0.00")} currency="GHS" entries={[soon, ...far]} />);
+
+    expect(screen.getByText("Market")).toBeTruthy();
+    expect(screen.queryByText("Rent")).toBeNull();
+    expect(screen.getByText(/3 more expected rows after the next 45 days/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "See them in the outlook" }).getAttribute("href")).toBe("/outlook?days=180");
   });
 });

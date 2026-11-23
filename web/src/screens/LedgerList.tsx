@@ -1,6 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { Link } from "react-router";
+
+/** How far ahead the ledger lists expected rows. */
+const AHEAD_DAYS = 45;
 import type { Category, LedgerEntry, Money, Transaction } from "../api/types";
-import { useSetCategory } from "../api/queries";
+
+import { useEditTransaction, useSetCategory } from "../api/queries";
 import { CategoryPicker, fullName, kindFor } from "../ui/CategoryPicker";
 import { balance, gutterDate, isNegative, longDate, signed } from "../ui/format";
 import { FormError } from "../ui/states";
@@ -34,7 +39,12 @@ export function LedgerList({
   // Which rows are history and which are forecast is a matter of when they are booked, read
   // against the reader's clock. Pending rows in the past stay where they fell, marked.
   const past = entries.filter((entry) => new Date(entry.transaction.booked_at) <= now);
-  const future = entries.filter((entry) => new Date(entry.transaction.booked_at) > now);
+  // The forecast is shown for the weeks ahead, not the year a repeating series writes: past
+  // that, a list stops being something a person reads, and the outlook reads it for them.
+  const horizon = new Date(now.getTime() + AHEAD_DAYS * 86_400_000);
+  const ahead = entries.filter((entry) => new Date(entry.transaction.booked_at) > now);
+  const future = ahead.filter((entry) => new Date(entry.transaction.booked_at) <= horizon);
+  const beyond = ahead.length - future.length;
 
   // Long ledgers open at today rather than at the first row ever recorded.
   useEffect(() => {
@@ -72,6 +82,7 @@ export function LedgerList({
             future={false}
             categories={categories}
             onDeleted={onDeleted}
+            due
           />
         ))}
       </ol>
@@ -92,6 +103,12 @@ export function LedgerList({
           ))}
         </ol>
       )}
+      {beyond > 0 && (
+        <p className="ledger__beyond field__help">
+          {beyond} more expected {beyond === 1 ? "row" : "rows"} after the next {AHEAD_DAYS} days.{" "}
+          <Link to="/outlook?days=180">See them in the outlook</Link>
+        </p>
+      )}
     </section>
   );
 }
@@ -101,11 +118,14 @@ function Row({
   future,
   categories,
   onDeleted,
+  due = false,
 }: {
   entry: LedgerEntry;
   future: boolean;
   categories: Category[];
   onDeleted: (row: Transaction) => void;
+  /** Dated now or earlier, so an expected row here is one that should have happened. */
+  due?: boolean;
 }) {
   const { transaction, balance_after } = entry;
   const pending = transaction.status === "pending";
@@ -115,6 +135,7 @@ function Row({
   const filing = open === "file";
   const editing = open === "edit";
   const setCategory = useSetCategory();
+  const confirm = useEditTransaction();
   const pickerId = useId();
   const editorId = useId();
   const category = categories.find((each) => each.id === transaction.category_id);
@@ -152,9 +173,41 @@ function Row({
             <span className="visually-hidden">Category: </span>
             {category ? fullName(category, categories) : "Uncategorised"}
           </button>
+          {transaction.recurring_id && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span>repeats</span>
+            </>
+          )}
           {pending && <span aria-hidden="true"> · </span>}
           {pending && <span>expected</span>}
           <Verification source={transaction.source} pending={pending} />
+          {pending && due && (
+            <button
+              type="button"
+              className="happened"
+              disabled={confirm.isPending}
+              onClick={() =>
+                // The row sent back whole, as it is, with only its status changed: the
+                // amount is the server's own rendering, which it reads back unchanged.
+                confirm.mutate({
+                  id: transaction.id,
+                  edit: {
+                    direction: transaction.direction,
+                    amount: transaction.amount.display,
+                    booked_at: transaction.booked_at,
+                    label: transaction.label,
+                    counterparty: transaction.counterparty,
+                    note: transaction.note,
+                    status: "confirmed",
+                    category_id: transaction.category_id,
+                  },
+                })
+              }
+            >
+              {confirm.isPending ? "Confirming" : "It happened"}
+            </button>
+          )}
         </div>
       </div>
       <div className="figures">
@@ -184,6 +237,11 @@ function Row({
           <FormError error={setCategory.error} />
         </div>
       )}
+      {confirm.error ? (
+        <div className="refile">
+          <FormError error={confirm.error} />
+        </div>
+      ) : null}
       {editing && (
         <div className="refile" id={editorId}>
           <RowEditor
@@ -211,5 +269,7 @@ function Verification({ source, pending }: { source: string; pending: boolean })
   // A correction to a count is a person's act too, so it wears the by-hand register; it says
   // "Counted" because that is what the person did, and why the row exists.
   if (source === "adjustment") return <span className="mt-byhand">Counted</span>;
+  // Written by a series and then confirmed by a person: the confirming is the human act.
+  if (source === "recurring") return <span className="mt-byhand">Confirmed</span>;
   return null;
 }

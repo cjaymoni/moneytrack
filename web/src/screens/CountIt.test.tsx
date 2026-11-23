@@ -33,6 +33,7 @@ const CORRECTED: CountResult = {
     note: null,
     status: "confirmed",
     source: "adjustment",
+    recurring_id: null,
   },
 };
 

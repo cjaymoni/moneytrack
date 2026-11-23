@@ -62,6 +62,11 @@ expected this period would do. Changing a cap applies from the current period on
 bank — and records the one row that makes the ledger agree, marked "Counted". That completes
 phase 3.
 
+"Repeating" starts a series — rent on the 2nd, salary on the 7th, the market every Sunday —
+that writes its expected rows a year ahead, so the outlook and the budgets see them coming.
+When one falls due, "It happened" confirms it. The ledger lists the next 45 days of expected
+rows and counts the rest.
+
 `cargo test --workspace` covers the Rust, `db/tests/` covers the database constraints, and
 each app has a round trip that runs on the laptop rather than on a device.
 
