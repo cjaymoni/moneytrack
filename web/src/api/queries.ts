@@ -9,6 +9,7 @@ import type {
   Account,
   Breakdown,
   Budget,
+  CountResult,
   NewBudget,
   Outlook,
   Category,
@@ -189,6 +190,21 @@ function afterRowChange(client: QueryClient, accountId: string) {
   void client.invalidateQueries({ queryKey: keys.accounts });
   void client.invalidateQueries({ queryKey: keys.totals });
   void client.invalidateQueries({ queryKey: ["breakdown"] });
+}
+
+/**
+ * Makes an account agree with a count. The difference, and the row that closes it, are
+ * `mt-core`'s; this sends what was counted, as typed.
+ */
+export function useReconcile(accountId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (counted: string) =>
+      post<CountResult>(`/accounts/${encodeURIComponent(accountId)}/reconcile`, { counted }),
+    onSuccess: (result) => {
+      if (result.adjustment) afterRowChange(client, accountId);
+    },
+  });
 }
 
 /** Changes a row, sent whole. */

@@ -208,5 +208,8 @@ function Row({
 function Verification({ source, pending }: { source: string; pending: boolean }) {
   if (pending) return null;
   if (source === "manual") return <span className="mt-byhand">By hand</span>;
+  // A correction to a count is a person's act too, so it wears the by-hand register; it says
+  // "Counted" because that is what the person did, and why the row exists.
+  if (source === "adjustment") return <span className="mt-byhand">Counted</span>;
   return null;
 }

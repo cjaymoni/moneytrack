@@ -6,6 +6,7 @@ import { useCategories, useLedger, useRestoreTransaction } from "../api/queries"
 import { KIND_NAMES, balance, isNegative } from "../ui/format";
 import { Failure, FormError, Loading } from "../ui/states";
 import { EntryForm } from "./EntryForm";
+import { CountIt } from "./CountIt";
 import { LedgerList } from "./LedgerList";
 
 /** One account: what it holds, a line to record a row, and the ledger through today. */
@@ -57,6 +58,7 @@ export function AccountScreen() {
             "Held now"
           )}
         </p>
+        <CountIt key={account.id} account={account} />
       </header>
 
       <EntryForm account={account} />

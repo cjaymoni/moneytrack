@@ -421,6 +421,18 @@ a { color: inherit; }
 .earlier { display: grid; gap: var(--mt-c2); }
 .earlier ul { list-style: none; display: grid; gap: var(--mt-c1); }
 
+/* ---------- counting an account ---------- */
+.count__open { justify-self: start; margin-top: var(--mt-c2); }
+.count {
+  display: grid; gap: var(--mt-c3); margin-top: var(--mt-c3); padding: var(--mt-c4);
+  background: var(--mt-surface); border: var(--mt-hairline) solid var(--mt-rule-strong);
+  border-radius: var(--mt-r-md); max-width: 560px;
+}
+.count__form { display: grid; gap: var(--mt-c3); }
+.count__actions { display: flex; justify-content: flex-end; gap: var(--mt-target-gap); }
+.count__result { display: flex; align-items: center; gap: var(--mt-c3); flex-wrap: wrap; font-size: var(--mt-body-sm); }
+.count__result p { flex: 1; min-width: 20ch; }
+
 /* ---------- categories ---------- */
 .add-category {
   display: grid; gap: var(--mt-c4); padding: var(--mt-c5) 0;

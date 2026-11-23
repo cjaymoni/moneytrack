@@ -191,6 +191,15 @@ export interface NewBudget {
   warn_at_bps?: number;
 }
 
+/** The answer to counting an account. */
+export interface CountResult {
+  /** What the ledger said the account held when it was counted. */
+  ledger: Money;
+  counted: Money;
+  /** The correcting row written; absent when the count agreed. */
+  adjustment: Transaction | null;
+}
+
 export interface Currency {
   code: string;
   name: string;

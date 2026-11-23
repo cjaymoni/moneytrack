@@ -125,4 +125,13 @@ describe("LedgerList", () => {
     expect(screen.getByRole("button", { name: /Food & groceries · Chop bar/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Uncategorised/ })).toBeTruthy();
   });
+
+  it("marks a correction to a count as counted", () => {
+    const fixed = entry("1", "Counted: 340.00 GHS", "2026-11-02T09:00:00Z", "out", cedis(4_000, "40.00"), cedis(34_000, "340.00"));
+    fixed.transaction.source = "adjustment";
+    render(<LedgerList now={NOW} opening={cedis(38_000, "380.00")} currency="GHS" entries={[fixed]} />);
+
+    expect(screen.getByText("Counted")).toBeTruthy();
+    expect(screen.queryByText("By hand")).toBeNull();
+  });
 });
