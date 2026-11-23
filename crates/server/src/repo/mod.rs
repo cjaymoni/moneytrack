@@ -14,6 +14,8 @@
 //! `mt-core` values, so the handlers above never see a `PgRow` or an error code.
 
 pub mod accounts;
+pub mod budgets;
+pub mod categories;
 pub mod rows;
 pub mod transactions;
 pub mod users;

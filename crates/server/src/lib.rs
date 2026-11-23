@@ -36,7 +36,7 @@ pub mod session;
 
 use axum::Router;
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use deadpool_postgres::Pool;
 use std::sync::Arc;
 use std::time::Duration;
@@ -81,6 +81,7 @@ impl std::fmt::Debug for AppState {
 pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/health", get(api::health))
+        .route("/csrf", get(csrf::token))
         .route("/auth/register", post(api::auth::register))
         .route("/auth/login", post(api::auth::login))
         .route("/auth/logout", post(api::auth::logout))
@@ -93,7 +94,35 @@ pub fn router(state: AppState) -> Router {
             "/transactions",
             get(api::ledger::list_transactions).post(api::ledger::create_transaction),
         )
+        .route(
+            "/transactions/{id}",
+            patch(api::ledger::edit_transaction).delete(api::ledger::delete_transaction),
+        )
+        .route(
+            "/transactions/{id}/restore",
+            post(api::ledger::restore_transaction),
+        )
+        .route(
+            "/transactions/{id}/category",
+            post(api::ledger::set_category),
+        )
+        .route(
+            "/categories",
+            get(api::ledger::list_categories).post(api::ledger::create_category),
+        )
+        .route("/ledger", get(api::ledger::account_ledger))
         .route("/totals", get(api::ledger::currency_totals))
+        .route("/breakdown", get(api::ledger::breakdown))
+        .route("/outlook", get(api::ledger::outlook))
+        .route(
+            "/budgets",
+            get(api::budgets::list).post(api::budgets::create),
+        )
+        .route(
+            "/budgets/{id}",
+            patch(api::budgets::change).delete(api::budgets::delete),
+        )
+        .route("/currencies", get(api::ledger::currencies))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             csrf::guard,

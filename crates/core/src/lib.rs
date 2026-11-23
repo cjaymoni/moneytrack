@@ -40,6 +40,7 @@
     )
 )]
 
+pub mod breakdown;
 pub mod budget;
 pub mod categorise;
 pub mod dedup;
@@ -48,6 +49,7 @@ pub mod ids;
 pub mod ledger;
 pub mod model;
 pub mod money;
+pub mod outlook;
 pub mod recurrence;
 pub mod zone;
 

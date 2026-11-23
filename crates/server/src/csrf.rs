@@ -10,8 +10,16 @@
 //! account, so their next entry lands in it — is a real attack on a finance app rather than
 //! a theoretical one. The client reads the cookie and echoes it in a header, which a
 //! cross-site caller cannot do: it can send the cookie, but it cannot read it.
+//!
+//! "Reads the cookie" needs one more step in a browser. The cookie is scoped to `/api` like
+//! the session, and `document.cookie` on a page at `/` does not include a cookie scoped to a
+//! path the page is not under. So [`token`] hands the same value back in a response body.
+//! That gives an attacker nothing the cookie did not: a cross-site page can make the request,
+//! but the same-origin policy stops it reading the answer, which is the property the cookie
+//! relied on too.
 
-use axum::extract::{Request, State};
+use axum::Json;
+use axum::extract::{Extension, Request, State};
 use axum::http::{HeaderValue, Method, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -57,16 +65,46 @@ pub async fn guard(State(state): State<AppState>, request: Request, next: Next) 
         }
     }
 
-    let mut response = next.run(request).await;
-    if held.is_none() {
-        match session::secret() {
-            Ok(token) => attach(&mut response, token, state.config.secure_cookies),
+    let mut request = request;
+    let issued = match &held {
+        Some(_) => None,
+        None => match session::secret() {
+            Ok(token) => Some(token),
             // Without a token the next state-changing request is refused, which is the safe
             // direction to fail in. Worth a line in the log, not a failed read.
-            Err(error) => tracing::error!(%error, "could not issue a CSRF token"),
-        }
+            Err(error) => {
+                tracing::error!(%error, "could not issue a CSRF token");
+                None
+            }
+        },
+    };
+    if let Some(token) = held.as_ref().or(issued.as_ref()) {
+        request.extensions_mut().insert(Token(token.clone()));
+    }
+
+    let mut response = next.run(request).await;
+    if let Some(token) = issued {
+        attach(&mut response, token, state.config.secure_cookies);
     }
     response
+}
+
+/// The token this request holds, or the one being issued with its response.
+#[derive(Debug, Clone)]
+pub struct Token(String);
+
+/// Hands the client its token, which it cannot read from a cookie scoped to `/api`.
+///
+/// # Errors
+/// [`ApiError::Internal`] if no token could be issued.
+pub async fn token(token: Option<Extension<Token>>) -> Result<Json<serde_json::Value>, ApiError> {
+    match token {
+        Some(Extension(Token(token))) => Ok(Json(serde_json::json!({ "token": token }))),
+        None => Err(ApiError::Internal {
+            operation: "hand out a CSRF token",
+            reason: "none was held or issued".to_owned(),
+        }),
+    }
 }
 
 /// Whether a method is one that may change something.

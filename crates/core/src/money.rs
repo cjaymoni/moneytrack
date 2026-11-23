@@ -89,6 +89,16 @@ macro_rules! currency_registry {
                 }
             }
 
+            /// The currency's English name, for a picker. Not localised: the code is what
+            /// identifies it, and the name is there so a person can find the code.
+            #[must_use]
+            pub const fn name(self) -> &'static str {
+                match &self.0 {
+                    $($code => $name,)*
+                    _ => "",
+                }
+            }
+
             const fn is_known(code: &[u8; 3]) -> bool {
                 match code {
                     $($code => true,)*

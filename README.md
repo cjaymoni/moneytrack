@@ -36,7 +36,29 @@ Built so far:
   Every query is scoped to a user, and the tests include one person trying to read and write
   another's rows.
 
-Being built next: `web/`, the browser client in TypeScript and React.
+- `web/` — the browser client in TypeScript and React. Sign-up and sign-in, opening an
+  account, recording a row, and the ledger: oldest first, through a ruled TODAY line into the
+  rows still expected, with what the account held after each. It computes no number — the
+  running balance is `mt-core`'s walk and a typed amount is read by `mt-core` on the server.
+
+Categories are in: a new ledger starts with eighteen, rows are filed under one from the
+entry form or refiled from the ledger, and a category can hold others one level down.
+
+A row is changed or deleted from the ledger itself — the label opens it — and a deletion
+can be undone, because the server keeps the row as a tombstone for sync anyway.
+
+"Where it went" shows a month's spending and income by category, one currency at a time,
+with transfers left out and each share worked out in `mt-core`.
+
+"Outlook" shows each account's balance over the next 30, 90 or 180 days, its lowest point,
+and the expected row that first runs it below zero — one account at a time, because money in
+one does not cover a shortfall in another until someone moves it.
+
+"Budgets" caps spending per category and currency — weekly, monthly or yearly — and shows
+each as ten tiers up to a drawn cap line, running past it when over, with what the rows still
+expected this period would do. Changing a cap applies from the current period on.
+
+Being built next: reconciliation entries, the last of phase 3.
 
 `cargo test --workspace` covers the Rust, `db/tests/` covers the database constraints, and
 each app has a round trip that runs on the laptop rather than on a device.
@@ -65,6 +87,21 @@ cargo run -p mt-server          # migrates on start, then listens
 
 The tests create a database of their own per test and drop it afterwards, so `cargo test`
 needs the container running and nothing else.
+
+The browser client, with the server above running on 8080:
+
+```
+cd web
+npm ci
+npm run dev        # Vite on 5173, forwarding /api to the server
+npm test           # component tests; no server needed
+npm run build      # static files in web/dist
+```
+
+In production the static files and `/api` sit behind one host, as Vite arranges in
+development. The session cookie is `SameSite=Lax` and scoped to `/api`, and the client is
+built to be same-origin with it: there is no CORS configuration, and there should never need
+to be. `MT_API` points the dev server at an API somewhere other than 127.0.0.1:8080.
 
 Decided: a Rust core, store and sync layer; native UIs, SwiftUI and Jetpack Compose; integer
 minor units for money; on-device SMS parsing; and pending transactions as the forecast.

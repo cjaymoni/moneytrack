@@ -88,6 +88,92 @@ async fn naming_someone_elses_account_finds_nothing() {
 }
 
 #[tokio::test]
+async fn someone_elses_ledger_finds_nothing() {
+    let (_ama, kofi, account) = two_people().await;
+
+    let response = kofi.get(&format!("/ledger?account_id={account}")).await;
+
+    assert_eq!(response.status(), 404);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "not_found");
+}
+
+#[tokio::test]
+async fn one_persons_categories_are_not_anothers() {
+    let (ama, kofi, account) = two_people().await;
+    let ama_categories: Value = ama.get("/categories").await.json().await.unwrap();
+    let theirs = ama_categories[0]["id"].clone();
+
+    let kofi_categories: Value = kofi.get("/categories").await.json().await.unwrap();
+    assert!(
+        kofi_categories
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|category| category["id"] != theirs),
+        "another person's categories are visible"
+    );
+
+    // Kofi cannot file his own row under Ama's category, nor add one beneath it.
+    let wallet: Value = kofi
+        .post(
+            "/accounts",
+            json!({ "name": "Kofi's wallet", "kind": "momo", "currency": "GHS" }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let response = kofi
+        .post(
+            "/transactions",
+            json!({ "account_id": wallet["id"], "direction": "out", "amount": "1",
+                    "label": "Pure water", "category_id": theirs }),
+        )
+        .await;
+    assert_eq!(response.status(), 404);
+    let response = kofi
+        .post(
+            "/categories",
+            json!({ "name": "Mine", "kind": "expense", "parent_id": theirs }),
+        )
+        .await;
+    assert_eq!(response.status(), 404);
+
+    // Nor refile one of Ama's rows, under anything.
+    let rows: Value = ama
+        .get(&format!("/transactions?account_id={account}"))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let row = rows[0]["id"].as_str().unwrap();
+    let response = kofi
+        .post(
+            &format!("/transactions/{row}/category"),
+            json!({ "category_id": null }),
+        )
+        .await;
+    assert_eq!(response.status(), 404);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "not_found");
+}
+
+#[tokio::test]
+async fn each_persons_breakdown_is_their_own() {
+    let (_ama, kofi, _account) = two_people().await;
+
+    // Ama spent this month; Kofi holds no account at all, so he has no breakdown.
+    let mine: Value = kofi
+        .get("/breakdown?month=2026-11")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(mine.as_array().unwrap().len(), 0, "{mine}");
+}
+
+#[tokio::test]
 async fn writing_into_someone_elses_account_is_refused() {
     let (ama, kofi, account) = two_people().await;
 

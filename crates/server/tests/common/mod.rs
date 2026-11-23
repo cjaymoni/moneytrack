@@ -128,6 +128,50 @@ impl TestServer {
         request.send().await.unwrap()
     }
 
+    /// Runs SQL on this server's own database, to set up history the API cannot create —
+    /// a budget that began months ago, say. Never used to check what the API did: that is
+    /// read back through the API, as a browser would.
+    pub async fn run_sql(&self, sql: &str) {
+        let url = swap_database(&admin_url(), &self.database);
+        let (client, connection) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
+            .await
+            .expect("connect to the test database");
+        let handle = tokio::spawn(async move {
+            connection.await.ok();
+        });
+        client.batch_execute(sql).await.expect("run test setup");
+        drop(client);
+        handle.abort();
+    }
+
+    /// A PATCH carrying the CSRF token.
+    pub async fn patch(&self, path: &str, body: Value) -> reqwest::Response {
+        self.with_token(
+            self.client
+                .patch(format!("{}{path}", self.base))
+                .json(&body),
+        )
+        .await
+    }
+
+    /// A DELETE carrying the CSRF token.
+    pub async fn delete(&self, path: &str) -> reqwest::Response {
+        self.with_token(self.client.delete(format!("{}{path}", self.base)))
+            .await
+    }
+
+    /// Sends a request with this client's CSRF token, fetching one first if it has none.
+    async fn with_token(&self, request: reqwest::RequestBuilder) -> reqwest::Response {
+        if self.csrf_token().is_none() {
+            self.prime().await;
+        }
+        let request = match self.csrf_token() {
+            Some(token) => request.header("x-csrf-token", token),
+            None => request,
+        };
+        request.send().await.unwrap()
+    }
+
     /// A POST with no CSRF header, as a cross-site form would send.
     pub async fn post_without_csrf(&self, path: &str, body: Value) -> reqwest::Response {
         self.client

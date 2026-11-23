@@ -6,6 +6,7 @@
 //! a rule waiting to disagree with the first.
 
 pub mod auth;
+pub mod budgets;
 pub mod dto;
 pub mod ledger;
 

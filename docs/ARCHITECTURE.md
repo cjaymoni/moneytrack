@@ -527,22 +527,44 @@ thing whether the address exists or not.
 Screen-shaped endpoints, mirroring what `mt-store` answers on a handset:
 
 ```
-POST   /auth/register · /auth/login · /auth/logout · /auth/password
+GET    /csrf                     the CSRF token, for a page that cannot read its cookie
+POST   /auth/register · /auth/login · /auth/logout       (/auth/password: later)
 GET    /me
 
-GET    /accounts                 every account with its balance
+GET    /currencies               the registry, for a picker
+GET    /accounts                 every account with both balances
 POST   /accounts
-GET    /transactions             a page, filtered by account and date window
-POST   /transactions
-GET    /balances                 per account and per currency, on a basis
-GET    /outlook                  the projected walk and the first shortfall
-GET    /budgets                  where every cap stands on a date
+GET    /ledger                   one account's walk: rows in booked order, balance after each
+GET    /categories               every category, in display order; a new ledger has eighteen
+POST   /categories               one level of nesting, judged by mt-core
+GET    /transactions             the rows, optionally for one account
+POST   /transactions             optionally under a category
+POST   /transactions/{id}/category   file a row under a category, or under none
+PATCH  /transactions/{id}        change a row, sent whole; not its account, not a transfer leg
+DELETE /transactions/{id}        a tombstone, never a DELETE: sync must say the row is gone
+POST   /transactions/{id}/restore    undo a deletion, exactly
+GET    /totals                   per currency, on a basis — never converted into one number
+GET    /breakdown                a month by category, one per currency, shares from mt-core
+
+GET    /outlook                  per account: the walk ahead, its low, the row that runs it short
+GET    /budgets                  every cap, where it stands now and once expected rows land
+POST   /budgets                  starts with the current period, so this month's spending counts
+PATCH  /budgets/{id}             a new cap from this period on; past periods keep theirs
+DELETE /budgets/{id}
 ```
 
-Money crosses as minor units plus an ISO code — never a decimal string, never a double — and
-beside it, a `display` string the server rendered through `mt-core`. Where the decimal point
-goes is a property of the currency, and a client that divides by a hundred is right until the
-first CFA franc row arrives. Ids, instants and dates use the same wire spellings as the sync
+The CSRF cookie is scoped to `/api` like the session, and `document.cookie` on a page at `/`
+cannot see a cookie scoped to a path the page is not under — so `/csrf` hands the same value
+back in a body. That is no weaker: a cross-site page can make the request, but the
+same-origin policy stops it reading the answer, which is what the cookie relied on too.
+
+Money crosses as minor units plus an ISO code — never a double — and beside it, a `display`
+string the server rendered through `mt-core`. Where the decimal point goes is a property of
+the currency, and a client that divides by a hundred is right until the first CFA franc row
+arrives. The same rule read backwards decides what a typed `12.50` is in minor units, so an
+amount may also arrive as the decimal text a person typed (`amount`, `opening_balance`) and
+be read by `Money::parse` in the account's currency. Finer than the currency is refused, not
+rounded. Ids, instants and dates use the same wire spellings as the sync
 protocol and the FFI, which `crates/core/tests/wire.rs` already fixes.
 
 Errors come back with a stable machine-readable code and a message. The code is what the
@@ -577,7 +599,23 @@ port — the type, palette, density and the stamp are what the world lends.
 
 **State.** Server state is fetched and cached per query, invalidated on mutation; there is no
 client-side model of the ledger to keep in step. That is the thin-client discipline paying
-for itself: no cache coherence problem, because there is no second copy.
+for itself: no cache coherence problem, because there is no second copy. TanStack Query does
+the caching; React Router the routes.
+
+**What the rule allowed, and where the line fell, in 2b.** The client groups thousands into a
+`display` string, because `mt-core` leaves grouping to the screen on purpose. It prefixes `+`
+or `−` from a row's `direction`, a word on the wire, not a negation. It reads whether a
+balance is below zero from the sign of `minor_units`. It splits history from forecast by
+comparing `booked_at` with the reader's clock, which is a question about time, not money. It
+does not draw the magnitude bar under each ledger row the phone references show: a bar's
+width is an amount divided by the largest one, which is arithmetic on money. The breakdown
+shows the way back: `mt-core` works out each share in basis points and the screen turns that
+into a CSS width — a percentage of a bar, not of anyone's money.
+
+**Layout.** A laptop gets a top bar, a rail of accounts with what each holds and the totals
+per currency, and the account's screen: the hero balance, one ruled line to record a row, and
+the ledger. Under 820px the rail stacks above the screen. Fonts are served from the same
+origin, not a font CDN: a finance app's pages should not tell a third party who opened them.
 
 ## 7. Rule packs
 
