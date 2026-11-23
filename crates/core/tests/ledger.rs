@@ -446,3 +446,74 @@ fn flows_ignore_deleted_rows_and_respect_the_basis() {
     assert_eq!(settled.spending, Money::new(0, GHS));
     assert_eq!(forecast.spending, Money::new(4_000, GHS));
 }
+
+// ---------------------------------------------------------------------- reconciliation ---
+
+mod reconciling {
+    use super::*;
+    use mt_core::ledger::correction;
+    use mt_core::money::MoneyError;
+
+    #[test]
+    fn a_count_below_the_ledger_is_corrected_with_money_out() {
+        let account = wallet(50_000);
+        let rows = vec![tx_in(account.id, Direction::Out, 12_000, days_after(-2))];
+        let walked = walk(&account, &rows, BalanceBasis::Confirmed).unwrap();
+
+        let fix = correction(&walked, Money::new(34_000, GHS), NOW)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(fix.ledger, Money::new(38_000, GHS));
+        assert_eq!(fix.direction, Direction::Out);
+        assert_eq!(fix.amount, Money::new(4_000, GHS));
+    }
+
+    #[test]
+    fn a_count_above_the_ledger_is_corrected_with_money_in() {
+        let account = wallet(10_000);
+        let walked = walk(&account, &[], BalanceBasis::Confirmed).unwrap();
+
+        let fix = correction(&walked, Money::new(10_550, GHS), NOW)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(fix.direction, Direction::In);
+        assert_eq!(fix.amount, Money::new(550, GHS));
+    }
+
+    #[test]
+    fn a_count_that_agrees_needs_nothing() {
+        let account = wallet(10_000);
+        let walked = walk(&account, &[], BalanceBasis::Confirmed).unwrap();
+
+        assert_eq!(
+            correction(&walked, Money::new(10_000, GHS), NOW).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn the_ledger_is_read_at_the_moment_of_the_count_not_after_it() {
+        let account = wallet(10_000);
+        // Spent after the count: it is not what the count measured.
+        let rows = vec![tx_in(account.id, Direction::Out, 3_000, days_after(1))];
+        let walked = walk(&account, &rows, BalanceBasis::Confirmed).unwrap();
+
+        assert_eq!(
+            correction(&walked, Money::new(10_000, GHS), NOW).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn a_count_in_another_currency_is_refused() {
+        let account = wallet(10_000);
+        let walked = walk(&account, &[], BalanceBasis::Confirmed).unwrap();
+
+        assert!(matches!(
+            correction(&walked, Money::new(10_000, USD), NOW),
+            Err(MoneyError::CurrencyMismatch { .. })
+        ));
+    }
+}

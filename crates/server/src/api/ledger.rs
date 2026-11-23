@@ -10,7 +10,7 @@ use mt_core::enums::{AccountKind, CategoryKind, Direction, TxSource, TxStatus};
 use mt_core::ids::{AccountId, CategoryId, TxId};
 use mt_core::ledger::{self, BalanceBasis};
 use mt_core::money::Money;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::AppState;
@@ -510,6 +510,102 @@ pub async fn restore_transaction(
     let device = users::web_device(&state.pool, session.user).await?;
     let restored = transactions::restore(&state.pool, session.user, device, id).await?;
     Ok(Json(TransactionOut::try_from(&restored)?))
+}
+
+/// What a person counted an account to hold.
+#[derive(Debug, Deserialize)]
+pub struct CountIn {
+    /// The decimal text they typed, in the account's currency.
+    pub counted: String,
+    /// When they counted, RFC 3339. Absent means now.
+    pub at: Option<String>,
+}
+
+/// The answer to a count.
+#[derive(Debug, Serialize)]
+pub struct CountOut {
+    /// What the ledger said the account held at the moment of the count.
+    pub ledger: MoneyOut,
+    /// What was counted.
+    pub counted: MoneyOut,
+    /// The correcting row written, absent when the count agreed with the ledger.
+    pub adjustment: Option<TransactionOut>,
+}
+
+/// Makes an account agree with a count: "I counted my wallet, it's 340 as of now."
+///
+/// `mt-core` reads the ledger's figure off the confirmed walk at the moment of the count and
+/// works out the single row that closes the difference; this writes it, as a confirmed row
+/// from the `adjustment` source, so it says where it came from and can be changed or
+/// deleted like any other. A count that agrees writes nothing.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if the account is not this user's, [`ApiError::Invalid`] for a
+/// count that will not read, or [`ApiError::Rule`] if the rows will not walk.
+pub async fn reconcile(
+    State(state): State<AppState>,
+    session: Session,
+    Path(id): Path<String>,
+    Json(body): Json<CountIn>,
+) -> ApiResult<Json<CountOut>> {
+    let account_id: AccountId = dto::id("id", &id)?;
+    let account = accounts::get(&state.pool, session.user, account_id).await?;
+    let counted =
+        dto::amount("counted", None, Some(&body.counted), account.currency)?.ok_or_else(|| {
+            ApiError::Invalid {
+                field: "counted".to_owned(),
+                reason: "it is missing".to_owned(),
+            }
+        })?;
+    let at = match body.at.as_deref() {
+        Some(text) => dto::parse_instant("at", text)?,
+        None => OffsetDateTime::now_utc(),
+    };
+
+    let rows = transactions::for_account(&state.pool, session.user, account_id).await?;
+    let walk = ledger::walk(&account, &rows, BalanceBasis::Confirmed).map_err(|reason| {
+        ApiError::Rule {
+            rule: "walk",
+            reason: reason.to_string(),
+        }
+    })?;
+    let ledger_at = walk.balance_as_of(at);
+    let fix = ledger::correction(&walk, counted, at).map_err(|reason| ApiError::Rule {
+        rule: "correction",
+        reason: reason.to_string(),
+    })?;
+
+    let adjustment = match fix {
+        None => None,
+        Some(fix) => {
+            let new = transactions::NewTransaction {
+                account_id,
+                direction: fix.direction,
+                amount: fix.amount,
+                booked_at: at,
+                category_id: None,
+                label: format!("Counted: {} {}", fix.counted, account.currency.code()),
+                counterparty: None,
+                note: Some(format!(
+                    "The ledger said {} {}; the count found {}.",
+                    fix.ledger,
+                    account.currency.code(),
+                    fix.counted
+                )),
+                status: TxStatus::Confirmed,
+                source: TxSource::Adjustment,
+            };
+            let device = users::web_device(&state.pool, session.user).await?;
+            let written = transactions::create(&state.pool, session.user, device, &new).await?;
+            Some(TransactionOut::try_from(&written)?)
+        }
+    };
+
+    Ok(Json(CountOut {
+        ledger: ledger_at.into(),
+        counted: counted.into(),
+        adjustment,
+    }))
 }
 
 /// Which rows a balance counts.
