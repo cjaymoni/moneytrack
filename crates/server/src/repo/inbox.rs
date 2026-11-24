@@ -542,7 +542,7 @@ fn references_kept(
             return Err(ApiError::Conflict {
                 reason: format!(
                     "{} and {} have the same bank reference and amount, so they are one \
-                     payment; add one and mark the other as the same payment",
+                     payment; add one, and mark the other as the same payment or reject it",
                     first.described, line.described
                 ),
             });
@@ -602,10 +602,12 @@ async fn settle_accepted(
     Ok(())
 }
 
-/// One lesson per merchant, the last choice winning, in the order first seen.
+/// One lesson per merchant, the last choice winning, sorted by field and pattern.
 ///
 /// A request that files the same merchant twice, two different ways, means the later answer;
-/// writing both would leave the earlier as a rule nobody chose last.
+/// writing both would leave the earlier as a rule nobody chose last. The sort gives every
+/// request the same order of rule writes, so two accepts re-filing the same merchants can
+/// wait on each other but never deadlock.
 fn distinct_lessons(lessons: impl IntoIterator<Item = Lesson>) -> Vec<Lesson> {
     let mut order: Vec<Lesson> = Vec::new();
     let mut at: HashMap<(MatchedField, String), usize> = HashMap::new();
@@ -623,6 +625,12 @@ fn distinct_lessons(lessons: impl IntoIterator<Item = Lesson>) -> Vec<Lesson> {
             }
         }
     }
+    order.sort_by_cached_key(|lesson| {
+        (
+            lesson.matched_field.as_str(),
+            lesson.pattern.trim().to_lowercase(),
+        )
+    });
     order
 }
 
@@ -952,13 +960,12 @@ async fn all_categories_live(
 /// every one is live and this user's.
 ///
 /// Accept and merge both take it. This is what makes accepting safe against a second request
-/// for the same account: the
-/// reference check reads the ledger and then decides, and two requests deciding at once
-/// could each drop a reference and each write the same charge — a case the unique index
-/// cannot see, because neither row carries the reference. So accepts into one account take
-/// turns. `FOR NO KEY UPDATE` leaves the foreign-key share lock an ordinary insert takes
-/// alone, so typing a row into the account is not held up; accounts are locked in id order,
-/// after the inbox lines, so two accepts cannot deadlock.
+/// for the same account: the reference check reads the ledger and then decides, and two
+/// requests deciding at once could each drop a reference and each write the same charge — a
+/// case the unique index cannot see, because neither row carries the reference. So accepts
+/// into one account take turns. `FOR NO KEY UPDATE` leaves the foreign-key share lock an
+/// ordinary insert takes alone, so typing a row into the account is not held up; accounts
+/// are locked in id order, after the inbox lines, so two accepts cannot deadlock.
 async fn lock_live_accounts(
     client: &impl GenericClient,
     user: UserId,
@@ -1255,5 +1262,34 @@ mod tests {
         let learned = distinct_lessons([lesson("Shoprite", first), lesson(" SHOPRITE ", last)]);
         assert_eq!(learned.len(), 1);
         assert_eq!(learned[0].category_id, last);
+    }
+
+    #[test]
+    fn lessons_come_out_in_one_order_whatever_order_they_went_in() {
+        let category = CategoryId::from(Uuid::from_u128(10));
+        let lesson = |matched_field, pattern: &str| Lesson {
+            matched_field,
+            pattern: pattern.to_owned(),
+            category_id: category,
+        };
+        let learned = distinct_lessons([
+            lesson(MatchedField::Counterparty, "Zoo"),
+            lesson(MatchedField::Label, "Kiosk"),
+            lesson(MatchedField::Counterparty, "apple"),
+            lesson(MatchedField::Counterparty, "Mango"),
+        ]);
+        let order: Vec<(&str, &str)> = learned
+            .iter()
+            .map(|each| (each.matched_field.as_str(), each.pattern.as_str()))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                ("counterparty", "apple"),
+                ("counterparty", "Mango"),
+                ("counterparty", "Zoo"),
+                ("label", "Kiosk"),
+            ]
+        );
     }
 }

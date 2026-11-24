@@ -655,18 +655,58 @@ async fn a_line_merged_into_a_typed_row_is_still_known_by_its_reference_later() 
     assert_eq!(ledger_rows(&server, &bank).await.len(), 1);
 }
 
-/// How long a request is given to show it is waiting on a lock rather than finished.
-const STILL_WAITING: std::time::Duration = std::time::Duration::from_millis(300);
+/// How long a request may take to start waiting on a lock before the test gives up.
+const LOCK_PATIENCE: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Holds the account's lock the way accept and merge take it, until the transaction ends.
 async fn hold_account(server: &TestServer, account: &str) -> tokio_postgres::Client {
     let side = server.side_connection().await;
-    side.batch_execute(&format!(
-        "BEGIN; SELECT 1 FROM accounts WHERE id = '{account}' FOR NO KEY UPDATE;"
-    ))
+    side.batch_execute("BEGIN").await.unwrap();
+    let id = uuid::Uuid::parse_str(account).unwrap();
+    // `query_one` fails if no row came back, so a wrong id cannot silently lock nothing.
+    side.query_one(
+        "SELECT 1 FROM accounts WHERE id = $1 FOR NO KEY UPDATE",
+        &[&id],
+    )
     .await
     .unwrap();
     side
+}
+
+/// Waits until `requests` sessions are queued behind the side transaction's lock — waiting
+/// on it directly, or behind another waiter for the same row — then ends the transaction.
+/// The chain starts from this database's sessions; a second waiter can show no database
+/// name while it waits, so the recursive step follows the blocking chain alone.
+/// Panics if they never queue: the thing under test did not wait for the account.
+async fn release_once_waiting(side: &tokio_postgres::Client, requests: i64) {
+    let deadline = tokio::time::Instant::now() + LOCK_PATIENCE;
+    loop {
+        let queued: i64 = side
+            .query_one(
+                "WITH RECURSIVE queued(pid) AS (
+                     SELECT pid FROM pg_stat_activity
+                      WHERE datname = current_database()
+                        AND pg_backend_pid() = ANY(pg_blocking_pids(pid))
+                     UNION
+                     SELECT activity.pid FROM pg_stat_activity activity
+                       JOIN queued ON queued.pid = ANY(pg_blocking_pids(activity.pid))
+                 )
+                 SELECT count(*) FROM queued",
+                &[],
+            )
+            .await
+            .unwrap()
+            .get(0);
+        if queued >= requests {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "expected {requests} requests waiting on the account, saw {queued}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    side.batch_execute("COMMIT").await.unwrap();
 }
 
 #[tokio::test]
@@ -683,7 +723,7 @@ async fn accepting_and_merging_wait_for_the_account_and_typing_a_row_does_not() 
 
     // Typing a row only needs the account to exist, and is not held up.
     let typed = tokio::time::timeout(
-        STILL_WAITING * 10,
+        LOCK_PATIENCE,
         server.post(
             "/transactions",
             json!({ "account_id": bank, "direction": "out", "amount": "5.00", "label": "Kenkey" }),
@@ -694,15 +734,8 @@ async fn accepting_and_merging_wait_for_the_account_and_typing_a_row_does_not() 
     assert_eq!(typed.status(), 200);
     let kenkey: Value = typed.json().await.unwrap();
 
-    let accepting = accept(&server, &line, None);
-    tokio::pin!(accepting);
-    assert!(
-        tokio::time::timeout(STILL_WAITING, &mut accepting)
-            .await
-            .is_err()
-    );
-    side.batch_execute("COMMIT").await.unwrap();
-    assert_eq!(accepting.await.status(), 200);
+    let (accepted, ()) = tokio::join!(accept(&server, &line, None), release_once_waiting(&side, 1));
+    assert_eq!(accepted.status(), 200);
 
     upload(&server, &bank, "ofx", &ofx_line("TRF-8", "-5.00", "KENKEY")).await;
     let other = inbox(&server).await["items"][0]["id"]
@@ -711,15 +744,11 @@ async fn accepting_and_merging_wait_for_the_account_and_typing_a_row_does_not() 
         .to_owned();
     let side = hold_account(&server, &bank).await;
     let merge_path = format!("/inbox/{other}/merge");
-    let merging = server.post(&merge_path, json!({ "transaction_id": kenkey["id"] }));
-    tokio::pin!(merging);
-    assert!(
-        tokio::time::timeout(STILL_WAITING, &mut merging)
-            .await
-            .is_err()
+    let (merged, ()) = tokio::join!(
+        server.post(&merge_path, json!({ "transaction_id": kenkey["id"] })),
+        release_once_waiting(&side, 1)
     );
-    side.batch_execute("COMMIT").await.unwrap();
-    assert_eq!(merging.await.status(), 200);
+    assert_eq!(merged.status(), 200);
 }
 
 #[tokio::test]
@@ -750,16 +779,14 @@ async fn two_copies_of_a_charge_added_at_once_are_written_once() {
     let first = waiting["items"][0]["id"].as_str().unwrap().to_owned();
     let second = waiting["items"][1]["id"].as_str().unwrap().to_owned();
 
-    // Both requests are in flight before either can decide: the account is held until both
-    // have been sent.
+    // Both requests are checked to be waiting on the account before it is let go, so both
+    // are in flight together and only the lock decides which goes first.
     let side = hold_account(&server, &bank).await;
-    let one = accept(&server, &first, None);
-    let two = accept(&server, &second, None);
-    let release = async {
-        tokio::time::sleep(STILL_WAITING).await;
-        side.batch_execute("COMMIT").await.unwrap();
-    };
-    let (one, two, ()) = tokio::join!(one, two, release);
+    let (one, two, ()) = tokio::join!(
+        accept(&server, &first, None),
+        accept(&server, &second, None),
+        release_once_waiting(&side, 2)
+    );
 
     let mut statuses = [one.status().as_u16(), two.status().as_u16()];
     statuses.sort_unstable();
