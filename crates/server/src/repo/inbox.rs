@@ -10,12 +10,13 @@ use std::collections::{HashMap, HashSet};
 
 use deadpool_postgres::{GenericClient, Pool};
 use mt_core::categorise::{self, Lesson};
+use mt_core::dedup::MatchRules;
 use mt_core::enums::{Direction, InboxSource, InboxStatus, MatchedField, TxSource, TxStatus};
 use mt_core::ids::{AccountId, CategoryId, DeviceId, InboxItemId, TxId, UserId};
 use mt_core::ingest::Staged;
 use mt_core::model::{Candidate, SyncMeta, Transaction};
 use mt_core::money::{Currency, Money};
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use tokio_postgres::Row;
 use uuid::Uuid;
 
@@ -337,8 +338,17 @@ pub async fn accept(
         });
     }
 
+    // Read without a lock: a concurrent request accepting the same reference between this
+    // check and the insert is caught by the `transactions_external` index, which fails the
+    // whole insert as a conflict and rolls everything back for the person to retry.
     let known = references_in_ledger(&transaction, user, &lines).await?;
-    keep_references_apart(&mut lines, &known)?;
+    let movements: Vec<Movement> = lines.iter().map(Movement::of).collect();
+    let kept = references_kept(&movements, &known, MatchRules::default().window)?;
+    for (line, keeps) in lines.iter_mut().zip(kept) {
+        if !keeps {
+            line.ledger.external_id = None;
+        }
+    }
 
     let ledger_rows: Vec<Transaction> = lines.iter().map(|line| line.ledger.clone()).collect();
     let written = transactions::insert_many(&transaction, user, &ledger_rows).await?;
@@ -364,10 +374,68 @@ struct Accepting {
     category_id: Option<CategoryId>,
 }
 
-/// What an account already holds under a bank reference: the way it moved and how much.
-type Referenced = HashMap<(AccountId, String), (Direction, Money)>;
+/// A line's movement, as far as its bank reference is concerned.
+#[derive(Debug, Clone)]
+struct Movement {
+    account: AccountId,
+    reference: Option<String>,
+    direction: Direction,
+    amount: Money,
+    booked_at: OffsetDateTime,
+    /// "line 12 of march.ofx (SHOPRITE OSU)", for a message the person can act on.
+    described: String,
+}
 
-/// The live ledger rows sharing a bank reference with any of the lines, in one query.
+impl Movement {
+    fn of(line: &Accepting) -> Self {
+        let row = &line.row;
+        let file = row
+            .origin_ref
+            .as_deref()
+            .map(|name| format!(" of {name}"))
+            .unwrap_or_default();
+        Self {
+            account: line.ledger.account_id,
+            reference: line.ledger.external_id.clone(),
+            direction: line.ledger.direction,
+            amount: line.ledger.amount,
+            booked_at: line.ledger.booked_at,
+            described: format!("line {}{file} ({})", row.line_no, row.candidate.label),
+        }
+    }
+
+    /// The same payment as `other`: same way, same amount, close enough in time to be one
+    /// event. A standing order that carries its mandate as the reference every month is
+    /// twelve payments, not one.
+    fn same_as(
+        &self,
+        direction: Direction,
+        amount: Money,
+        booked_at: OffsetDateTime,
+        window: Duration,
+    ) -> bool {
+        self.direction == direction
+            && self.amount == amount
+            && (self.booked_at - booked_at).abs() <= window
+    }
+}
+
+/// A live ledger row already known by a bank reference.
+#[derive(Debug, Clone, Copy)]
+struct Known {
+    direction: Direction,
+    amount: Money,
+    booked_at: OffsetDateTime,
+    /// Whether the row carries the reference itself. A row accepted from a line whose
+    /// reference had to be dropped is still known by it, through the line it came from.
+    holds_reference: bool,
+}
+
+/// What each account already holds under each bank reference.
+type Referenced = HashMap<(AccountId, String), Vec<Known>>;
+
+/// The live ledger rows known by a bank reference any of the lines carry, in one query: the
+/// rows holding it, and the rows accepted from earlier lines that carried it.
 async fn references_in_ledger(
     client: &impl GenericClient,
     user: UserId,
@@ -387,80 +455,99 @@ async fn references_in_ledger(
     }
     let rows = client
         .query(
-            "SELECT t.id, t.account_id, t.external_id, t.direction,
-                    t.amount_minor::bigint AS amount_minor, t.currency::text AS currency
-               FROM transactions t
-               JOIN UNNEST($2::uuid[], $3::text[]) AS wanted(account_id, external_id)
-                 ON t.account_id = wanted.account_id AND t.external_id = wanted.external_id
-              WHERE t.user_id = $1 AND t.deleted_at IS NULL",
+            "SELECT t.id, wanted.account_id, wanted.external_id, t.direction,
+                    t.amount_minor::bigint AS amount_minor, t.currency::text AS currency,
+                    t.booked_at::timestamptz AS booked_at,
+                    t.external_id IS NOT DISTINCT FROM wanted.external_id AS holds_reference
+               FROM UNNEST($2::uuid[], $3::text[]) AS wanted(account_id, external_id)
+               JOIN transactions t
+                 ON t.user_id = $1 AND t.account_id = wanted.account_id
+                AND t.deleted_at IS NULL
+                AND (t.external_id = wanted.external_id
+                     OR EXISTS (SELECT 1 FROM inbox_items i
+                                 WHERE i.user_id = $1 AND i.transaction_id = t.id
+                                   AND i.external_id = wanted.external_id
+                                   AND i.status = 'accepted'))",
             &[user.as_uuid(), &accounts, &references],
         )
         .await
         .map_err(|error| ApiError::database("look up bank references", &error))?;
-    rows.iter()
-        .map(|row| {
-            let reader = Reader::new("transaction", row)?;
-            let currency = reader.currency("currency")?;
-            Ok((
-                (reader.uuid("account_id")?, reader.text("external_id")?),
-                (
-                    reader.variant("direction")?,
-                    reader.money("amount_minor", currency)?,
-                ),
-            ))
-        })
-        .collect()
+    let mut known = Referenced::new();
+    for row in &rows {
+        let reader = Reader::new("transaction", row)?;
+        let currency = reader.currency("currency")?;
+        let key = (reader.uuid("account_id")?, reader.text("external_id")?);
+        known.entry(key).or_default().push(Known {
+            direction: reader.variant("direction")?,
+            amount: reader.money("amount_minor", currency)?,
+            booked_at: reader.instant("booked_at")?,
+            holds_reference: reader.flag("holds_reference")?,
+        });
+    }
+    Ok(known)
 }
 
-/// Settles which lines keep their bank reference, before anything is written.
+/// Which lines keep their bank reference, decided before anything is written.
 ///
-/// An account holds a reference once. A line whose reference the account already holds for
-/// the same movement — same way, same amount — is that row arriving again, and is refused
-/// with a pointer to "Same payment". A line whose reference names a *different* movement is
-/// the case banks create by reusing one reference for a transfer and the charge on it: the
-/// line is kept as a row of its own, without the reference, rather than refused or folded
-/// into the other. Its fingerprint still keeps the same line out of a later upload. Lines
-/// within the request are held to the same rule against each other, in the order given.
+/// An account holds a reference once. A line that is the same payment as one the ledger
+/// already knows by its reference — same way, same amount, within `window` — is that row
+/// arriving again, and is refused with a pointer to "Same payment". So is a second copy of a
+/// line earlier in the request. Any other line sharing a reference is a movement of its own:
+/// banks reuse one reference for a transfer and the charge on it, and standing orders reuse
+/// one every month. Such a line is kept as a row, and keeps the reference only if nothing
+/// holds it yet; otherwise the row goes in without it.
+///
+/// Dropping the reference is deliberate: the unique index allows one row per reference. The
+/// line's fingerprint still keeps it out of a later upload, and the line itself keeps the
+/// reference, which is how a later copy of the same charge is still recognised here.
 ///
 /// # Errors
 /// [`ApiError::Conflict`] naming the line that is already in the ledger, or in the request.
-fn keep_references_apart(lines: &mut [Accepting], known: &Referenced) -> Result<(), ApiError> {
-    let mut claimed: HashMap<(AccountId, String), (Direction, Money, u32)> = HashMap::new();
-    for line in lines.iter_mut() {
-        let Some(reference) = line.ledger.external_id.clone() else {
+fn references_kept(
+    lines: &[Movement],
+    known: &Referenced,
+    window: Duration,
+) -> Result<Vec<bool>, ApiError> {
+    let mut earlier: HashMap<(AccountId, &str), Vec<&Movement>> = HashMap::new();
+    let mut kept = Vec::with_capacity(lines.len());
+    for line in lines {
+        let Some(reference) = line.reference.as_deref() else {
+            kept.push(false);
             continue;
         };
-        let key = (line.ledger.account_id, reference);
-        let movement = (line.ledger.direction, line.ledger.amount);
-        if let Some(held) = known.get(&key) {
-            if *held == movement {
-                return Err(ApiError::Conflict {
-                    reason: format!(
-                        "line {}: a payment with the same bank reference and amount is already \
-                         in this account; mark it as the same payment instead",
-                        line.row.line_no
-                    ),
-                });
-            }
-            line.ledger.external_id = None;
-            continue;
+        let seen = earlier.entry((line.account, reference)).or_default();
+        if let Some(first) = seen
+            .iter()
+            .find(|other| line.same_as(other.direction, other.amount, other.booked_at, window))
+        {
+            return Err(ApiError::Conflict {
+                reason: format!(
+                    "{} and {} have the same bank reference and amount, so they are one \
+                     payment; add one and mark the other as the same payment",
+                    first.described, line.described
+                ),
+            });
         }
-        if let Some((direction, amount, first)) = claimed.get(&key) {
-            if (*direction, *amount) == movement {
-                return Err(ApiError::Conflict {
-                    reason: format!(
-                        "lines {first} and {} have the same bank reference and amount, so \
-                         they are one payment; add one and mark the other as the same payment",
-                        line.row.line_no
-                    ),
-                });
-            }
-            line.ledger.external_id = None;
-            continue;
+        let held = known
+            .get(&(line.account, reference.to_owned()))
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        if held
+            .iter()
+            .any(|row| line.same_as(row.direction, row.amount, row.booked_at, window))
+        {
+            return Err(ApiError::Conflict {
+                reason: format!(
+                    "{}: a payment with the same bank reference and amount is already in \
+                     this account; mark it as the same payment instead",
+                    line.described
+                ),
+            });
         }
-        claimed.insert(key, (movement.0, movement.1, line.row.line_no));
+        kept.push(seen.is_empty() && !held.iter().any(|row| row.holds_reference));
+        seen.push(line);
     }
-    Ok(())
+    Ok(kept)
 }
 
 /// Marks every accepted line settled, pointing at the row it became, in one statement.
@@ -930,4 +1017,155 @@ fn read(row: &Row) -> Result<InboxRow, ApiError> {
         },
         status: reader.variant("status")?,
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+    use time::macros::datetime;
+
+    const NOV_3: OffsetDateTime = datetime!(2026-11-03 09:00 UTC);
+    const WINDOW: Duration = Duration::days(2);
+
+    fn account() -> AccountId {
+        AccountId::from(Uuid::from_u128(1))
+    }
+
+    fn ghs(minor: i64) -> Money {
+        Money::new(minor, Currency::GHS)
+    }
+
+    fn line(no: u32, reference: Option<&str>, minor: i64, at: OffsetDateTime) -> Movement {
+        Movement {
+            account: account(),
+            reference: reference.map(str::to_owned),
+            direction: Direction::Out,
+            amount: ghs(minor),
+            booked_at: at,
+            described: format!("line {no}"),
+        }
+    }
+
+    fn held(minor: i64, at: OffsetDateTime, holds_reference: bool) -> Known {
+        Known {
+            direction: Direction::Out,
+            amount: ghs(minor),
+            booked_at: at,
+            holds_reference,
+        }
+    }
+
+    fn ledger(reference: &str, rows: Vec<Known>) -> Referenced {
+        HashMap::from([((account(), reference.to_owned()), rows)])
+    }
+
+    fn refused(result: Result<Vec<bool>, ApiError>) -> String {
+        match result {
+            Err(ApiError::Conflict { reason }) => reason,
+            other => panic!("expected a conflict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_new_reference_is_kept_and_a_line_without_one_has_none_to_keep() {
+        let lines = [line(1, Some("R"), 500, NOV_3), line(2, None, 100, NOV_3)];
+        assert_eq!(
+            references_kept(&lines, &Referenced::new(), WINDOW).unwrap(),
+            [true, false]
+        );
+    }
+
+    #[test]
+    fn a_charge_beside_its_transfer_is_kept_without_the_reference() {
+        let lines = [line(1, Some("R"), 100, NOV_3)];
+        let known = ledger("R", vec![held(50_000, NOV_3, true)]);
+        assert_eq!(references_kept(&lines, &known, WINDOW).unwrap(), [false]);
+    }
+
+    #[test]
+    fn the_same_payment_already_in_the_ledger_is_refused() {
+        let lines = [line(7, Some("R"), 50_000, NOV_3)];
+        let known = ledger("R", vec![held(50_000, NOV_3, true)]);
+        assert!(refused(references_kept(&lines, &known, WINDOW)).contains("line 7"));
+    }
+
+    #[test]
+    fn a_second_copy_of_a_charge_is_refused_in_one_request() {
+        // The transfer is in the ledger; two copies of its charge arrive together.
+        let lines = [
+            line(1, Some("R"), 100, NOV_3),
+            line(2, Some("R"), 100, NOV_3),
+        ];
+        let known = ledger("R", vec![held(50_000, NOV_3, true)]);
+        let reason = refused(references_kept(&lines, &known, WINDOW));
+        assert!(reason.contains("line 1 and line 2"), "{reason}");
+
+        let empty = [
+            line(1, Some("R"), 50_000, NOV_3),
+            line(2, Some("R"), 100, NOV_3),
+            line(3, Some("R"), 100, NOV_3),
+        ];
+        let reason = refused(references_kept(&empty, &Referenced::new(), WINDOW));
+        assert!(reason.contains("line 2 and line 3"), "{reason}");
+    }
+
+    #[test]
+    fn a_charge_accepted_earlier_without_its_reference_is_still_known_by_it() {
+        let lines = [line(4, Some("R"), 100, NOV_3)];
+        let known = ledger(
+            "R",
+            vec![held(50_000, NOV_3, true), held(100, NOV_3, false)],
+        );
+        assert!(refused(references_kept(&lines, &known, WINDOW)).contains("line 4"));
+    }
+
+    #[test]
+    fn the_first_of_two_movements_keeps_the_reference() {
+        let lines = [
+            line(1, Some("R"), 100, NOV_3),
+            line(2, Some("R"), 50_000, NOV_3),
+        ];
+        assert_eq!(
+            references_kept(&lines, &Referenced::new(), WINDOW).unwrap(),
+            [true, false]
+        );
+    }
+
+    #[test]
+    fn a_standing_order_reusing_its_reference_each_month_is_a_new_payment() {
+        let december = datetime!(2026-12-03 09:00 UTC);
+        let known = ledger("MANDATE", vec![held(20_000, NOV_3, true)]);
+        assert_eq!(
+            references_kept(
+                &[line(1, Some("MANDATE"), 20_000, december)],
+                &known,
+                WINDOW
+            )
+            .unwrap(),
+            [false]
+        );
+        let both = [
+            line(1, Some("MANDATE"), 20_000, NOV_3),
+            line(2, Some("MANDATE"), 20_000, december),
+        ];
+        assert_eq!(
+            references_kept(&both, &Referenced::new(), WINDOW).unwrap(),
+            [true, false]
+        );
+    }
+
+    #[test]
+    fn a_merchant_filed_twice_is_learned_once_the_last_way() {
+        let first = CategoryId::from(Uuid::from_u128(10));
+        let last = CategoryId::from(Uuid::from_u128(11));
+        let lesson = |pattern: &str, category_id| Lesson {
+            matched_field: MatchedField::Counterparty,
+            pattern: pattern.to_owned(),
+            category_id,
+        };
+        let learned = distinct_lessons([lesson("Shoprite", first), lesson(" SHOPRITE ", last)]);
+        assert_eq!(learned.len(), 1);
+        assert_eq!(learned[0].category_id, last);
+    }
 }

@@ -134,56 +134,17 @@ pub(crate) async fn insert(
     user: UserId,
     transaction: &Transaction,
 ) -> Result<Transaction, ApiError> {
-    let category = transaction.category_id.map(|id| *id.as_uuid());
-    // Domain parameters are cast through their base types; see the note in `repo::accounts`.
-    let row = client
-        .query_one(
-            &format!(
-                "INSERT INTO transactions (
-                     user_id, id, account_id, direction, amount_minor, currency, booked_at,
-                     category_id, label, counterparty, note, status, source, source_ref,
-                     external_id, created_at, updated_at, device_id
-                 ) VALUES (
-                     $1, $2, $3, $4, $5::bigint::amount_minor, $6::text::currency_code,
-                     $7::timestamptz::ledger_instant,
-                     $8, $9, $10, $11, $12, $13, $14, $15,
-                     $16::timestamptz::ledger_instant, $17::timestamptz::ledger_instant, $18
-                 )
-                 RETURNING {COLUMNS}"
+    // One statement for one row or many, so the column list and its casts exist once.
+    insert_many(client, user, core::slice::from_ref(transaction))
+        .await?
+        .pop()
+        .ok_or_else(|| ApiError::Internal {
+            operation: "insert a transaction",
+            reason: format!(
+                "transaction {} was not returned by its insert",
+                transaction.id
             ),
-            &[
-                user.as_uuid(),
-                transaction.id.as_uuid(),
-                transaction.account_id.as_uuid(),
-                &transaction.direction.as_str(),
-                &transaction.amount.minor(),
-                &transaction.amount.currency().code(),
-                &transaction.booked_at,
-                &category,
-                &transaction.label,
-                &transaction.counterparty,
-                &transaction.note,
-                &transaction.status.as_str(),
-                &transaction.source.as_str(),
-                &transaction.source_ref,
-                &transaction.external_id,
-                &transaction.sync.created_at,
-                &transaction.sync.updated_at,
-                transaction.sync.device_id.as_uuid(),
-            ],
-        )
-        .await
-        .map_err(|error| {
-            if db::violates(&error, EXTERNAL_ID_INDEX) {
-                return ApiError::Conflict {
-                    reason: "a row with the same bank reference is already in this account"
-                        .to_owned(),
-                };
-            }
-            ApiError::database("insert a transaction", &error)
-        })?;
-
-    read(&row)
+        })
 }
 
 /// Writes several validated transactions in one statement, on the caller's client, and
@@ -292,8 +253,8 @@ pub(crate) async fn insert_many(
         .map_err(|error| {
             if db::violates(&error, EXTERNAL_ID_INDEX) {
                 return ApiError::Conflict {
-                    reason: "a payment with the same bank reference was added to one of these \
-                             accounts a moment ago; reload and try again"
+                    reason: "a payment with the same bank reference is already in this \
+                             account; reload and try again"
                         .to_owned(),
                 };
             }

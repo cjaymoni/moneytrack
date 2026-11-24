@@ -559,6 +559,52 @@ async fn a_charge_sharing_its_transfers_reference_is_kept_as_its_own_row_never_m
 }
 
 #[tokio::test]
+async fn a_charge_kept_without_its_reference_is_still_recognised_when_it_comes_again() {
+    let server = signed_in().await;
+    let bank = account(&server, "GHS").await;
+    upload(
+        &server,
+        &bank,
+        "ofx",
+        &ofx_line("TRF-3", "-500.00", "TRANSFER"),
+    )
+    .await;
+    let transfer = inbox(&server).await["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(accept(&server, &transfer, None).await.status(), 200);
+    upload(&server, &bank, "ofx", &ofx_line("TRF-3", "-1.00", "E-LEVY")).await;
+    let charge = inbox(&server).await["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(accept(&server, &charge, None).await.status(), 200);
+
+    // The same charge in a later export, worded differently, so a new line.
+    upload(
+        &server,
+        &bank,
+        "ofx",
+        &ofx_line("TRF-3", "-1.00", "E-LEVY CHARGE"),
+    )
+    .await;
+    let again = inbox(&server).await["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let response = accept(&server, &again, None).await;
+
+    assert_eq!(response.status(), 409);
+    let body: Value = response.json().await.unwrap();
+    assert!(
+        body["message"].as_str().unwrap().contains("E-LEVY CHARGE"),
+        "{body}"
+    );
+    assert_eq!(ledger_rows(&server, &bank).await.len(), 2);
+}
+
+#[tokio::test]
 async fn a_transfer_and_its_charge_accepted_together_are_both_kept() {
     let server = signed_in().await;
     let bank = account(&server, "GHS").await;
