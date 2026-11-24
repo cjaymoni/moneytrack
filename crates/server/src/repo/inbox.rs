@@ -311,14 +311,14 @@ pub async fn accept(
         .iter()
         .filter_map(|d| d.category_id.map(|id| *id.as_uuid()))
         .collect();
-    if !all_live(&transaction, user, LiveTable::Categories, &chosen).await? {
+    if !all_categories_live(&transaction, user, &chosen).await? {
         return Err(ApiError::NotFound { entity: "category" });
     }
     let accounts: Vec<Uuid> = pending
         .values()
         .map(|row| row.account_id().map(|id| *id.as_uuid()))
         .collect::<Result<_, _>>()?;
-    if !all_live(&transaction, user, LiveTable::Accounts, &accounts).await? {
+    if !lock_live_accounts(&transaction, user, &accounts).await? {
         return Err(ApiError::Conflict {
             reason: "the account those lines were for has been closed".to_owned(),
         });
@@ -338,9 +338,9 @@ pub async fn accept(
         });
     }
 
-    // Read without a lock: a concurrent request accepting the same reference between this
-    // check and the insert is caught by the `transactions_external` index, which fails the
-    // whole insert as a conflict and rolls everything back for the person to retry.
+    // The accounts are locked above, so no other accept into them can decide between this
+    // read and the insert. A row typed or merged meanwhile by another route is still caught
+    // by the `transactions_external` index when it carries the reference.
     let known = references_in_ledger(&transaction, user, &lines).await?;
     let movements: Vec<Movement> = lines.iter().map(Movement::of).collect();
     let kept = references_kept(&movements, &known, MatchRules::default().window)?;
@@ -435,13 +435,15 @@ struct Known {
 type Referenced = HashMap<(AccountId, String), Vec<Known>>;
 
 /// The live ledger rows known by a bank reference any of the lines carry, in one query: the
-/// rows holding it, and the rows accepted from earlier lines that carried it.
+/// rows holding it, and the rows that earlier lines carrying it were accepted as or merged
+/// into — a row typed by hand and matched to a statement line is known by that line's
+/// reference from then on.
 async fn references_in_ledger(
     client: &impl GenericClient,
     user: UserId,
     lines: &[Accepting],
 ) -> Result<Referenced, ApiError> {
-    let (accounts, references): (Vec<Uuid>, Vec<&str>) = lines
+    let pairs: HashSet<(Uuid, &str)> = lines
         .iter()
         .filter_map(|line| {
             line.ledger
@@ -449,25 +451,37 @@ async fn references_in_ledger(
                 .as_deref()
                 .map(|reference| (*line.ledger.account_id.as_uuid(), reference))
         })
-        .unzip();
-    if references.is_empty() {
+        .collect();
+    if pairs.is_empty() {
         return Ok(Referenced::new());
     }
+    let (accounts, references): (Vec<Uuid>, Vec<&str>) = pairs.into_iter().unzip();
+    // Two branches rather than one join with an OR, so each can use its own index: the
+    // rows holding a reference through `transactions_external`, and the rows a line carrying
+    // it was accepted as or merged into, through the inbox.
     let rows = client
         .query(
             "SELECT t.id, wanted.account_id, wanted.external_id, t.direction,
                     t.amount_minor::bigint AS amount_minor, t.currency::text AS currency,
-                    t.booked_at::timestamptz AS booked_at,
-                    t.external_id IS NOT DISTINCT FROM wanted.external_id AS holds_reference
+                    t.booked_at::timestamptz AS booked_at, TRUE AS holds_reference
                FROM UNNEST($2::uuid[], $3::text[]) AS wanted(account_id, external_id)
                JOIN transactions t
                  ON t.user_id = $1 AND t.account_id = wanted.account_id
-                AND t.deleted_at IS NULL
-                AND (t.external_id = wanted.external_id
-                     OR EXISTS (SELECT 1 FROM inbox_items i
-                                 WHERE i.user_id = $1 AND i.transaction_id = t.id
-                                   AND i.external_id = wanted.external_id
-                                   AND i.status = 'accepted'))",
+                AND t.external_id = wanted.external_id AND t.deleted_at IS NULL
+             UNION ALL
+             SELECT t.id, wanted.account_id, wanted.external_id, t.direction,
+                    t.amount_minor::bigint, t.currency::text,
+                    t.booked_at::timestamptz,
+                    t.external_id IS NOT DISTINCT FROM wanted.external_id
+               FROM UNNEST($2::uuid[], $3::text[]) AS wanted(account_id, external_id)
+               JOIN inbox_items i
+                 ON i.user_id = $1 AND i.account_id = wanted.account_id
+                AND i.external_id = wanted.external_id
+                AND i.status IN ('accepted', 'merged')
+               JOIN transactions t
+                 ON t.user_id = $1 AND t.deleted_at IS NULL
+                AND t.id = CASE i.status WHEN 'accepted' THEN i.transaction_id
+                                         ELSE i.duplicate_of END",
             &[user.as_uuid(), &accounts, &references],
         )
         .await
@@ -890,42 +904,64 @@ async fn settle(
     Ok(())
 }
 
-/// A table whose rows may be soft-deleted under a request.
-#[derive(Debug, Clone, Copy)]
-enum LiveTable {
-    Categories,
-    Accounts,
+/// Distinct ids, for binding to `ANY($n)` and comparing a count against.
+fn distinct(ids: &[Uuid]) -> Vec<Uuid> {
+    let set: HashSet<&Uuid> = ids.iter().collect();
+    set.into_iter().copied().collect()
 }
 
-/// Whether every id names a live row of this user's in the table.
-async fn all_live(
+/// Whether every id names a live category of this user's.
+async fn all_categories_live(
     client: &impl GenericClient,
     user: UserId,
-    table: LiveTable,
     ids: &[Uuid],
 ) -> Result<bool, ApiError> {
-    let wanted: HashSet<&Uuid> = ids.iter().collect();
+    let wanted = distinct(ids);
     if wanted.is_empty() {
         return Ok(true);
     }
-    // The table name comes from this enum, never from input.
-    let sql = match table {
-        LiveTable::Categories => {
-            "SELECT count(*) FROM categories
-              WHERE user_id = $1 AND id = ANY($2) AND deleted_at IS NULL"
-        }
-        LiveTable::Accounts => {
-            "SELECT count(*) FROM accounts
-              WHERE user_id = $1 AND id = ANY($2) AND deleted_at IS NULL"
-        }
-    };
-    let distinct: Vec<Uuid> = wanted.into_iter().copied().collect();
     let found: i64 = client
-        .query_one(sql, &[user.as_uuid(), &distinct])
+        .query_one(
+            "SELECT count(*) FROM categories
+              WHERE user_id = $1 AND id = ANY($2) AND deleted_at IS NULL",
+            &[user.as_uuid(), &wanted],
+        )
         .await
         .and_then(|row| row.try_get(0))
-        .map_err(|error| ApiError::database("check rows are live", &error))?;
-    Ok(usize::try_from(found).ok() == Some(distinct.len()))
+        .map_err(|error| ApiError::database("check categories are live", &error))?;
+    Ok(usize::try_from(found).ok() == Some(wanted.len()))
+}
+
+/// Locks the accounts lines are going into until the transaction ends, and says whether
+/// every one is live and this user's.
+///
+/// This is what makes accepting safe against a second request for the same account: the
+/// reference check reads the ledger and then decides, and two requests deciding at once
+/// could each drop a reference and each write the same charge — a case the unique index
+/// cannot see, because neither row carries the reference. So accepts into one account take
+/// turns. `FOR NO KEY UPDATE` leaves the foreign-key share lock an ordinary insert takes
+/// alone, so typing a row into the account is not held up; accounts are locked in id order,
+/// after the inbox lines, so two accepts cannot deadlock.
+async fn lock_live_accounts(
+    client: &impl GenericClient,
+    user: UserId,
+    ids: &[Uuid],
+) -> Result<bool, ApiError> {
+    let wanted = distinct(ids);
+    if wanted.is_empty() {
+        return Ok(true);
+    }
+    let rows = client
+        .query(
+            "SELECT id FROM accounts
+              WHERE user_id = $1 AND id = ANY($2) AND deleted_at IS NULL
+              ORDER BY id
+              FOR NO KEY UPDATE",
+            &[user.as_uuid(), &wanted],
+        )
+        .await
+        .map_err(|error| ApiError::database("lock accounts", &error))?;
+    Ok(rows.len() == wanted.len())
 }
 
 /// The ledger row an accepted line becomes.
@@ -1153,6 +1189,40 @@ mod tests {
             references_kept(&both, &Referenced::new(), WINDOW).unwrap(),
             [true, false]
         );
+    }
+
+    #[test]
+    fn the_window_is_inclusive_and_a_second_past_it_is_a_new_payment() {
+        let known = ledger("R", vec![held(100, NOV_3, true)]);
+        let at_edge = [line(1, Some("R"), 100, NOV_3 + WINDOW)];
+        assert!(refused(references_kept(&at_edge, &known, WINDOW)).contains("line 1"));
+        let past = [line(
+            1,
+            Some("R"),
+            100,
+            NOV_3 + WINDOW + Duration::seconds(1),
+        )];
+        assert_eq!(references_kept(&past, &known, WINDOW).unwrap(), [false]);
+    }
+
+    #[test]
+    fn a_refund_under_the_same_reference_is_its_own_movement() {
+        let known = ledger("R", vec![held(100, NOV_3, true)]);
+        let refund = [Movement {
+            direction: Direction::In,
+            ..line(1, Some("R"), 100, NOV_3)
+        }];
+        assert_eq!(references_kept(&refund, &known, WINDOW).unwrap(), [false]);
+    }
+
+    #[test]
+    fn the_same_reference_in_another_account_is_unrelated() {
+        let known = ledger("R", vec![held(100, NOV_3, true)]);
+        let elsewhere = [Movement {
+            account: AccountId::from(Uuid::from_u128(2)),
+            ..line(1, Some("R"), 100, NOV_3)
+        }];
+        assert_eq!(references_kept(&elsewhere, &known, WINDOW).unwrap(), [true]);
     }
 
     #[test]

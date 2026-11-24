@@ -605,6 +605,51 @@ async fn a_charge_kept_without_its_reference_is_still_recognised_when_it_comes_a
 }
 
 #[tokio::test]
+async fn a_line_merged_into_a_typed_row_is_still_known_by_its_reference_later() {
+    let server = signed_in().await;
+    let bank = account(&server, "GHS").await;
+    let typed: Value = server
+        .post(
+            "/transactions",
+            json!({ "account_id": bank, "direction": "out", "amount": "1.00",
+                    "label": "E-levy", "booked_at": "2026-10-03T12:00:00Z" }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    upload(&server, &bank, "ofx", &ofx_line("TRF-4", "-1.00", "E-LEVY")).await;
+    let line = inbox(&server).await["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let merged = server
+        .post(
+            &format!("/inbox/{line}/merge"),
+            json!({ "transaction_id": typed["id"] }),
+        )
+        .await;
+    assert_eq!(merged.status(), 200);
+
+    // A later export words the same charge differently: a new line, the same reference.
+    upload(
+        &server,
+        &bank,
+        "ofx",
+        &ofx_line("TRF-4", "-1.00", "E-LEVY CHARGE"),
+    )
+    .await;
+    let again = inbox(&server).await["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let response = accept(&server, &again, None).await;
+
+    assert_eq!(response.status(), 409);
+    assert_eq!(ledger_rows(&server, &bank).await.len(), 1);
+}
+
+#[tokio::test]
 async fn a_transfer_and_its_charge_accepted_together_are_both_kept() {
     let server = signed_in().await;
     let bank = account(&server, "GHS").await;
@@ -693,7 +738,7 @@ async fn a_full_page_of_lines_is_accepted_in_one_request() {
         ));
     }
     import(&server, &bank, &statement).await;
-    let waiting: Value = server.get("/inbox?limit=500").await.json().await.unwrap();
+    let waiting = inbox(&server).await;
     assert_eq!(waiting["total"], 300);
     let items: Vec<Value> = waiting["items"]
         .as_array()
@@ -710,7 +755,7 @@ async fn a_full_page_of_lines_is_accepted_in_one_request() {
     let written: Value = response.json().await.unwrap();
     // The inbox lists a page at a time; every line on it is written in the one request.
     let accepted = items.len();
-    assert!(accepted >= 200, "{accepted}");
+    assert_eq!(accepted, 200);
     assert_eq!(written["accepted"], accepted);
     assert_eq!(ledger_rows(&server, &bank).await.len(), accepted);
     assert_eq!(inbox(&server).await["total"], 300 - accepted);
