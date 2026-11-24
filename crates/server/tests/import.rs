@@ -646,7 +646,125 @@ async fn a_line_merged_into_a_typed_row_is_still_known_by_its_reference_later() 
     let response = accept(&server, &again, None).await;
 
     assert_eq!(response.status(), 409);
+    let body: Value = response.json().await.unwrap();
+    let message = body["message"].as_str().unwrap();
+    assert!(
+        message.contains("E-levy") && message.contains("reject"),
+        "{body}"
+    );
     assert_eq!(ledger_rows(&server, &bank).await.len(), 1);
+}
+
+/// How long a request is given to show it is waiting on a lock rather than finished.
+const STILL_WAITING: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Holds the account's lock the way accept and merge take it, until the transaction ends.
+async fn hold_account(server: &TestServer, account: &str) -> tokio_postgres::Client {
+    let side = server.side_connection().await;
+    side.batch_execute(&format!(
+        "BEGIN; SELECT 1 FROM accounts WHERE id = '{account}' FOR NO KEY UPDATE;"
+    ))
+    .await
+    .unwrap();
+    side
+}
+
+#[tokio::test]
+async fn accepting_and_merging_wait_for_the_account_and_typing_a_row_does_not() {
+    let server = signed_in().await;
+    let bank = account(&server, "GHS").await;
+    upload(&server, &bank, "ofx", &ofx_line("TRF-6", "-1.00", "E-LEVY")).await;
+    let line = inbox(&server).await["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let side = hold_account(&server, &bank).await;
+
+    // Typing a row only needs the account to exist, and is not held up.
+    let typed = tokio::time::timeout(
+        STILL_WAITING * 10,
+        server.post(
+            "/transactions",
+            json!({ "account_id": bank, "direction": "out", "amount": "5.00", "label": "Kenkey" }),
+        ),
+    )
+    .await
+    .expect("typing a row waited on the account lock");
+    assert_eq!(typed.status(), 200);
+    let kenkey: Value = typed.json().await.unwrap();
+
+    let accepting = accept(&server, &line, None);
+    tokio::pin!(accepting);
+    assert!(
+        tokio::time::timeout(STILL_WAITING, &mut accepting)
+            .await
+            .is_err()
+    );
+    side.batch_execute("COMMIT").await.unwrap();
+    assert_eq!(accepting.await.status(), 200);
+
+    upload(&server, &bank, "ofx", &ofx_line("TRF-8", "-5.00", "KENKEY")).await;
+    let other = inbox(&server).await["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let side = hold_account(&server, &bank).await;
+    let merge_path = format!("/inbox/{other}/merge");
+    let merging = server.post(&merge_path, json!({ "transaction_id": kenkey["id"] }));
+    tokio::pin!(merging);
+    assert!(
+        tokio::time::timeout(STILL_WAITING, &mut merging)
+            .await
+            .is_err()
+    );
+    side.batch_execute("COMMIT").await.unwrap();
+    assert_eq!(merging.await.status(), 200);
+}
+
+#[tokio::test]
+async fn two_copies_of_a_charge_added_at_once_are_written_once() {
+    let server = signed_in().await;
+    let bank = account(&server, "GHS").await;
+    upload(
+        &server,
+        &bank,
+        "ofx",
+        &ofx_line("TRF-2", "-500.00", "TRANSFER"),
+    )
+    .await;
+    let transfer = inbox(&server).await["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(accept(&server, &transfer, None).await.status(), 200);
+    upload(&server, &bank, "ofx", &ofx_line("TRF-2", "-1.00", "E-LEVY")).await;
+    upload(
+        &server,
+        &bank,
+        "ofx",
+        &ofx_line("TRF-2", "-1.00", "E-LEVY CHARGE"),
+    )
+    .await;
+    let waiting = inbox(&server).await;
+    let first = waiting["items"][0]["id"].as_str().unwrap().to_owned();
+    let second = waiting["items"][1]["id"].as_str().unwrap().to_owned();
+
+    // Both requests are in flight before either can decide: the account is held until both
+    // have been sent.
+    let side = hold_account(&server, &bank).await;
+    let one = accept(&server, &first, None);
+    let two = accept(&server, &second, None);
+    let release = async {
+        tokio::time::sleep(STILL_WAITING).await;
+        side.batch_execute("COMMIT").await.unwrap();
+    };
+    let (one, two, ()) = tokio::join!(one, two, release);
+
+    let mut statuses = [one.status().as_u16(), two.status().as_u16()];
+    statuses.sort_unstable();
+    assert_eq!(statuses, [200, 409]);
+    assert_eq!(ledger_rows(&server, &bank).await.len(), 2);
 }
 
 #[tokio::test]

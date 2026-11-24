@@ -144,6 +144,19 @@ impl TestServer {
         handle.abort();
     }
 
+    /// A connection of its own to this server's database, for holding a lock while a request
+    /// runs — to show the request waits for it. Never used to check what the API did.
+    pub async fn side_connection(&self) -> tokio_postgres::Client {
+        let url = swap_database(&admin_url(), &self.database);
+        let (client, connection) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
+            .await
+            .expect("connect to the test database");
+        tokio::spawn(async move {
+            connection.await.ok();
+        });
+        client
+    }
+
     /// A PATCH carrying the CSRF token.
     pub async fn patch(&self, path: &str, body: Value) -> reqwest::Response {
         self.with_token(

@@ -338,9 +338,9 @@ pub async fn accept(
         });
     }
 
-    // The accounts are locked above, so no other accept into them can decide between this
-    // read and the insert. A row typed or merged meanwhile by another route is still caught
-    // by the `transactions_external` index when it carries the reference.
+    // The accounts are locked above, and accepts and merges into one account take turns on
+    // that lock, so nothing can make a row known by one of these references between this
+    // read and the insert. A row typed by hand carries no reference and changes nothing here.
     let known = references_in_ledger(&transaction, user, &lines).await?;
     let movements: Vec<Movement> = lines.iter().map(Movement::of).collect();
     let kept = references_kept(&movements, &known, MatchRules::default().window)?;
@@ -421,11 +421,13 @@ impl Movement {
 }
 
 /// A live ledger row already known by a bank reference.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Known {
     direction: Direction,
     amount: Money,
     booked_at: OffsetDateTime,
+    /// What the row is called, so a refusal can say which one it matched.
+    label: String,
     /// Whether the row carries the reference itself. A row accepted from a line whose
     /// reference had to be dropped is still known by it, through the line it came from.
     holds_reference: bool,
@@ -458,12 +460,13 @@ async fn references_in_ledger(
     let (accounts, references): (Vec<Uuid>, Vec<&str>) = pairs.into_iter().unzip();
     // Two branches rather than one join with an OR, so each can use its own index: the
     // rows holding a reference through `transactions_external`, and the rows a line carrying
-    // it was accepted as or merged into, through the inbox.
+    // it was accepted as or merged into, through the inbox. A row accepted with its
+    // reference comes back from both; every reader asks `any`, so the repeat is harmless.
     let rows = client
         .query(
             "SELECT t.id, wanted.account_id, wanted.external_id, t.direction,
                     t.amount_minor::bigint AS amount_minor, t.currency::text AS currency,
-                    t.booked_at::timestamptz AS booked_at, TRUE AS holds_reference
+                    t.booked_at::timestamptz AS booked_at, t.label, TRUE AS holds_reference
                FROM UNNEST($2::uuid[], $3::text[]) AS wanted(account_id, external_id)
                JOIN transactions t
                  ON t.user_id = $1 AND t.account_id = wanted.account_id
@@ -471,7 +474,7 @@ async fn references_in_ledger(
              UNION ALL
              SELECT t.id, wanted.account_id, wanted.external_id, t.direction,
                     t.amount_minor::bigint, t.currency::text,
-                    t.booked_at::timestamptz,
+                    t.booked_at::timestamptz, t.label,
                     t.external_id IS NOT DISTINCT FROM wanted.external_id
                FROM UNNEST($2::uuid[], $3::text[]) AS wanted(account_id, external_id)
                JOIN inbox_items i
@@ -479,7 +482,8 @@ async fn references_in_ledger(
                 AND i.external_id = wanted.external_id
                 AND i.status IN ('accepted', 'merged')
                JOIN transactions t
-                 ON t.user_id = $1 AND t.deleted_at IS NULL
+                 ON t.user_id = $1 AND t.account_id = wanted.account_id
+                AND t.deleted_at IS NULL
                 AND t.id = CASE i.status WHEN 'accepted' THEN i.transaction_id
                                          ELSE i.duplicate_of END",
             &[user.as_uuid(), &accounts, &references],
@@ -492,6 +496,7 @@ async fn references_in_ledger(
         let currency = reader.currency("currency")?;
         let key = (reader.uuid("account_id")?, reader.text("external_id")?);
         known.entry(key).or_default().push(Known {
+            label: reader.text("label")?,
             direction: reader.variant("direction")?,
             amount: reader.money("amount_minor", currency)?,
             booked_at: reader.instant("booked_at")?,
@@ -546,15 +551,17 @@ fn references_kept(
             .get(&(line.account, reference.to_owned()))
             .map(Vec::as_slice)
             .unwrap_or_default();
-        if held
+        if let Some(row) = held
             .iter()
-            .any(|row| line.same_as(row.direction, row.amount, row.booked_at, window))
+            .find(|row| line.same_as(row.direction, row.amount, row.booked_at, window))
         {
             return Err(ApiError::Conflict {
                 reason: format!(
-                    "{}: a payment with the same bank reference and amount is already in \
-                     this account; mark it as the same payment instead",
-                    line.described
+                    "{} has the same bank reference and amount as \u{201c}{}\u{201d} on {}, \
+                     already in this account. Mark it as the same payment, or reject the line",
+                    line.described,
+                    row.label,
+                    row.booked_at.date()
                 ),
             });
         }
@@ -651,6 +658,15 @@ pub async fn merge(
     let row = pending
         .remove(&item)
         .ok_or(ApiError::NotFound { entity: ENTITY })?;
+    // The account first, as accept takes it: a merge makes the target known by this line's
+    // reference, and an accept deciding on that reference at the same moment must wait for
+    // it rather than miss it. Line, then account, then row — accept never locks an existing
+    // row, so the order cannot cycle with it.
+    if !lock_live_accounts(&transaction, user, &[*row.account_id()?.as_uuid()]).await? {
+        return Err(ApiError::Conflict {
+            reason: "the account that line was for has been closed".to_owned(),
+        });
+    }
     let target = transactions::lock(&transaction, user, into).await?;
 
     if let Some(reason) = why_not_the_same(&row, &target) {
@@ -935,7 +951,8 @@ async fn all_categories_live(
 /// Locks the accounts lines are going into until the transaction ends, and says whether
 /// every one is live and this user's.
 ///
-/// This is what makes accepting safe against a second request for the same account: the
+/// Accept and merge both take it. This is what makes accepting safe against a second request
+/// for the same account: the
 /// reference check reads the ledger and then decides, and two requests deciding at once
 /// could each drop a reference and each write the same charge — a case the unique index
 /// cannot see, because neither row carries the reference. So accepts into one account take
@@ -1085,6 +1102,7 @@ mod tests {
 
     fn held(minor: i64, at: OffsetDateTime, holds_reference: bool) -> Known {
         Known {
+            label: "Transfer".to_owned(),
             direction: Direction::Out,
             amount: ghs(minor),
             booked_at: at,
