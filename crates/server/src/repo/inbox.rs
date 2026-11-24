@@ -9,8 +9,8 @@
 use std::collections::{HashMap, HashSet};
 
 use deadpool_postgres::{GenericClient, Pool};
-use mt_core::categorise;
-use mt_core::enums::{InboxSource, InboxStatus, TxSource, TxStatus};
+use mt_core::categorise::{self, Lesson};
+use mt_core::enums::{Direction, InboxSource, InboxStatus, MatchedField, TxSource, TxStatus};
 use mt_core::ids::{AccountId, CategoryId, DeviceId, InboxItemId, TxId, UserId};
 use mt_core::ingest::Staged;
 use mt_core::model::{Candidate, SyncMeta, Transaction};
@@ -324,20 +324,30 @@ pub async fn accept(
     }
 
     let now = OffsetDateTime::now_utc();
-    let mut written = Vec::with_capacity(decisions.len());
+    let mut lines = Vec::with_capacity(decisions.len());
     for decision in decisions {
         let row = pending
             .remove(&decision.item)
             .ok_or(ApiError::NotFound { entity: ENTITY })?;
-        let ledger_row = ledger_row(&row, decision.category_id, device, now)?;
-        let saved = transactions::insert(&transaction, user, &ledger_row)
-            .await
-            .map_err(|error| about_line(error, &row))?;
-        settle(&transaction, user, row.id, Settled::Accepted(saved.id), now).await?;
-        if let Some(lesson) = categorise::lesson(&row.candidate, decision.category_id) {
-            rules::learn(&transaction, user, device, &lesson).await?;
-        }
-        written.push(saved);
+        let ledger = ledger_row(&row, decision.category_id, device, now)?;
+        lines.push(Accepting {
+            row,
+            ledger,
+            category_id: decision.category_id,
+        });
+    }
+
+    let known = references_in_ledger(&transaction, user, &lines).await?;
+    keep_references_apart(&mut lines, &known)?;
+
+    let ledger_rows: Vec<Transaction> = lines.iter().map(|line| line.ledger.clone()).collect();
+    let written = transactions::insert_many(&transaction, user, &ledger_rows).await?;
+    settle_accepted(&transaction, user, &lines, now).await?;
+    let lessons = lines
+        .iter()
+        .filter_map(|line| categorise::lesson(&line.row.candidate, line.category_id));
+    for lesson in distinct_lessons(lessons) {
+        rules::learn(&transaction, user, device, &lesson).await?;
     }
 
     transaction
@@ -347,10 +357,173 @@ pub async fn accept(
     Ok(written)
 }
 
+/// A line being accepted: the line, the row it becomes, and where the person filed it.
+struct Accepting {
+    row: InboxRow,
+    ledger: Transaction,
+    category_id: Option<CategoryId>,
+}
+
+/// What an account already holds under a bank reference: the way it moved and how much.
+type Referenced = HashMap<(AccountId, String), (Direction, Money)>;
+
+/// The live ledger rows sharing a bank reference with any of the lines, in one query.
+async fn references_in_ledger(
+    client: &impl GenericClient,
+    user: UserId,
+    lines: &[Accepting],
+) -> Result<Referenced, ApiError> {
+    let (accounts, references): (Vec<Uuid>, Vec<&str>) = lines
+        .iter()
+        .filter_map(|line| {
+            line.ledger
+                .external_id
+                .as_deref()
+                .map(|reference| (*line.ledger.account_id.as_uuid(), reference))
+        })
+        .unzip();
+    if references.is_empty() {
+        return Ok(Referenced::new());
+    }
+    let rows = client
+        .query(
+            "SELECT t.id, t.account_id, t.external_id, t.direction,
+                    t.amount_minor::bigint AS amount_minor, t.currency::text AS currency
+               FROM transactions t
+               JOIN UNNEST($2::uuid[], $3::text[]) AS wanted(account_id, external_id)
+                 ON t.account_id = wanted.account_id AND t.external_id = wanted.external_id
+              WHERE t.user_id = $1 AND t.deleted_at IS NULL",
+            &[user.as_uuid(), &accounts, &references],
+        )
+        .await
+        .map_err(|error| ApiError::database("look up bank references", &error))?;
+    rows.iter()
+        .map(|row| {
+            let reader = Reader::new("transaction", row)?;
+            let currency = reader.currency("currency")?;
+            Ok((
+                (reader.uuid("account_id")?, reader.text("external_id")?),
+                (
+                    reader.variant("direction")?,
+                    reader.money("amount_minor", currency)?,
+                ),
+            ))
+        })
+        .collect()
+}
+
+/// Settles which lines keep their bank reference, before anything is written.
+///
+/// An account holds a reference once. A line whose reference the account already holds for
+/// the same movement — same way, same amount — is that row arriving again, and is refused
+/// with a pointer to "Same payment". A line whose reference names a *different* movement is
+/// the case banks create by reusing one reference for a transfer and the charge on it: the
+/// line is kept as a row of its own, without the reference, rather than refused or folded
+/// into the other. Its fingerprint still keeps the same line out of a later upload. Lines
+/// within the request are held to the same rule against each other, in the order given.
+///
+/// # Errors
+/// [`ApiError::Conflict`] naming the line that is already in the ledger, or in the request.
+fn keep_references_apart(lines: &mut [Accepting], known: &Referenced) -> Result<(), ApiError> {
+    let mut claimed: HashMap<(AccountId, String), (Direction, Money, u32)> = HashMap::new();
+    for line in lines.iter_mut() {
+        let Some(reference) = line.ledger.external_id.clone() else {
+            continue;
+        };
+        let key = (line.ledger.account_id, reference);
+        let movement = (line.ledger.direction, line.ledger.amount);
+        if let Some(held) = known.get(&key) {
+            if *held == movement {
+                return Err(ApiError::Conflict {
+                    reason: format!(
+                        "line {}: a payment with the same bank reference and amount is already \
+                         in this account; mark it as the same payment instead",
+                        line.row.line_no
+                    ),
+                });
+            }
+            line.ledger.external_id = None;
+            continue;
+        }
+        if let Some((direction, amount, first)) = claimed.get(&key) {
+            if (*direction, *amount) == movement {
+                return Err(ApiError::Conflict {
+                    reason: format!(
+                        "lines {first} and {} have the same bank reference and amount, so \
+                         they are one payment; add one and mark the other as the same payment",
+                        line.row.line_no
+                    ),
+                });
+            }
+            line.ledger.external_id = None;
+            continue;
+        }
+        claimed.insert(key, (movement.0, movement.1, line.row.line_no));
+    }
+    Ok(())
+}
+
+/// Marks every accepted line settled, pointing at the row it became, in one statement.
+async fn settle_accepted(
+    client: &impl GenericClient,
+    user: UserId,
+    lines: &[Accepting],
+    now: OffsetDateTime,
+) -> Result<(), ApiError> {
+    let items: Vec<Uuid> = lines.iter().map(|line| *line.row.id.as_uuid()).collect();
+    let rows: Vec<Uuid> = lines.iter().map(|line| *line.ledger.id.as_uuid()).collect();
+    let settled = client
+        .execute(
+            "UPDATE inbox_items
+                SET status = 'accepted', transaction_id = settled.transaction_id,
+                    duplicate_of = NULL,
+                    updated_at = greatest($4::timestamptz, created_at::timestamptz)
+                                 ::ledger_instant
+               FROM UNNEST($2::uuid[], $3::uuid[]) AS settled(id, transaction_id)
+              WHERE inbox_items.user_id = $1 AND inbox_items.id = settled.id",
+            &[user.as_uuid(), &items, &rows, &now],
+        )
+        .await
+        .map_err(|error| ApiError::database("settle accepted lines", &error))?;
+    if usize::try_from(settled).ok() != Some(lines.len()) {
+        return Err(ApiError::Internal {
+            operation: "settle accepted lines",
+            reason: format!("settled {settled} of {} locked lines", lines.len()),
+        });
+    }
+    Ok(())
+}
+
+/// One lesson per merchant, the last choice winning, in the order first seen.
+///
+/// A request that files the same merchant twice, two different ways, means the later answer;
+/// writing both would leave the earlier as a rule nobody chose last.
+fn distinct_lessons(lessons: impl IntoIterator<Item = Lesson>) -> Vec<Lesson> {
+    let mut order: Vec<Lesson> = Vec::new();
+    let mut at: HashMap<(MatchedField, String), usize> = HashMap::new();
+    for lesson in lessons {
+        let key = (lesson.matched_field, lesson.pattern.trim().to_lowercase());
+        match at.get(&key) {
+            Some(&index) => {
+                if let Some(slot) = order.get_mut(index) {
+                    *slot = lesson;
+                }
+            }
+            None => {
+                at.insert(key, order.len());
+                order.push(lesson);
+            }
+        }
+    }
+    order
+}
+
 /// Settles a line as the same event as a row already in the ledger.
 ///
 /// The row must be one the line could be: in the same account, moving money the same way,
-/// and either for the same amount or carrying the same bank reference. And it must not have
+/// for the same amount. A shared bank reference is not enough on its own — banks reuse one
+/// reference for a transfer and the charge levied on it, and merging the charge into the
+/// transfer would lose it — which is the rule `mt_core::dedup` applies too. And it must not have
 /// been claimed already by another line of the same statement — two identical fares on one
 /// statement are two fares, and merging both into one typed fare would lose one of them.
 ///
@@ -434,8 +607,7 @@ fn why_not_the_same(row: &InboxRow, target: &Transaction) -> Option<&'static str
     if line.direction != target.direction {
         return Some("that row moves money the other way");
     }
-    let same_reference = line.external_id.is_some() && line.external_id == target.external_id;
-    if line.amount != target.amount && !same_reference {
+    if line.amount != target.amount {
         return Some("that row is for a different amount");
     }
     None
@@ -592,10 +764,9 @@ async fn lock_pending(
     Ok(pending)
 }
 
-/// How a line was settled.
+/// How a line was settled one at a time. Accepting settles in bulk; see [`settle_accepted`].
 #[derive(Debug, Clone, Copy)]
 enum Settled {
-    Accepted(TxId),
     Merged(TxId),
     Rejected,
 }
@@ -608,23 +779,21 @@ async fn settle(
     settled: Settled,
     now: OffsetDateTime,
 ) -> Result<(), ApiError> {
-    let (status, transaction_id, duplicate_of) = match settled {
-        Settled::Accepted(id) => (InboxStatus::Accepted, Some(*id.as_uuid()), None),
-        Settled::Merged(id) => (InboxStatus::Merged, None, Some(*id.as_uuid())),
-        Settled::Rejected => (InboxStatus::Rejected, None, None),
+    let (status, duplicate_of) = match settled {
+        Settled::Merged(id) => (InboxStatus::Merged, Some(*id.as_uuid())),
+        Settled::Rejected => (InboxStatus::Rejected, None),
     };
     client
         .execute(
             "UPDATE inbox_items
-                SET status = $3, transaction_id = $4, duplicate_of = $5,
-                    updated_at = greatest($6::timestamptz, created_at::timestamptz)
+                SET status = $3, transaction_id = NULL, duplicate_of = $4,
+                    updated_at = greatest($5::timestamptz, created_at::timestamptz)
                                  ::ledger_instant
               WHERE user_id = $1 AND id = $2",
             &[
                 user.as_uuid(),
                 item.as_uuid(),
                 &status.as_str(),
-                &transaction_id,
                 &duplicate_of,
                 &now,
             ],
@@ -729,19 +898,6 @@ fn ledger_row(
             reason: format!("inbox item {}: {reason}", row.id),
         })?;
     Ok(transaction)
-}
-
-/// Says which line a conflict was about, so the person can find it.
-fn about_line(error: ApiError, row: &InboxRow) -> ApiError {
-    match error {
-        ApiError::Conflict { reason } => ApiError::Conflict {
-            reason: format!(
-                "line {}: {reason}; merge it with that row instead",
-                row.line_no
-            ),
-        },
-        other => other,
-    }
 }
 
 /// Reads one row.

@@ -549,9 +549,9 @@ pub struct Lesson {
 ///
 /// Only a counterparty is learned from, and only one that names someone: not a copy of the
 /// label, not a word like "transfer", not shorter than [`MIN_LEARNED_PATTERN_LEN`]. A
-/// merchant's name is a stable thing to match a substring against; a statement description is not — "POS PURCHASE 0412 03/11" carries a
-/// terminal and a date, and a label as generic as "Transfer" would capture every transfer
-/// that followed. Rung 3 already files a repeat of the exact same label the way the person
+/// merchant's name is a stable thing to match a substring against; a statement description
+/// is not — "POS PURCHASE 0412 03/11" carries a terminal and a date, and a label as generic
+/// as "Transfer" would capture every transfer that followed. Rung 3 already files a repeat of the exact same label the way the person
 /// last filed it, so leaving labels to it loses nothing.
 #[must_use]
 pub fn lesson(candidate: &Candidate, chosen: Option<CategoryId>) -> Option<Lesson> {

@@ -1,5 +1,7 @@
 //! Transactions: the rows everything else is derived from. Every query is scoped to one user.
 
+use std::collections::HashMap;
+
 use deadpool_postgres::{GenericClient, Pool};
 use mt_core::enums::{Direction, TxSource, TxStatus};
 use mt_core::ids::{AccountId, CategoryId, DeviceId, TxId, UserId};
@@ -182,6 +184,136 @@ pub(crate) async fn insert(
         })?;
 
     read(&row)
+}
+
+/// Writes several validated transactions in one statement, on the caller's client, and
+/// returns them in the order given.
+///
+/// As [`insert`], the caller has already read each account and category under this user's
+/// id and settled which rows keep a bank reference; the composite foreign keys and the
+/// reference index are the backstop.
+///
+/// # Errors
+/// [`ApiError::Conflict`] if a bank reference was written to one of the accounts by another
+/// request since the caller checked, or [`ApiError::Internal`].
+pub(crate) async fn insert_many(
+    client: &impl GenericClient,
+    user: UserId,
+    transactions: &[Transaction],
+) -> Result<Vec<Transaction>, ApiError> {
+    if transactions.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids: Vec<Uuid> = transactions.iter().map(|t| *t.id.as_uuid()).collect();
+    let accounts: Vec<Uuid> = transactions
+        .iter()
+        .map(|t| *t.account_id.as_uuid())
+        .collect();
+    let directions: Vec<&str> = transactions.iter().map(|t| t.direction.as_str()).collect();
+    let amounts: Vec<i64> = transactions.iter().map(|t| t.amount.minor()).collect();
+    let currencies: Vec<String> = transactions
+        .iter()
+        .map(|t| t.amount.currency().code().to_owned())
+        .collect();
+    let booked: Vec<OffsetDateTime> = transactions.iter().map(|t| t.booked_at).collect();
+    let categories: Vec<Option<Uuid>> = transactions
+        .iter()
+        .map(|t| t.category_id.map(|id| *id.as_uuid()))
+        .collect();
+    let labels: Vec<&str> = transactions.iter().map(|t| t.label.as_str()).collect();
+    let counterparties: Vec<Option<&str>> = transactions
+        .iter()
+        .map(|t| t.counterparty.as_deref())
+        .collect();
+    let notes: Vec<Option<&str>> = transactions.iter().map(|t| t.note.as_deref()).collect();
+    let statuses: Vec<&str> = transactions.iter().map(|t| t.status.as_str()).collect();
+    let sources: Vec<&str> = transactions.iter().map(|t| t.source.as_str()).collect();
+    let source_refs: Vec<Option<&str>> = transactions
+        .iter()
+        .map(|t| t.source_ref.as_deref())
+        .collect();
+    let external_ids: Vec<Option<&str>> = transactions
+        .iter()
+        .map(|t| t.external_id.as_deref())
+        .collect();
+    let created: Vec<OffsetDateTime> = transactions.iter().map(|t| t.sync.created_at).collect();
+    let updated: Vec<OffsetDateTime> = transactions.iter().map(|t| t.sync.updated_at).collect();
+    let devices: Vec<Uuid> = transactions
+        .iter()
+        .map(|t| *t.sync.device_id.as_uuid())
+        .collect();
+
+    // Domain parameters are cast through their base types; see the note in `repo::accounts`.
+    let rows = client
+        .query(
+            &format!(
+                "INSERT INTO transactions (
+                     user_id, id, account_id, direction, amount_minor, currency, booked_at,
+                     category_id, label, counterparty, note, status, source, source_ref,
+                     external_id, created_at, updated_at, device_id
+                 )
+                 SELECT $1, row.id, row.account_id, row.direction, row.amount::amount_minor,
+                        row.currency::currency_code, row.booked_at::ledger_instant,
+                        row.category_id, row.label, row.counterparty, row.note, row.status,
+                        row.source, row.source_ref, row.external_id,
+                        row.created_at::ledger_instant, row.updated_at::ledger_instant,
+                        row.device_id
+                   FROM UNNEST($2::uuid[], $3::uuid[], $4::text[], $5::bigint[], $6::text[],
+                               $7::timestamptz[], $8::uuid[], $9::text[], $10::text[],
+                               $11::text[], $12::text[], $13::text[], $14::text[], $15::text[],
+                               $16::timestamptz[], $17::timestamptz[], $18::uuid[])
+                        AS row(id, account_id, direction, amount, currency, booked_at,
+                               category_id, label, counterparty, note, status, source,
+                               source_ref, external_id, created_at, updated_at, device_id)
+                 RETURNING {COLUMNS}"
+            ),
+            &[
+                user.as_uuid(),
+                &ids,
+                &accounts,
+                &directions,
+                &amounts,
+                &currencies,
+                &booked,
+                &categories,
+                &labels,
+                &counterparties,
+                &notes,
+                &statuses,
+                &sources,
+                &source_refs,
+                &external_ids,
+                &created,
+                &updated,
+                &devices,
+            ],
+        )
+        .await
+        .map_err(|error| {
+            if db::violates(&error, EXTERNAL_ID_INDEX) {
+                return ApiError::Conflict {
+                    reason: "a payment with the same bank reference was added to one of these \
+                             accounts a moment ago; reload and try again"
+                        .to_owned(),
+                };
+            }
+            ApiError::database("insert transactions", &error)
+        })?;
+
+    // RETURNING promises no order, so the rows are put back in the order they were given.
+    let mut by_id: HashMap<TxId, Transaction> = rows
+        .iter()
+        .map(|row| read(row).map(|saved| (saved.id, saved)))
+        .collect::<Result<_, _>>()?;
+    transactions
+        .iter()
+        .map(|wanted| {
+            by_id.remove(&wanted.id).ok_or_else(|| ApiError::Internal {
+                operation: "insert transactions",
+                reason: format!("transaction {} was not returned by its insert", wanted.id),
+            })
+        })
+        .collect()
 }
 
 /// Every live row in one of this user's accounts, oldest first.

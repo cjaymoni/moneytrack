@@ -487,7 +487,228 @@ async fn the_banks_own_reference_is_a_certain_match_and_cannot_be_accepted_twice
 
     let response = accept(&server, again["id"].as_str().unwrap(), None).await;
     assert_eq!(response.status(), 409);
+    let body: Value = response.json().await.unwrap();
+    assert!(
+        body["message"].as_str().unwrap().contains("same payment"),
+        "{body}"
+    );
     assert_eq!(ledger_rows(&server, &bank).await.len(), 1);
+}
+
+/// One OFX statement line with a bank reference.
+fn ofx_line(fitid: &str, amount: &str, name: &str) -> String {
+    format!(
+        "<OFX><STMTRS><CURDEF>GHS<BANKTRANLIST>\
+         <STMTTRN><DTPOSTED>20261003<TRNAMT>{amount}<FITID>{fitid}<NAME>{name}\
+         </BANKTRANLIST></STMTRS></OFX>"
+    )
+}
+
+#[tokio::test]
+async fn a_charge_sharing_its_transfers_reference_is_kept_as_its_own_row_never_merged_away() {
+    let server = signed_in().await;
+    let bank = account(&server, "GHS").await;
+    let transfer = ofx_line("TRF-9", "-500.00", "TRANSFER TO KOFI");
+    let levy = ofx_line("TRF-9", "-1.00", "TRANSFER TO KOFI");
+    assert_eq!(upload(&server, &bank, "ofx", &transfer).await.status(), 200);
+    let first = inbox(&server).await["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(accept(&server, &first, None).await.status(), 200);
+    let sent = ledger_rows(&server, &bank).await[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // A later statement carries the charge, under the transfer's reference.
+    assert_eq!(upload(&server, &bank, "ofx", &levy).await.status(), 200);
+    let charge = inbox(&server).await["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let merged = server
+        .post(
+            &format!("/inbox/{charge}/merge"),
+            json!({ "transaction_id": sent }),
+        )
+        .await;
+    assert_eq!(merged.status(), 409);
+    let body: Value = merged.json().await.unwrap();
+    assert!(
+        body["message"]
+            .as_str()
+            .unwrap()
+            .contains("different amount"),
+        "{body}"
+    );
+
+    assert_eq!(accept(&server, &charge, None).await.status(), 200);
+    let rows = ledger_rows(&server, &bank).await;
+    let mut amounts: Vec<&str> = rows
+        .iter()
+        .map(|row| row["amount"]["display"].as_str().unwrap())
+        .collect();
+    amounts.sort_unstable();
+    assert_eq!(amounts, ["1.00", "500.00"]);
+
+    // The charge's statement again offers nothing: its fingerprint still knows the line.
+    assert_eq!(upload(&server, &bank, "ofx", &levy).await.status(), 200);
+    assert_eq!(inbox(&server).await["total"], 0);
+}
+
+#[tokio::test]
+async fn a_transfer_and_its_charge_accepted_together_are_both_kept() {
+    let server = signed_in().await;
+    let bank = account(&server, "GHS").await;
+    upload(
+        &server,
+        &bank,
+        "ofx",
+        &ofx_line("TRF-7", "-500.00", "TRANSFER"),
+    )
+    .await;
+    upload(
+        &server,
+        &bank,
+        "ofx",
+        &ofx_line("TRF-7", "-1.00", "TRANSFER"),
+    )
+    .await;
+    let waiting = inbox(&server).await;
+    let items: Vec<Value> = waiting["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| json!({ "id": item["id"] }))
+        .collect();
+    assert_eq!(items.len(), 2);
+
+    let response = server
+        .post("/inbox/accept", json!({ "items": items }))
+        .await;
+
+    assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+    assert_eq!(ledger_rows(&server, &bank).await.len(), 2);
+}
+
+#[tokio::test]
+async fn the_same_payment_twice_in_one_request_is_refused_and_writes_nothing() {
+    let server = signed_in().await;
+    let bank = account(&server, "GHS").await;
+    // One movement, exported twice with different wording: two lines, one reference.
+    upload(
+        &server,
+        &bank,
+        "ofx",
+        &ofx_line("REF-5", "-20.00", "SHOPRITE"),
+    )
+    .await;
+    upload(
+        &server,
+        &bank,
+        "ofx",
+        &ofx_line("REF-5", "-20.00", "SHOPRITE OSU"),
+    )
+    .await;
+    let waiting = inbox(&server).await;
+    let items: Vec<Value> = waiting["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| json!({ "id": item["id"] }))
+        .collect();
+
+    let response = server
+        .post("/inbox/accept", json!({ "items": items }))
+        .await;
+
+    assert_eq!(response.status(), 409);
+    let body: Value = response.json().await.unwrap();
+    assert!(
+        body["message"].as_str().unwrap().contains("one payment"),
+        "{body}"
+    );
+    assert!(ledger_rows(&server, &bank).await.is_empty());
+    assert_eq!(inbox(&server).await["total"], 2);
+}
+
+#[tokio::test]
+async fn a_full_page_of_lines_is_accepted_in_one_request() {
+    let server = signed_in().await;
+    let bank = account(&server, "GHS").await;
+    let mut statement = String::from("Date,Description,Amount,Payee\n");
+    for day in 0..300 {
+        statement.push_str(&format!(
+            "{:02}/10/2026,FARE {day},-{}.00,TROTRO\n",
+            day % 28 + 1,
+            day + 1
+        ));
+    }
+    import(&server, &bank, &statement).await;
+    let waiting: Value = server.get("/inbox?limit=500").await.json().await.unwrap();
+    assert_eq!(waiting["total"], 300);
+    let items: Vec<Value> = waiting["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| json!({ "id": item["id"] }))
+        .collect();
+
+    let response = server
+        .post("/inbox/accept", json!({ "items": items }))
+        .await;
+
+    assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+    let written: Value = response.json().await.unwrap();
+    // The inbox lists a page at a time; every line on it is written in the one request.
+    let accepted = items.len();
+    assert!(accepted >= 200, "{accepted}");
+    assert_eq!(written["accepted"], accepted);
+    assert_eq!(ledger_rows(&server, &bank).await.len(), accepted);
+    assert_eq!(inbox(&server).await["total"], 300 - accepted);
+}
+
+#[tokio::test]
+async fn a_merchant_filed_two_ways_in_one_request_is_learned_the_last_way() {
+    let server = signed_in().await;
+    let bank = account(&server, "GHS").await;
+    import(
+        &server,
+        &bank,
+        "Date,Description,Amount,Payee\n\
+         03/10/2026,CARD 1,-30.00,Shoprite\n\
+         04/10/2026,CARD 2,-40.00,SHOPRITE\n",
+    )
+    .await;
+    let eating_out = category(&server, "Eating out").await;
+    let groceries = category(&server, "Food & groceries").await;
+    let waiting = inbox(&server).await;
+    let first = item(&waiting, "CARD 1")["id"].clone();
+    let second = item(&waiting, "CARD 2")["id"].clone();
+
+    let response = server
+        .post(
+            "/inbox/accept",
+            json!({ "items": [
+                { "id": first, "category_id": eating_out },
+                { "id": second, "category_id": groceries },
+            ] }),
+        )
+        .await;
+    assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+
+    import(
+        &server,
+        &bank,
+        "Date,Description,Amount,Payee\n09/10/2026,CARD 3,-25.00,Shoprite Osu\n",
+    )
+    .await;
+    assert_eq!(
+        item(&inbox(&server).await, "CARD 3")["category_id"],
+        groceries.as_str()
+    );
 }
 
 #[tokio::test]
