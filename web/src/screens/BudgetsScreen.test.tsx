@@ -100,16 +100,16 @@ describe("BudgetsScreen", () => {
     const list = await screen.findByRole("list", { name: "Budgets" });
     const [food, transport] = within(list).getAllByRole("listitem") as [HTMLElement, HTMLElement];
     expect(within(food).getByText("Over by 46.00")).toBeTruthy();
-    expect(within(food).getByText(/123% of a month's cap/)).toBeTruthy();
+    expect(within(food).getByText(/123% of the limit used/)).toBeTruthy();
     expect(within(transport).getByText(/70\.00 left/)).toBeTruthy();
     // Fine now, and the expected rows say what they will do.
-    expect(within(transport).getByText(/Expected rows this period take it to 90\.00 \(90%\) — nearly there/)).toBeTruthy();
+    expect(within(transport).getByText(/Planned payments this period take it to 90\.00 \(90%\) — close to the limit/)).toBeTruthy();
   });
 
   it("keeps ended caps apart, so history is not mistaken for a running cap", async () => {
     renderWithClient(<BudgetsScreen />);
 
-    const earlier = await screen.findByRole("region", { name: "Earlier caps" });
+    const earlier = await screen.findByRole("region", { name: "Earlier budgets" });
     expect(within(earlier).getByText(/150\.00 GHS a month, until/)).toBeTruthy();
   });
 
@@ -117,8 +117,8 @@ describe("BudgetsScreen", () => {
     const user = userEvent.setup();
     renderWithClient(<BudgetsScreen />);
 
-    await user.type(await screen.findByLabelText("Cap"), "500");
-    await user.click(screen.getByRole("button", { name: "Set cap" }));
+    await user.type(await screen.findByLabelText("Limit"), "500");
+    await user.click(screen.getByRole("button", { name: "Set budget" }));
 
     await waitFor(() => expect(calls.some((call) => call.method === "POST" && call.url === "/api/budgets")).toBe(true));
     const sent = calls.find((call) => call.method === "POST" && call.url === "/api/budgets");

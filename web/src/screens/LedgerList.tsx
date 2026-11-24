@@ -54,24 +54,24 @@ export function LedgerList({
   if (entries.length === 0) {
     return (
       <div className="ledger ledger--empty">
-        <p className="ledger__empty-title">Nothing recorded yet.</p>
+        <p className="ledger__empty-title">No transactions yet.</p>
         <p className="ledger__empty-copy">
-          Opened with {balance(opening)} {currency}. The first row you record will appear
-          here, with what the account held after it.
+          Starting balance {balance(opening)} {currency}. Transactions you add will show here,
+          each with the balance after it.
         </p>
       </div>
     );
   }
 
   return (
-    <section className="ledger" aria-label="Ledger">
+    <section className="ledger" aria-label="Transactions">
       <div className="ledger__head" aria-hidden="true">
         <span />
-        <span className="mt-micro">Row</span>
-        <span className="mt-micro ledger__head-num">Amount · then held</span>
+        <span className="mt-micro">Transaction</span>
+        <span className="mt-micro ledger__head-num">Amount · balance after</span>
       </div>
       <p className="ledger__opening">
-        <span className="mt-micro">Opened with</span>
+        <span className="mt-micro">Starting balance</span>
         <span className="ledger__opening-fig">{balance(opening)}</span>
       </p>
       <ol className="ledger__rows">
@@ -105,8 +105,8 @@ export function LedgerList({
       )}
       {beyond > 0 && (
         <p className="ledger__beyond field__help">
-          {beyond} more expected {beyond === 1 ? "row" : "rows"} after the next {AHEAD_DAYS} days.{" "}
-          <Link to="/outlook?days=180">See them in the outlook</Link>
+          {beyond} more planned {beyond === 1 ? "transaction" : "transactions"} after the next {AHEAD_DAYS} days.{" "}
+          <Link to="/outlook?days=180">See them in the forecast</Link>
         </p>
       )}
     </section>
@@ -154,7 +154,7 @@ function Row({
           onClick={() => setOpen(editing ? "none" : "edit")}
         >
           {transaction.label}
-          <span className="visually-hidden">, change this row</span>
+          <span className="visually-hidden">, edit</span>
         </button>
         <div className="sub">
           {transaction.counterparty && (
@@ -171,7 +171,7 @@ function Row({
             onClick={() => setOpen(filing ? "none" : "file")}
           >
             <span className="visually-hidden">Category: </span>
-            {category ? fullName(category, categories) : "Uncategorised"}
+            {category ? fullName(category, categories) : "No category"}
           </button>
           {transaction.recurring_id && (
             <>
@@ -180,7 +180,7 @@ function Row({
             </>
           )}
           {pending && <span aria-hidden="true"> · </span>}
-          {pending && <span>expected</span>}
+          {pending && <span>planned</span>}
           <Verification source={transaction.source} pending={pending} />
           {pending && due && (
             <button
@@ -205,7 +205,7 @@ function Row({
                 })
               }
             >
-              {confirm.isPending ? "Confirming" : "It happened"}
+              {confirm.isPending ? "Saving" : transaction.direction === "in" ? "Mark as received" : "Mark as paid"}
             </button>
           )}
         </div>
@@ -215,7 +215,7 @@ function Row({
           {signed(transaction.amount, transaction.direction)}
         </div>
         <div className={isNegative(balance_after) ? "after short" : "after"}>
-          <span className="visually-hidden">then held </span>
+          <span className="visually-hidden">balance after </span>
           {balance(balance_after)}
         </div>
       </div>
@@ -257,18 +257,18 @@ function Row({
 }
 
 /**
- * How the row got here. Every settled row says: a hand-entered one with the by-hand mark.
- * A row nobody has settled yet — an expected one — carries no mark until it happens.
- *
- * Parsed rows and their stamp arrive with import and SMS; this client has only rows a person
- * typed, and says so.
+ * How the row got here. Every settled row says: a hand-entered one with the by-hand mark, a
+ * parsed one a person checked in the inbox with the stamp. A row nobody has settled yet —
+ * an expected one — carries no mark until it happens.
  */
 function Verification({ source, pending }: { source: string; pending: boolean }) {
   if (pending) return null;
   if (source === "manual") return <span className="mt-byhand">By hand</span>;
+  // Read off a statement by the parser and accepted by a person: that check is the stamp.
+  if (source === "csv" || source === "ofx") return <span className="mt-stamp">Imported</span>;
   // A correction to a count is a person's act too, so it wears the by-hand register; it says
   // "Counted" because that is what the person did, and why the row exists.
-  if (source === "adjustment") return <span className="mt-byhand">Counted</span>;
+  if (source === "adjustment") return <span className="mt-byhand">Adjustment</span>;
   // Written by a series and then confirmed by a person: the confirming is the human act.
   if (source === "recurring") return <span className="mt-byhand">Confirmed</span>;
   return null;

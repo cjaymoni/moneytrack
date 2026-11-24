@@ -127,6 +127,57 @@ export interface Breakdown {
   net: Money;
 }
 
+/** One month's money in and out, and where each sits on its trend's scale. */
+export interface TrendMonth {
+  /** `YYYY-MM`. */
+  month: string;
+  starts_on: string;
+  ends_on: string;
+  income: Money;
+  /** Positive: money that left. */
+  spending: Money;
+  net: Money;
+  /** Height on the trend's scale, 0 to 10 000, worked out by `mt-core`. For drawing only. */
+  income_level_bps: number;
+  spending_level_bps: number;
+}
+
+/** A gridline on a trend's scale. */
+export interface Tick {
+  amount: Money;
+  level_bps: number;
+}
+
+/** Several months in one currency, on one scale. Never converted into another currency. */
+export interface Trend {
+  currency: string;
+  /** Oldest first. */
+  months: TrendMonth[];
+  /** From zero up to the top of the scale. */
+  ticks: Tick[];
+}
+
+/** What left on one date, and its height on the month's scale. */
+export interface DaySpend {
+  /** `YYYY-MM-DD`, on the reader's clock. */
+  date: string;
+  /** Positive: money that left. */
+  spending: Money;
+  /** 0 to 10 000, worked out by `mt-core`. For drawing only. */
+  level_bps: number;
+}
+
+/** One month's spending in one currency, day by day, on one scale. */
+export interface Daily {
+  currency: string;
+  starts_on: string;
+  ends_on: string;
+  total: Money;
+  /** Every date in the month, in order, days with nothing spent included. */
+  days: DaySpend[];
+  ticks: Tick[];
+}
+
 export interface OutlookPoint {
   transaction: Transaction;
   /** What the account holds once this row lands, walked by `mt-core`. */
@@ -275,4 +326,92 @@ export interface NewTransaction {
   booked_at?: string;
   status?: Status;
   category_id?: string;
+}
+
+// ---------------------------------------------------------------------------- imports ----
+
+export type Delimiter = "comma" | "semicolon" | "tab" | "pipe";
+export type DateOrder = "day_month_year" | "month_day_year" | "year_month_day";
+export type ImportFormat = "csv" | "ofx";
+
+/** Where the amount is in a CSV statement. Columns count from 0. */
+export type AmountColumns =
+  | { kind: "signed"; column: number }
+  | { kind: "split"; money_in: number; money_out: number };
+
+/**
+ * Which column of a CSV statement holds what. The shape is `mt-core`'s, sent and stored as
+ * it is; the server validates it.
+ */
+export interface CsvMapping {
+  delimiter: Delimiter;
+  skip_rows: number;
+  has_header: boolean;
+  date: number;
+  date_format: DateOrder;
+  amount: AmountColumns;
+  label: number;
+  counterparty: number | null;
+  reference: number | null;
+  balance: number | null;
+}
+
+export interface ImportPreview {
+  delimiter: Delimiter;
+  /** The first rows of the file, split into cells. */
+  rows: string[][];
+  /** The mapping last used for this account, if any. */
+  saved_mapping: CsvMapping | null;
+}
+
+export interface ImportOutcome {
+  import_id: string;
+  read: number;
+  added: number;
+  already_seen: number;
+  problem_count: number;
+  problems: { line_no: number; reason: string }[];
+}
+
+export interface Suspect {
+  transaction: Transaction;
+  score_bps: number;
+  /** Both carry the bank's own reference. Still offered, never merged without the person. */
+  certain: boolean;
+  signals: string[];
+}
+
+/** A statement line waiting for a person. */
+export interface InboxItem {
+  id: string;
+  source: ImportFormat;
+  file_name: string | null;
+  line_no: number;
+  account_id: string;
+  account_name: string;
+  direction: Direction;
+  /** Always positive; `direction` carries the sign. */
+  amount: Money;
+  booked_at: string;
+  label: string;
+  counterparty: string | null;
+  /** What the server's categorisation ladder proposed. */
+  category_id: string | null;
+  category_confidence_bps: number;
+  reported_balance: Money | null;
+  suspects: Suspect[];
+  /** Waiting lines from other uploads that look like the same movement. */
+  twins: { id: string; file_name: string | null; line_no: number; label: string }[];
+}
+
+/** How many lines wait, without reading them. */
+export interface InboxCount {
+  total: number;
+  by_account: { account_id: string; waiting: number }[];
+}
+
+export interface Inbox {
+  /** Every waiting line, including any not in `items`. */
+  total: number;
+  items: InboxItem[];
 }

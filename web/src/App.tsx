@@ -1,14 +1,18 @@
 import { Navigate, Route, Routes } from "react-router";
-import { useAccounts, useMe } from "./api/queries";
+import { useMe } from "./api/queries";
 import { SignIn } from "./screens/SignIn";
 import { Shell } from "./screens/Shell";
 import { AccountScreen } from "./screens/AccountScreen";
 import { NewAccount } from "./screens/NewAccount";
 import { CategoriesScreen } from "./screens/CategoriesScreen";
 import { BreakdownScreen } from "./screens/BreakdownScreen";
+import { ChartsScreen } from "./screens/ChartsScreen";
 import { OutlookScreen } from "./screens/OutlookScreen";
 import { BudgetsScreen } from "./screens/BudgetsScreen";
 import { RecurringScreen } from "./screens/RecurringScreen";
+import { ImportScreen } from "./screens/ImportScreen";
+import { InboxScreen } from "./screens/InboxScreen";
+import { HomeScreen } from "./screens/HomeScreen";
 import { Failure, Loading } from "./ui/states";
 
 export function App() {
@@ -30,27 +34,20 @@ export function App() {
   return (
     <Routes>
       <Route element={<Shell user={me.data} />}>
-        <Route index element={<Home />} />
+        <Route index element={<HomeScreen />} />
         <Route path="accounts/new" element={<NewAccount />} />
         <Route path="accounts/:accountId" element={<AccountScreen />} />
         <Route path="categories" element={<CategoriesScreen />} />
         <Route path="breakdown" element={<BreakdownScreen />} />
+        <Route path="charts" element={<ChartsScreen />} />
         <Route path="outlook" element={<OutlookScreen />} />
         <Route path="budgets" element={<BudgetsScreen />} />
         <Route path="repeating" element={<RecurringScreen />} />
+        <Route path="import" element={<ImportScreen />} />
+        <Route path="inbox" element={<InboxScreen />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
 
-/** Lands on the first account, or on opening one if there are none yet. */
-function Home() {
-  const accounts = useAccounts();
-  if (accounts.isPending) return <Loading />;
-  if (accounts.isError) {
-    return <Failure error={accounts.error} retry={() => void accounts.refetch()} />;
-  }
-  const first = accounts.data[0];
-  return <Navigate to={first ? `/accounts/${first.id}` : "/accounts/new"} replace />;
-}

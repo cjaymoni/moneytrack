@@ -38,6 +38,17 @@ someone had typed: a series writes real expected rows a year ahead through `mt-c
 confirmed with one tap. Editing a series in place — "change the rent from March" — is not
 built yet; the core's scope rules for it are.
 
+Phase 4 is built. `mt-core`'s `ingest` reads a CSV statement through a column mapping the
+person sets once per account, and an OFX statement with no mapping at all; a line it cannot
+read is listed back with its line number rather than guessed at. Each line is fingerprinted
+so uploading the same statement again — or next month's overlapping one — offers only what is
+new. Lines wait in an inbox on the server (`csv` and `ofx` only; see
+[decisions/0003-server-inbox.md](decisions/0003-server-inbox.md)) with the category the
+ladder proposed, and the duplicate check runs on every read of it, against what is in the
+ledger by then. Accepting writes a stamped row; filing it somewhere new leaves a rule behind
+for that payee; merging settles it as a row already there, confirming an expected one;
+rejecting keeps it rejected.
+
 ## What it has to do
 
 Run on Android and iPhone. Take transactions four ways: typed by hand, parsed from MoMo/bank
@@ -263,7 +274,7 @@ tempted it.
 
 ## Phasing
 
-Phases 0, 1a, 2a and 2b are built. What follows is reordered around the browser, because that is the
+Phases 0 through 4 are built. What follows is reordered around the browser, because that is the
 channel that is open. Nothing in 1a is wasted: the apps resume against the same server.
 
 | Phase | Deliverable | Rough size |
@@ -274,7 +285,7 @@ channel that is open. Nothing in 1a is wasted: the apps resume against the same 
 | 2b | The first useful screen, end to end: accounts, manual entry, the ledger list and a running balance, in the browser against the server | medium ✅ |
 | 3 | Budgets, the outlook, the category breakdown, reconciliation entries — the analysis the product exists for | medium ✅ |
 | 3b | Repeating rows: series, a year of expected rows, confirming one when it happens | small ✅ |
-| 4 | CSV + OFX import, the review inbox, duplicate merging | medium |
+| 4 | CSV + OFX import, the review inbox, duplicate merging | medium ✅ |
 | 5 | Deletion, export, and the compliance furniture a hosted service cannot open without | medium |
 | 6 | Mobile resumes: `crates/sync` and the push/pull cycle against this server, then the apps' screens | large |
 | 7 | SMS ingestion on Android, rules learning from corrections | medium |

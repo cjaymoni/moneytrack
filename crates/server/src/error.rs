@@ -15,6 +15,7 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
+use tokio_postgres::error::SqlState;
 
 /// Something the API would not do, or could not.
 #[derive(Debug, thiserror::Error)]
@@ -89,7 +90,20 @@ impl ApiError {
         let reason = match error.as_db_error() {
             Some(db) => {
                 let mut reason = format!("{}: {}", db.code().code(), db.message());
-                if let Some(detail) = db.detail() {
+                if let Some(constraint) = db.constraint() {
+                    reason.push_str(&format!(" [constraint {constraint}]"));
+                }
+                // Postgres puts the offending row's values in DETAIL for these — a label, a
+                // payee, an amount — and this reason is logged. The constraint name says
+                // which rule failed without saying whose money it was.
+                let detail_carries_values = [
+                    SqlState::CHECK_VIOLATION,
+                    SqlState::UNIQUE_VIOLATION,
+                    SqlState::NOT_NULL_VIOLATION,
+                    SqlState::EXCLUSION_VIOLATION,
+                ]
+                .contains(db.code());
+                if let Some(detail) = db.detail().filter(|_| !detail_carries_values) {
                     reason.push_str(&format!(" ({detail})"));
                 }
                 if let Some(hint) = db.hint() {

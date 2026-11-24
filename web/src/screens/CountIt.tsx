@@ -28,16 +28,16 @@ export function CountIt({ account }: { account: Account }) {
   if (!open) {
     return (
       <button type="button" className="btn btn--ghost count__open" onClick={() => setOpen(true)}>
-        Count it
+        Update balance
       </button>
     );
   }
 
   return (
     <div className="count">
-      <form className="count__form" onSubmit={submit} aria-label={`Count ${account.name}`}>
+      <form className="count__form" onSubmit={submit} aria-label={`Update the balance of ${account.name}`}>
         <label className="field">
-          <span className="mt-label">What it actually holds now, {account.currency}</span>
+          <span className="mt-label">What's actually in it now, {account.currency}</span>
           <input
             className="amount-input"
             inputMode="decimal"
@@ -48,8 +48,8 @@ export function CountIt({ account }: { account: Account }) {
             onChange={(event) => setCounted(event.target.value)}
           />
           <span className="field__help">
-            From the wallet, the MoMo balance or the bank. If it differs from the ledger, one
-            row is recorded to make them agree.
+            Check your wallet, MoMo or bank app. If it's different from the balance here, we add
+            one adjustment so the two match.
           </span>
         </label>
         <div className="count__actions">
@@ -57,7 +57,7 @@ export function CountIt({ account }: { account: Account }) {
             Close
           </button>
           <button type="submit" className="btn btn--primary" disabled={reconcile.isPending}>
-            {reconcile.isPending ? "Checking" : "Make it agree"}
+            {reconcile.isPending ? "Checking" : "Update"}
           </button>
         </div>
       </form>
@@ -66,14 +66,14 @@ export function CountIt({ account }: { account: Account }) {
 
       {result && !result.adjustment && (
         <p className="count__result" role="status">
-          It agrees: the ledger also says {balance(result.counted)} {account.currency}.
+          Already right: the balance here is also {balance(result.counted)} {account.currency}.
         </p>
       )}
       {result?.adjustment && !undone && (
         <div className="count__result" role="status">
           <p>
-            The ledger said {balance(result.ledger)}; you counted {balance(result.counted)}.
-            Recorded a correction of{" "}
+            The balance here was {balance(result.ledger)}; you entered {balance(result.counted)}.
+            Added an adjustment of{" "}
             <b>{signed(result.adjustment.amount, result.adjustment.direction)}</b>.
           </p>
           <button
@@ -88,7 +88,7 @@ export function CountIt({ account }: { account: Account }) {
       )}
       {result?.adjustment && undone && (
         <p className="count__result" role="status">
-          Taken back. The ledger is as it was.
+          Undone. The balance is back to what it was.
         </p>
       )}
     </div>

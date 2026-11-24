@@ -6,6 +6,17 @@
     <meta name="color-scheme" content="light dark" />
     <meta name="referrer" content="no-referrer" />
     <title>moneytrack</title>
+    <script>
+      // The saved theme, applied before first paint so a dark choice never flashes light.
+      // Same key as THEME_KEY in src/ui/theme.ts; storage may be unavailable, and then the
+      // device's own setting stands.
+      try {
+        var theme = localStorage.getItem("mt-theme");
+        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+      } catch (error) {
+        console.warn("theme: could not read the saved choice", error);
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

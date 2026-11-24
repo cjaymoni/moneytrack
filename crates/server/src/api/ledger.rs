@@ -320,14 +320,7 @@ pub async fn breakdown(
     let rows = transactions::all(&state.pool, session.user).await?;
     let filed = categories::list(&state.pool, session.user).await?;
 
-    let mut currencies: Vec<mt_core::money::Currency> = Vec::new();
-    for account in &held {
-        if !currencies.contains(&account.currency) {
-            currencies.push(account.currency);
-        }
-    }
-
-    currencies
+    currencies_held(&held)
         .into_iter()
         .map(|currency| {
             mt_core::breakdown::breakdown(currency, &rows, &filed, period, zone, basis)
@@ -339,6 +332,125 @@ pub async fn breakdown(
         })
         .collect::<ApiResult<Vec<_>>>()
         .map(Json)
+}
+
+/// Which months a trend covers, and on whose clock.
+#[derive(Debug, Deserialize)]
+pub struct TrendQuery {
+    /// The last month shown, `YYYY-MM`.
+    pub until: String,
+    /// How many months, ending with `until`: 1 to 24. Absent means 6.
+    pub months: Option<u8>,
+    /// The reader's offset from UTC in minutes, east positive.
+    pub offset_minutes: Option<i32>,
+}
+
+/// The most months a trend covers: two years.
+const MOST_TREND_MONTHS: u8 = 24;
+
+/// Money in and out, month by month, for each currency the person holds.
+///
+/// One trend per currency, never converted. Each month's figures, the scale they share and
+/// every height on it are `mt-core`'s; the screen draws bars from the heights. Counts what
+/// happened, as the breakdown does by default.
+///
+/// # Errors
+/// [`ApiError::Invalid`] for a month, count or offset that will not read, or
+/// [`ApiError::Rule`].
+pub async fn trend(
+    State(state): State<AppState>,
+    session: Session,
+    Query(query): Query<TrendQuery>,
+) -> ApiResult<Json<Vec<dto::TrendOut>>> {
+    let count = query.months.unwrap_or(6);
+    if !(1..=MOST_TREND_MONTHS).contains(&count) {
+        return Err(ApiError::Invalid {
+            field: "months".to_owned(),
+            reason: format!("expected a number of months from 1 to {MOST_TREND_MONTHS}"),
+        });
+    }
+    let last = month_period(&query.until).map_err(|_| ApiError::Invalid {
+        field: "until".to_owned(),
+        reason: "expected YYYY-MM".to_owned(),
+    })?;
+    let periods =
+        mt_core::trend::months_ending(last.starts_on.year(), last.starts_on.month(), count)
+            .ok_or_else(|| ApiError::Invalid {
+                field: "until".to_owned(),
+                reason: "too far back to count months from".to_owned(),
+            })?;
+    let zone = offset(query.offset_minutes.unwrap_or(0))?;
+
+    recurring::top_up(&state.pool, session.user).await?;
+    let held = accounts::list(&state.pool, session.user).await?;
+    let rows = transactions::all(&state.pool, session.user).await?;
+
+    currencies_held(&held)
+        .into_iter()
+        .map(|currency| {
+            mt_core::trend::trend(currency, &rows, &periods, zone, BalanceBasis::Confirmed)
+                .map(|result| dto::trend_out(&result))
+                .map_err(|reason| ApiError::Rule {
+                    rule: "trend",
+                    reason: reason.to_string(),
+                })
+        })
+        .collect::<ApiResult<Vec<_>>>()
+        .map(Json)
+}
+
+/// Which month to split by day, and on whose clock.
+#[derive(Debug, Deserialize)]
+pub struct DailyQuery {
+    /// `YYYY-MM`.
+    pub month: String,
+    /// The reader's offset from UTC in minutes, east positive. Decides which date a row
+    /// near midnight is on.
+    pub offset_minutes: Option<i32>,
+}
+
+/// A month's spending, day by day, for each currency the person holds.
+///
+/// One per currency, never converted. The totals, the scale and every height on it are
+/// `mt-core`'s. Counts what happened, as the breakdown does by default.
+///
+/// # Errors
+/// [`ApiError::Invalid`] for a month or offset that will not read, or [`ApiError::Rule`].
+pub async fn daily(
+    State(state): State<AppState>,
+    session: Session,
+    Query(query): Query<DailyQuery>,
+) -> ApiResult<Json<Vec<dto::DailyOut>>> {
+    let period = month_period(&query.month)?;
+    let zone = offset(query.offset_minutes.unwrap_or(0))?;
+
+    recurring::top_up(&state.pool, session.user).await?;
+    let held = accounts::list(&state.pool, session.user).await?;
+    let rows = transactions::all(&state.pool, session.user).await?;
+
+    currencies_held(&held)
+        .into_iter()
+        .map(|currency| {
+            mt_core::trend::daily(currency, &rows, period, zone, BalanceBasis::Confirmed)
+                .map(|result| dto::daily_out(&result))
+                .map_err(|reason| ApiError::Rule {
+                    rule: "daily",
+                    reason: reason.to_string(),
+                })
+        })
+        .collect::<ApiResult<Vec<_>>>()
+        .map(Json)
+}
+
+/// Each currency an account is held in, once, in the order the accounts come.
+fn currencies_held(held: &[mt_core::model::Account]) -> Vec<mt_core::money::Currency> {
+    let mut currencies: Vec<mt_core::money::Currency> = Vec::new();
+    for account in held {
+        if !currencies.contains(&account.currency) {
+            currencies.push(account.currency);
+        }
+    }
+    currencies
 }
 
 /// The first and last local dates of a `YYYY-MM` month.
@@ -589,10 +701,14 @@ pub async fn reconcile(
                 amount: fix.amount,
                 booked_at: at,
                 category_id: None,
-                label: format!("Counted: {} {}", fix.counted, account.currency.code()),
+                label: format!(
+                    "Balance updated to {} {}",
+                    fix.counted,
+                    account.currency.code()
+                ),
                 counterparty: None,
                 note: Some(format!(
-                    "The ledger said {} {}; the count found {}.",
+                    "The balance here was {} {}; you entered {}.",
                     fix.ledger,
                     account.currency.code(),
                     fix.counted

@@ -45,7 +45,7 @@ export function BreakdownScreen() {
   return (
     <section className="screen">
       <header className="month-bar">
-        <h1 className="screen__title">Where it went</h1>
+        <h1 className="screen__title">Spending</h1>
         <nav className="month-nav" aria-label="Month">
           <button
             type="button"
@@ -84,7 +84,7 @@ function Currencies({ all, month }: { all: Breakdown[]; month: string }) {
   const [chosen, setChosen] = useState(0);
 
   if (all.length === 0) {
-    return <p className="screen__lede">Open an account to see where its money goes.</p>;
+    return <p className="screen__lede">Add an account to see your spending.</p>;
   }
   const shown = all[Math.min(chosen, all.length - 1)] ?? all[0];
   if (!shown) return null;
@@ -118,13 +118,13 @@ function Month({ breakdown, month }: { breakdown: Breakdown; month: string }) {
   return (
     <>
       <div className="balance">
-        <p className="mt-label">Spent</p>
+        <p className="mt-label">Money out</p>
         <p className="balance__fig">
           <span>{balance(spending.total)}</span>
           <span className="balance__cur">{currency}</span>
         </p>
         <p className="mt-label balance__meta">
-          Came in <span className="balance__then">{balance(income.total)}</span> · Net{" "}
+          Money in <span className="balance__then">{balance(income.total)}</span> · Difference{" "}
           <span className={isNegative(net) ? "balance__then short" : "balance__then"}>
             {balance(net)}
           </span>
@@ -132,14 +132,14 @@ function Month({ breakdown, month }: { breakdown: Breakdown; month: string }) {
       </div>
 
       {empty ? (
-        <p className="screen__lede">Nothing recorded in {monthName(month)}.</p>
+        <p className="screen__lede">No transactions in {monthName(month)}.</p>
       ) : (
         <>
           <Side title="Spending" side={spending} kind="out" />
           <Side title="Income" side={income} kind="in" />
           <p className="field__help">
-            Transfers between your own accounts are left out: they are neither spending nor
-            income. Expected rows are not counted until they happen.
+            Moving money between your own accounts isn't counted as spending or income. Planned
+            transactions count once they're marked as paid or received.
           </p>
         </>
       )}
@@ -165,7 +165,7 @@ function Side({ title, side, kind }: { title: string; side: BreakdownSide; kind:
 }
 
 function Line({ line, kind }: { line: BreakdownLine; kind: "in" | "out" }) {
-  const name = line.name ?? "Uncategorised";
+  const name = line.name ?? "No category";
   const ownHasAny = line.children.length > 0 && line.own.minor_units !== 0;
 
   return (
@@ -187,7 +187,7 @@ function Line({ line, kind }: { line: BreakdownLine; kind: "in" | "out" }) {
           {ownHasAny && (
             <li>
               <Bar
-                name={`${name}, not further filed`}
+                name={`${name}, other`}
                 amount={balance(line.own)}
                 share={line.own_share}
                 kind={kind}

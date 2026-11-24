@@ -68,8 +68,8 @@ describe("RecurringScreen", () => {
     renderWithClient(<RecurringScreen />);
 
     await user.click(await screen.findByRole("button", { name: "Stop…" }));
-    expect(screen.getByText(/expected rows still to come will go/)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Stop repeating" }));
+    expect(screen.getByText(/future planned payments will be removed/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Stop it" }));
 
     await waitFor(() => expect(calls.some((call) => call.method === "DELETE" && call.url === "/api/recurring/r-rent")).toBe(true));
   });
@@ -79,9 +79,9 @@ describe("RecurringScreen", () => {
     renderWithClient(<RecurringScreen />);
 
     await user.type(await screen.findByLabelText(/Amount each time/), "4200");
-    await user.click(screen.getByText("In"));
-    await user.type(screen.getByLabelText("What it is"), "Salary");
-    await user.click(screen.getByRole("button", { name: "Start repeating" }));
+    await user.click(screen.getByText("Money in"));
+    await user.type(screen.getByLabelText("Description"), "Salary");
+    await user.click(screen.getByRole("button", { name: "Add regular payment" }));
 
     await waitFor(() => expect(calls.some((call) => call.method === "POST" && call.url === "/api/recurring")).toBe(true));
     const sent = calls.find((call) => call.method === "POST" && call.url === "/api/recurring")?.body as Record<string, unknown>;

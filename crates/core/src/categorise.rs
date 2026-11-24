@@ -504,3 +504,79 @@ pub fn apply(candidate: &mut Candidate, verdict: Verdict) {
     candidate.category_id = verdict.category_id;
     candidate.category_confidence_bps = verdict.confidence_bps;
 }
+
+/// The shortest payee a rule is learned from. A one- or two-letter substring would match
+/// nearly every row; three keeps `MTN` and `KFC`.
+pub const MIN_LEARNED_PATTERN_LEN: usize = 3;
+
+/// Payee text that names a kind of movement rather than who was paid.
+const GENERIC_PAYEES: &[&str] = &[
+    "transfer",
+    "pos",
+    "pos purchase",
+    "atm",
+    "atm withdrawal",
+    "charge",
+    "charges",
+    "fee",
+    "fees",
+    "levy",
+    "e-levy",
+    "payment",
+    "deposit",
+    "withdrawal",
+    "cash",
+    "momo",
+    "n/a",
+];
+
+/// What a correction in the inbox teaches: match this text in this field, file it here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lesson {
+    /// The field the new rule looks at. Always the counterparty; see [`lesson`].
+    pub matched_field: MatchedField,
+    /// The text to look for, case-insensitively, as a substring.
+    pub pattern: String,
+    /// Where a match is filed.
+    pub category_id: CategoryId,
+}
+
+/// The rule a person's choice in the inbox should leave behind, if any.
+///
+/// A choice teaches something only when it differs from what the ladder proposed and names
+/// a category: accepting the proposal confirms a rung that already works, and clearing a
+/// category says nothing about where the next one belongs.
+///
+/// Only a counterparty is learned from, and only one that names someone: not a copy of the
+/// label, not a word like "transfer", not shorter than [`MIN_LEARNED_PATTERN_LEN`]. A
+/// merchant's name is a stable thing to match a substring against; a statement description is not — "POS PURCHASE 0412 03/11" carries a
+/// terminal and a date, and a label as generic as "Transfer" would capture every transfer
+/// that followed. Rung 3 already files a repeat of the exact same label the way the person
+/// last filed it, so leaving labels to it loses nothing.
+#[must_use]
+pub fn lesson(candidate: &Candidate, chosen: Option<CategoryId>) -> Option<Lesson> {
+    let category_id = chosen?;
+    if candidate.category_id == Some(category_id) {
+        return None;
+    }
+    let counterparty = candidate.counterparty.as_deref()?.trim();
+    let length = counterparty.chars().count();
+    if !(MIN_LEARNED_PATTERN_LEN..=MAX_PATTERN_LEN).contains(&length) {
+        return None;
+    }
+    // A payee that is only the description again — OFX's NAME, which serves as both — is a
+    // label in disguise, and a label is what this refuses to learn from.
+    if normalise(counterparty) == normalise(&candidate.label) {
+        return None;
+    }
+    // A word every bank prints on a whole class of movement says nothing about where one of
+    // them belongs. Filing one "TRANSFER" under rent must not file every transfer there.
+    if GENERIC_PAYEES.contains(&normalise(counterparty).as_str()) {
+        return None;
+    }
+    Some(Lesson {
+        matched_field: MatchedField::Counterparty,
+        pattern: counterparty.to_owned(),
+        category_id,
+    })
+}

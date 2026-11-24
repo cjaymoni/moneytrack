@@ -23,8 +23,8 @@ export function CategoriesScreen() {
       <div className="screen__head">
         <h1 className="screen__title">Categories</h1>
         <p className="screen__lede">
-          What each row was for. A category can hold others one level down — Transport, then
-          Trotro beneath it.
+          What each transaction was for. A category can have others inside it — Transport, with
+          Trotro inside.
         </p>
       </div>
 

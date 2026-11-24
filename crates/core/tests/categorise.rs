@@ -10,8 +10,8 @@ mod common;
 use common::{NOW, candidate, category_rule, days_after, id, transaction};
 use mt_core::categorise::{
     Basis, CONFIDENCE_EXPLICIT, CONFIDENCE_HISTORY_COUNTERPARTY, CONFIDENCE_HISTORY_LABEL,
-    CONFIDENCE_PACK_RULE, CONFIDENCE_USER_RULE, HistoryIndex, RuleError, RuleSet, Subject, apply,
-    categorise,
+    CONFIDENCE_PACK_RULE, CONFIDENCE_USER_RULE, HistoryIndex, Lesson, RuleError, RuleSet, Subject,
+    apply, categorise, lesson,
 };
 use mt_core::enums::{MatchedField, RuleOrigin};
 use mt_core::ids::{CategoryId, CategoryRuleId, RulePackId};
@@ -574,4 +574,90 @@ fn a_strict_compile_still_refuses_the_whole_set_so_a_bad_save_cannot_go_through(
     let good = rule("trotro", MatchedField::Label, id(), 10);
 
     assert!(RuleSet::compile(&[bad, good]).is_err());
+}
+
+// ------------------------------------------------------------------ learning from choices ---
+
+#[test]
+fn choosing_a_different_category_teaches_a_counterparty_rule() {
+    let groceries: CategoryId = id();
+    let proposed = mt_core::model::Candidate {
+        category_id: Some(id()),
+        ..candidate()
+    };
+
+    assert_eq!(
+        lesson(&proposed, Some(groceries)),
+        Some(Lesson {
+            matched_field: MatchedField::Counterparty,
+            pattern: "SHOPRITE".to_owned(),
+            category_id: groceries,
+        })
+    );
+}
+
+#[test]
+fn a_choice_that_teaches_a_rule_makes_the_next_one_land_there() {
+    let groceries: CategoryId = id();
+    let learned = lesson(&candidate(), Some(groceries)).unwrap();
+    let rule = CategoryRule {
+        pattern: learned.pattern,
+        matched_field: learned.matched_field,
+        ..category_rule(learned.category_id)
+    };
+    let rules = RuleSet::compile(&[rule]).unwrap();
+    let next = mt_core::model::Candidate {
+        counterparty: Some("Shoprite".to_owned()),
+        ..candidate()
+    };
+
+    let verdict = categorise(
+        &Subject::from_candidate(&next),
+        &rules,
+        &HistoryIndex::default(),
+    );
+    assert_eq!(verdict.category_id, Some(groceries));
+}
+
+#[test]
+fn accepting_the_proposal_or_clearing_it_teaches_nothing() {
+    let groceries: CategoryId = id();
+    let proposed = mt_core::model::Candidate {
+        category_id: Some(groceries),
+        ..candidate()
+    };
+
+    assert_eq!(lesson(&proposed, Some(groceries)), None);
+    assert_eq!(lesson(&proposed, None), None);
+}
+
+#[test]
+fn a_row_with_no_counterparty_is_left_to_history_rather_than_a_label_rule() {
+    let unnamed = mt_core::model::Candidate {
+        counterparty: None,
+        ..candidate()
+    };
+
+    assert_eq!(lesson(&unnamed, Some(id())), None);
+}
+
+#[test]
+fn a_payee_that_is_only_the_description_or_a_generic_word_teaches_nothing() {
+    let ofx_style = mt_core::model::Candidate {
+        label: "TRANSFER TO 0244".to_owned(),
+        counterparty: Some("Transfer to 0244 ".to_owned()),
+        ..candidate()
+    };
+    let generic = mt_core::model::Candidate {
+        counterparty: Some("TRANSFER".to_owned()),
+        ..candidate()
+    };
+    let tiny = mt_core::model::Candidate {
+        counterparty: Some("AB".to_owned()),
+        ..candidate()
+    };
+
+    for each in [ofx_style, generic, tiny] {
+        assert_eq!(lesson(&each, Some(id())), None, "{:?}", each.counterparty);
+    }
 }

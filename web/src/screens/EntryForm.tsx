@@ -78,7 +78,7 @@ export function EntryForm({ account }: { account: Account }) {
   }
 
   return (
-    <form className="entry" onSubmit={submit} aria-label="Record a row">
+    <form className="entry" onSubmit={submit} aria-label="Add a transaction">
       <div className="entry__top">
         <div className="segments segments--pair" role="radiogroup" aria-label="Direction">
           {(["out", "in"] as const).map((option) => (
@@ -90,7 +90,7 @@ export function EntryForm({ account }: { account: Account }) {
                 checked={direction === option}
                 onChange={() => pickDirection(option)}
               />
-              <span>{option === "out" ? "Out" : "In"}</span>
+              <span>{option === "out" ? "Money out" : "Money in"}</span>
             </label>
           ))}
         </div>
@@ -125,7 +125,7 @@ export function EntryForm({ account }: { account: Account }) {
 
       <div className="entry__fields">
         <label className="field">
-          <span className="mt-label">What it was</span>
+          <span className="mt-label">Description</span>
           <input
             required={!chosen}
             maxLength={200}
@@ -144,7 +144,7 @@ export function EntryForm({ account }: { account: Account }) {
           />
         </label>
         <label className="field field--date">
-          <span className="mt-label">Day</span>
+          <span className="mt-label">Date</span>
           <input type="date" required value={date} onChange={(event) => pickDate(event.target.value)} />
         </label>
       </div>
@@ -156,10 +156,10 @@ export function EntryForm({ account }: { account: Account }) {
             checked={expected}
             onChange={(event) => setExpected(event.target.checked)}
           />
-          <span>Expected — it has not happened yet</span>
+          <span>Planned — hasn't happened yet</span>
         </label>
         <button type="submit" className="btn btn--primary entry__submit" disabled={create.isPending}>
-          {create.isPending ? "Recording" : "Record"}
+          {create.isPending ? "Adding" : "Add"}
         </button>
       </div>
 

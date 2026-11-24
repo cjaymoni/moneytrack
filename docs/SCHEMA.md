@@ -63,7 +63,9 @@ not user data.
 
 Device only, never synced:
 
-- `inbox_items` — parsed-but-unconfirmed candidates. **There is no column for a message body.**
+- `inbox_items` — parsed-but-unconfirmed candidates. (The server has its own `inbox_items`
+  for uploaded statements; see below. Neither syncs, and neither has a column for text.)
+  **There is no column for a message body.**
   An SMS is parsed in memory and the text discarded; what is kept is the parsed fields, the
   allow-listed sender and a fingerprint so the same alert is not offered twice. The Play
   exception for SMS-based money management forbids holding non-financial or personal SMS
@@ -84,6 +86,13 @@ Server only:
 - `redacted_samples` — a message the device could not parse, redacted on the device and sent
   only because the user pressed the button and saw exactly what would be sent. Deliberately
   not foreign-keyed to `users`: a pattern-writing session should not be a window onto a person.
+- `inbox_items` (`0002_import.sql`) — lines of a CSV or OFX statement the person uploaded,
+  waiting for review. Its `source` accepts `csv` and `ofx` only, so an SMS candidate can never
+  be stored server-side; [decisions/0003-server-inbox.md](decisions/0003-server-inbox.md)
+  says why it exists at all. A unique `(user_id, fingerprint)` makes a re-upload offer only
+  the lines not seen before, and keeps a rejected line rejected.
+- `import_mappings` (`0002_import.sql`) — the CSV column mapping last used per account, as
+  `mt-core`'s `ingest::csv::Mapping` in JSON.
 
 ## The decisions worth knowing about
 

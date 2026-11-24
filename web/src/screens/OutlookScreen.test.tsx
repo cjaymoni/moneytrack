@@ -87,8 +87,8 @@ describe("OutlookScreen", () => {
     renderAt("/outlook");
 
     const verdict = await screen.findByRole("alert");
-    expect(verdict.textContent).toMatch(/Runs short on .*Rent takes it to −200\.00 GHS/);
-    expect(screen.getByText("Runs short here")).toBeTruthy();
+    expect(verdict.textContent).toMatch(/Goes below zero on .*Rent takes it to −200\.00 GHS/);
+    expect(screen.getByText("Goes below zero here")).toBeTruthy();
   });
 
   it("prints the low and every balance as the server sent them", async () => {
@@ -125,6 +125,6 @@ describe("OutlookScreen", () => {
     answer = [{ ...SHORT, shortfall: "already", shortfall_transaction_id: null, start: cedis(-2_000, "-20.00") }];
     renderAt("/outlook");
 
-    expect((await screen.findByRole("alert")).textContent).toMatch(/Already short: it holds −20\.00 GHS now/);
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Below zero now: −20\.00 GHS/);
   });
 });

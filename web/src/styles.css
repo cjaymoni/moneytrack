@@ -146,6 +146,7 @@ a { color: inherit; }
 .gate .form .btn { width: 100%; }
 .gate__switch { margin-top: var(--mt-c4); font-size: var(--mt-body-sm); color: var(--mt-ink-secondary); }
 .gate__switch a { color: var(--mt-ink); font-weight: 600; }
+.gate__theme { justify-self: start; margin-top: var(--mt-c6); }
 
 /* ---------- the frame ---------- */
 .shell {
@@ -175,10 +176,11 @@ a { color: inherit; }
 .rail__heading { padding-bottom: var(--mt-c1); }
 .rail__open { justify-self: start; margin-top: var(--mt-c2); }
 .rail__more { border-top: var(--mt-hairline) solid var(--mt-rule); padding-top: var(--mt-c4); }
+/* Menu items read as words, not labels: sentence case at body size, so they scan quickly. */
 .rail__link {
   display: flex; align-items: center; min-height: var(--mt-target);
-  font-size: var(--mt-label); font-weight: 600; letter-spacing: var(--mt-track-label);
-  text-transform: uppercase; text-decoration: none; color: var(--mt-ink-secondary);
+  font-size: var(--mt-body-sm); font-weight: 500;
+  text-decoration: none; color: var(--mt-ink-secondary);
 }
 .rail__link:hover { color: var(--mt-ink); }
 .rail__link[aria-current="page"] {
@@ -254,6 +256,12 @@ a { color: inherit; }
 }
 .entry__top { display: grid; grid-template-columns: 208px minmax(0, 1fr); gap: var(--mt-c6); align-items: end; }
 .segments--pair { grid-auto-columns: 1fr; }
+/* The theme switch in the top bar: a smaller control than a form's, but still a full target. */
+.segments--compact { gap: 0; }
+.segments--compact .segment span { padding: 0 var(--mt-c2); border-radius: 0; }
+.segments--compact .segment + .segment span { border-left-width: 0; }
+.segments--compact .segment:first-child span { border-radius: var(--mt-r-sm) 0 0 var(--mt-r-sm); }
+.segments--compact .segment:last-child span { border-radius: 0 var(--mt-r-sm) var(--mt-r-sm) 0; }
 .entry__amount { display: flex; align-items: baseline; gap: var(--mt-c2); min-width: 0; }
 .amount-input--entry {
   flex: 1; min-width: 0; width: 100%;
@@ -557,4 +565,197 @@ a { color: inherit; }
   .sides { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c8); }
   .rail__more { padding-top: var(--mt-c2); }
   .mt-row, .ledger__head { grid-template-columns: 46px minmax(0, 1fr) auto; }
+}
+
+/* ---------- import and review ---------- */
+
+/* The act of stamping, and nothing lighter: accepting a parsed line into the ledger. */
+.btn--grade { background: var(--mt-grade); color: var(--mt-ground); }
+.btn--grade:hover { background: var(--mt-grade-hover); }
+.btn--grade:focus-visible { outline-color: var(--mt-ink); }
+.btn--grade:disabled { background: var(--mt-rule); color: var(--mt-ink-muted); cursor: default; }
+
+.import { display: grid; gap: var(--mt-c6); }
+.import__pick, .import__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--mt-c4); }
+.import__mapping { display: grid; gap: var(--mt-c5); border: 0; border-top: var(--mt-hairline) solid var(--mt-rule-strong); padding-top: var(--mt-c5); min-width: 0; }
+.import__mapping legend { padding-bottom: var(--mt-c4); }
+.import__outcome { display: grid; gap: var(--mt-c3); border-top: var(--mt-hairline) solid var(--mt-rule-strong); padding-top: var(--mt-c5); }
+.import__problems { list-style: none; display: grid; gap: var(--mt-c1); font-size: var(--mt-body-sm); color: var(--mt-ink-secondary); }
+
+.inbox__bulk { display: flex; align-items: center; gap: var(--mt-c4); flex-wrap: wrap; }
+
+/* Unverified: the dashed amber edge over the amber wash, until a person settles it. Amber
+   here means "awaiting your check" and nothing else. */
+.review { list-style: none; display: grid; gap: var(--mt-c4); }
+.review-card {
+  display: grid; gap: var(--mt-c4); padding: var(--mt-c4);
+  background: var(--mt-await-wash); border: 1.5px dashed var(--mt-await-edge); border-radius: var(--mt-r-md);
+}
+.review-card__row { border-top: 0; padding: 0; }
+.review-card__suspects { display: grid; gap: var(--mt-c2); }
+.review-card__suspects ul { list-style: none; display: grid; gap: var(--mt-c2); }
+.review-card__suspect {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mt-c4); flex-wrap: wrap;
+  font-size: var(--mt-body-sm); padding-top: var(--mt-c2); border-top: var(--mt-hairline) solid var(--mt-rule);
+}
+.review-card__actions { display: flex; justify-content: flex-end; gap: var(--mt-target-gap); flex-wrap: wrap; }
+
+/* A parsed row a person has checked: the small, undated stamp. Stencil type lives here and
+   nowhere else. */
+.mt-stamp {
+  display: inline-block; margin-left: var(--mt-c2); padding: 0 var(--mt-c1);
+  font-family: var(--mt-face-stamp); font-size: var(--mt-stamp-face); letter-spacing: 0.08em;
+  text-transform: uppercase; line-height: 1.4;
+  color: var(--mt-grade); border: var(--mt-hairline) solid var(--mt-grade); border-radius: var(--mt-r-sm);
+  transform: rotate(-6deg); opacity: 0.8;
+}
+.mt-row .sub span:first-child.mt-stamp { margin-left: 0; }
+
+/* How many lines wait: amber, because that is what amber means. */
+.rail__count { margin-left: var(--mt-c2); color: var(--mt-await); font-weight: 600; }
+
+/* The strip above a ledger saying machine guesses are waiting. */
+.review-strip {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mt-c4); flex-wrap: wrap;
+  padding: var(--mt-c3) var(--mt-c4); font-size: var(--mt-body-sm); color: var(--mt-await);
+  background: var(--mt-await-wash); border: 1.5px dashed var(--mt-await-edge); border-radius: var(--mt-r-md);
+}
+.review-strip a { font-weight: 600; }
+
+/* ---------- home ---------- */
+.home { gap: var(--mt-c10); }
+.home__alerts { display: grid; gap: var(--mt-c3); }
+.home__alert { display: flex; justify-content: space-between; gap: var(--mt-c4); flex-wrap: wrap; }
+.home__alert a, .home__more { color: var(--mt-ink); font-weight: 600; font-size: var(--mt-body-sm); }
+.home__more { justify-self: start; }
+.home__block { display: grid; gap: var(--mt-c4); }
+.home__heading {
+  font-size: var(--mt-body); font-weight: 600; color: var(--mt-ink);
+  padding-bottom: var(--mt-c2); border-bottom: var(--mt-hairline) solid var(--mt-rule);
+}
+.home__muted { color: var(--mt-ink-muted); font-weight: 400; }
+.home__totals { display: grid; gap: var(--mt-c1); }
+.home__accounts { list-style: none; display: grid; }
+.home__account {
+  display: flex; justify-content: space-between; gap: var(--mt-c4); align-items: center;
+  min-height: var(--mt-target); text-decoration: none; color: var(--mt-ink);
+  border-bottom: var(--mt-hairline) solid var(--mt-rule); font-variant-numeric: tabular-nums;
+}
+.home__account:hover { background: var(--mt-sunk); }
+.home__month { display: grid; gap: var(--mt-c3); }
+.home__figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--mt-c4); }
+.home__figures dt { font-size: var(--mt-body-sm); color: var(--mt-ink-secondary); }
+.home__figures dd {
+  font-size: var(--mt-amount); font-weight: 600; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.home__figures dd.in { color: var(--mt-income); }
+.home__watch { list-style: none; display: grid; gap: var(--mt-c2); font-size: var(--mt-body-sm); }
+@media (max-width: 520px) {
+  .home__figures { grid-template-columns: minmax(0, 1fr); gap: var(--mt-c2); }
+  .home__figures > div { display: flex; justify-content: space-between; align-items: baseline; }
+}
+
+/* ---------- charts ----------
+   Every height and width here is a percentage the server sent as basis points. Marks wear
+   the two chart colours; text never does. */
+.charts { gap: var(--mt-c10); }
+.charts__block { display: grid; gap: var(--mt-c3); }
+.charts__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--mt-c4); flex-wrap: wrap; }
+.charts__heading { font-size: var(--mt-title); font-weight: 600; color: var(--mt-ink); }
+
+.legend { list-style: none; display: flex; gap: var(--mt-c4); font-size: var(--mt-body-sm); color: var(--mt-ink-secondary); }
+.legend li { display: flex; align-items: center; gap: var(--mt-c2); }
+.legend__key { width: 12px; height: 12px; border-radius: 2px; }
+.legend__key--in, .trend__bar--in, .trend__tip-key--in { background: var(--mt-chart-in); }
+.legend__key--out, .trend__bar--out, .trend__tip-key--out, .ranked__fill { background: var(--mt-chart-out); }
+
+/* The plot: gridlines behind, one button per month in front. The gutter on the left holds
+   the gridline amounts. */
+.trend {
+  --plot: 200px; --gutter: 64px;
+  position: relative; padding-left: var(--gutter);
+  margin-top: var(--mt-c3);
+  transition: opacity var(--mt-base) var(--mt-ease);
+}
+.trend.is-stale { opacity: 0.55; }
+.trend__grid { position: absolute; top: 0; left: var(--gutter); right: 0; height: var(--plot); pointer-events: none; }
+.trend__tick { position: absolute; left: 0; right: 0; border-top: var(--mt-hairline) solid var(--mt-rule); }
+.trend__tick:first-child { border-top-color: var(--mt-rule-strong); }
+.trend__tick-label {
+  position: absolute; right: 100%; margin-right: var(--mt-c2); transform: translateY(-50%);
+  font-size: var(--mt-micro); color: var(--mt-ink-muted); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.trend__months { list-style: none; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); position: relative; }
+.trend__month { position: relative; min-width: 0; }
+.trend__hit {
+  display: grid; grid-template-rows: var(--plot) auto; width: 100%;
+  padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;
+  border-radius: var(--mt-r-md);
+}
+.trend__hit:hover, .trend__hit:focus-visible { background: color-mix(in srgb, var(--mt-sunk) 70%, transparent); }
+.trend__hit:focus-visible { outline: 2px solid var(--mt-grade); outline-offset: 2px; }
+.trend__hit[aria-pressed="true"] { background: var(--mt-sunk); }
+.trend__bars { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: var(--plot); padding: 0 12%; }
+.trend__bar { flex: 0 1 24px; border-radius: 4px 4px 0 0; }
+.trend__label {
+  padding-top: var(--mt-c2); font-size: var(--mt-micro); color: var(--mt-ink-muted);
+  text-align: center; white-space: nowrap;
+}
+.trend__hit[aria-pressed="true"] .trend__label { color: var(--mt-ink); font-weight: 600; }
+
+/* The readout: hover or focus a month. Values lead, words follow. */
+.trend__tip {
+  position: absolute; bottom: calc(100% + var(--mt-c2)); left: 50%; z-index: 2;
+  display: none; gap: var(--mt-c1); min-width: max-content; padding: var(--mt-c2) var(--mt-c3);
+  background: var(--mt-surface); border: var(--mt-hairline) solid var(--mt-rule-strong);
+  border-radius: var(--mt-r-md); box-shadow: var(--mt-lift-2);
+  transform: translateX(-50%); text-align: left; font-size: var(--mt-body-sm); color: var(--mt-ink-secondary);
+  pointer-events: none;
+}
+.trend__month:first-child .trend__tip { left: 0; transform: none; }
+.trend__month:last-child .trend__tip { left: auto; right: 0; transform: none; }
+.trend__hit:hover .trend__tip, .trend__hit:focus-visible .trend__tip { display: grid; }
+.trend__tip-title { color: var(--mt-ink); font-weight: 600; }
+.trend__tip-row { display: flex; align-items: center; gap: var(--mt-c2); font-variant-numeric: tabular-nums; }
+.trend__tip-row b { color: var(--mt-ink); }
+.trend__tip-key { width: 10px; height: 2px; border-radius: 1px; }
+
+.charts__table summary { cursor: pointer; font-size: var(--mt-body-sm); font-weight: 600; width: max-content; }
+.charts__table table { margin-top: var(--mt-c3); width: 100%; border-collapse: collapse; font-size: var(--mt-body-sm); }
+.charts__table th, .charts__table td { padding: var(--mt-c2) var(--mt-c2) var(--mt-c2) 0; border-bottom: var(--mt-hairline) solid var(--mt-rule); }
+.charts__table thead th { color: var(--mt-ink-muted); font-weight: 500; text-align: right; }
+.charts__table thead th:first-child, .charts__table tbody th { text-align: left; font-weight: 500; }
+.charts__table td { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Day by day: a thin bar per date, no gap between hit areas, so the pointer always finds a day. */
+.trend--days { --plot: 160px; }
+.trend--days .trend__hit { cursor: default; border-radius: 2px; }
+.trend--days .trend__bars { padding: 0 1px; }
+.trend--days .trend__bar { flex: 0 1 14px; border-radius: 3px 3px 0 0; }
+.trend--days .trend__label { min-height: 1.6em; }
+
+/* One bar per category, all from one baseline, as wide as its share of the month. */
+.ranked-wrap { display: grid; gap: var(--mt-c3); }
+.ranked { list-style: none; display: grid; gap: var(--mt-c3); }
+.ranked__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--mt-c4); row-gap: 6px; align-items: baseline; }
+.ranked__name { font-size: 14.5px; font-weight: 500; overflow-wrap: anywhere; }
+.ranked__name--none { color: var(--mt-ink-muted); font-style: italic; }
+.ranked__amt { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ranked__share { margin-left: var(--mt-c1); font-size: var(--mt-micro); font-weight: 600; color: var(--mt-ink-muted); }
+.ranked__track { grid-column: 1 / -1; height: 12px; }
+.ranked__fill { display: block; height: 100%; min-width: 2px; border-radius: 0 4px 4px 0; }
+
+.charts__line { display: grid; gap: var(--mt-c3); padding-left: var(--mt-c6); }
+.charts__line-head { font-size: var(--mt-body-sm); margin-left: calc(-1 * var(--mt-c6)); }
+
+@media (max-width: 520px) {
+  .trend { --plot: 160px; --gutter: 52px; }
+  .trend--days { --plot: 120px; }
+  .trend--days .trend__bars { padding: 0; }
+  .trend--dense .trend__month:nth-child(even) .trend__label { visibility: hidden; }
+  .trend__bars { padding: 0 6%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trend { transition: none; }
 }

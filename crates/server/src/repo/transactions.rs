@@ -1,6 +1,6 @@
 //! Transactions: the rows everything else is derived from. Every query is scoped to one user.
 
-use deadpool_postgres::Pool;
+use deadpool_postgres::{GenericClient, Pool};
 use mt_core::enums::{Direction, TxSource, TxStatus};
 use mt_core::ids::{AccountId, CategoryId, DeviceId, TxId, UserId};
 use mt_core::model::{SyncMeta, Transaction};
@@ -16,6 +16,9 @@ use crate::repo::{accounts, categories};
 
 /// The table, for error messages.
 const ENTITY: &str = "transaction";
+
+/// The unique index on a bank's own reference, per account.
+const EXTERNAL_ID_INDEX: &str = "transactions_external";
 
 /// The columns every read selects, with the domains cast to types `sqlx` decodes.
 const COLUMNS: &str = "id, account_id, direction, amount_minor::bigint AS amount_minor,
@@ -110,21 +113,39 @@ pub async fn create(
         reason: reason.to_string(),
     })?;
 
+    let client = db::client(pool).await?;
+    insert(&client, user, &transaction).await
+}
+
+/// Writes a validated transaction on a client the caller holds, so it can share a database
+/// transaction with whatever else the caller is writing.
+///
+/// The account and category are not re-read here: the composite foreign keys refuse a row
+/// naming either of another user's, and the caller has already read them under this user's
+/// id to give a better answer than a constraint name.
+///
+/// # Errors
+/// [`ApiError::Conflict`] if the account already holds a live row with the same bank
+/// reference, or [`ApiError::Internal`].
+pub(crate) async fn insert(
+    client: &impl GenericClient,
+    user: UserId,
+    transaction: &Transaction,
+) -> Result<Transaction, ApiError> {
     let category = transaction.category_id.map(|id| *id.as_uuid());
     // Domain parameters are cast through their base types; see the note in `repo::accounts`.
-    let client = db::client(pool).await?;
     let row = client
         .query_one(
             &format!(
                 "INSERT INTO transactions (
                      user_id, id, account_id, direction, amount_minor, currency, booked_at,
-                     category_id, label, counterparty, note, status, source,
-                     created_at, updated_at, device_id
+                     category_id, label, counterparty, note, status, source, source_ref,
+                     external_id, created_at, updated_at, device_id
                  ) VALUES (
                      $1, $2, $3, $4, $5::bigint::amount_minor, $6::text::currency_code,
                      $7::timestamptz::ledger_instant,
-                     $8, $9, $10, $11, $12, $13,
-                     $14::timestamptz::ledger_instant, $14::timestamptz::ledger_instant, $15
+                     $8, $9, $10, $11, $12, $13, $14, $15,
+                     $16::timestamptz::ledger_instant, $17::timestamptz::ledger_instant, $18
                  )
                  RETURNING {COLUMNS}"
             ),
@@ -142,12 +163,23 @@ pub async fn create(
                 &transaction.note,
                 &transaction.status.as_str(),
                 &transaction.source.as_str(),
-                &now,
-                device.as_uuid(),
+                &transaction.source_ref,
+                &transaction.external_id,
+                &transaction.sync.created_at,
+                &transaction.sync.updated_at,
+                transaction.sync.device_id.as_uuid(),
             ],
         )
         .await
-        .map_err(|error| ApiError::database("insert a transaction", &error))?;
+        .map_err(|error| {
+            if db::violates(&error, EXTERNAL_ID_INDEX) {
+                return ApiError::Conflict {
+                    reason: "a row with the same bank reference is already in this account"
+                        .to_owned(),
+                };
+            }
+            ApiError::database("insert a transaction", &error)
+        })?;
 
     read(&row)
 }
@@ -506,6 +538,63 @@ pub async fn all(pool: &Pool, user: UserId) -> Result<Vec<Transaction>, ApiError
         .map_err(|error| ApiError::database("list transactions", &error))?;
 
     rows.iter().map(read).collect()
+}
+
+/// Every live row this user has booked inside a window, across every account.
+///
+/// For the work that needs the ledger around a set of dates rather than all of it: the
+/// duplicate check reads the days around the lines it is checking, and categorising an
+/// import reads recent history.
+///
+/// # Errors
+/// [`ApiError::Internal`] if the query fails or a row will not read back.
+pub async fn between(
+    pool: &Pool,
+    user: UserId,
+    from: OffsetDateTime,
+    to: OffsetDateTime,
+) -> Result<Vec<Transaction>, ApiError> {
+    let client = db::client(pool).await?;
+    let rows = client
+        .query(
+            &format!(
+                "SELECT {COLUMNS} FROM transactions
+                  WHERE user_id = $1 AND deleted_at IS NULL
+                    AND booked_at >= $2::timestamptz AND booked_at <= $3::timestamptz
+                  ORDER BY booked_at, id"
+            ),
+            &[user.as_uuid(), &from, &to],
+        )
+        .await
+        .map_err(|error| ApiError::database("list transactions in a window", &error))?;
+
+    rows.iter().map(read).collect()
+}
+
+/// One live row of this user's, locked until the caller's transaction ends.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if there is no such live row of this user's.
+pub(crate) async fn lock(
+    client: &impl GenericClient,
+    user: UserId,
+    id: TxId,
+) -> Result<Transaction, ApiError> {
+    let found = client
+        .query_opt(
+            &format!(
+                "SELECT {COLUMNS} FROM transactions
+                  WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL
+                  FOR UPDATE"
+            ),
+            &[user.as_uuid(), id.as_uuid()],
+        )
+        .await
+        .map_err(|error| ApiError::database("lock a transaction", &error))?;
+    match found {
+        Some(row) => read(&row),
+        None => Err(ApiError::NotFound { entity: ENTITY }),
+    }
 }
 
 /// Reads one row.

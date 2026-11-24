@@ -78,8 +78,8 @@ describe("EntryForm", () => {
     renderForm();
 
     await user.type(screen.getByLabelText(/Amount in GHS/), "12.75");
-    await user.type(screen.getByLabelText("What it was"), "Waakye");
-    await user.click(screen.getByRole("button", { name: "Record" }));
+    await user.type(screen.getByLabelText("Description"), "Waakye");
+    await user.click(screen.getByRole("button", { name: "Add" }));
 
     await waitFor(() => expect(calls.some((call) => call.url === "/api/transactions")).toBe(true));
     const post = calls.find((call) => call.url === "/api/transactions");
@@ -105,7 +105,7 @@ describe("EntryForm", () => {
 
     await user.type(screen.getByLabelText(/Amount in GHS/), "5");
     await user.click(await screen.findByRole("button", { name: "Transport" }));
-    await user.click(screen.getByRole("button", { name: "Record" }));
+    await user.click(screen.getByRole("button", { name: "Add" }));
 
     await waitFor(() => expect(calls.some((call) => call.url === "/api/transactions")).toBe(true));
     const post = calls.find((call) => call.url === "/api/transactions");
@@ -122,7 +122,7 @@ describe("EntryForm", () => {
     expect(screen.queryByRole("button", { name: "Salary" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Transport" }));
-    await user.click(screen.getByText("In"));
+    await user.click(screen.getByText("Money in"));
 
     expect(screen.getByRole("button", { name: "Salary" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Transport" })).toBeNull();
@@ -134,7 +134,7 @@ describe("EntryForm", () => {
     const user = userEvent.setup();
     renderForm();
 
-    const day = screen.getByLabelText("Day") as HTMLInputElement;
+    const day = screen.getByLabelText("Date") as HTMLInputElement;
     await user.clear(day);
     await user.type(day, "2099-01-01");
 

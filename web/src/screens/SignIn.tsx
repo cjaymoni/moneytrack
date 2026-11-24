@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { useSignIn } from "../api/queries";
 import { FormError } from "../ui/states";
+import { ThemeSwitcher } from "../ui/ThemeSwitcher";
 
 /** Signing in and registering: one form, two verbs. */
 export function SignIn({ mode }: { mode: "login" | "register" }) {
@@ -19,11 +20,11 @@ export function SignIn({ mode }: { mode: "login" | "register" }) {
     <main className="gate">
       <div className="gate__inner">
         <p className="wordmark">moneytrack</p>
-        <h1 className="gate__title">{registering ? "Start a ledger" : "Sign in"}</h1>
+        <h1 className="gate__title">{registering ? "Sign up" : "Sign in"}</h1>
         <p className="gate__lede">
           {registering
-            ? "Every cedi in and out, on one ruled line through today."
-            : "Your ledger, where you left it."}
+            ? "Track every cedi in and out, across MoMo, bank and cash."
+            : "Welcome back."}
         </p>
 
         <form className="form" onSubmit={submit} noValidate={false}>
@@ -53,21 +54,25 @@ export function SignIn({ mode }: { mode: "login" | "register" }) {
           <FormError error={signIn.error} />
 
           <button type="submit" className="btn btn--primary" disabled={signIn.isPending}>
-            {signIn.isPending ? "One moment" : registering ? "Create account" : "Sign in"}
+            {signIn.isPending ? "One moment" : registering ? "Sign up" : "Sign in"}
           </button>
         </form>
 
         <p className="gate__switch">
           {registering ? (
             <>
-              Already have a ledger? <Link to="/signin">Sign in</Link>
+              Already signed up? <Link to="/signin">Sign in</Link>
             </>
           ) : (
             <>
-              New here? <Link to="/register">Start a ledger</Link>
+              New here? <Link to="/register">Sign up</Link>
             </>
           )}
         </p>
+
+        <div className="gate__theme">
+          <ThemeSwitcher />
+        </div>
       </div>
     </main>
   );

@@ -124,7 +124,8 @@ pub async fn create(
     if starts_on < today - time::Duration::days(EARLIEST_START_DAYS) {
         return Err(ApiError::Invalid {
             field: "starts_on".to_owned(),
-            reason: "it is more than a year ago; record past rows as rows".to_owned(),
+            reason: "it is more than a year ago; add past payments one at a time instead"
+                .to_owned(),
         });
     }
     let interval = body.interval.unwrap_or(1);

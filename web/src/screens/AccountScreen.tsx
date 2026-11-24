@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router";
 import type { Transaction } from "../api/types";
 import { ApiError } from "../api/client";
-import { useCategories, useLedger, useRestoreTransaction } from "../api/queries";
+import { useCategories, useInboxCount, useLedger, useRestoreTransaction } from "../api/queries";
 import { KIND_NAMES, balance, isNegative } from "../ui/format";
 import { Failure, FormError, Loading } from "../ui/states";
 import { EntryForm } from "./EntryForm";
@@ -15,6 +15,7 @@ export function AccountScreen() {
   const ledger = useLedger(accountId);
   const categories = useCategories();
   const restore = useRestoreTransaction();
+  const inboxCount = useInboxCount();
   // The last row deleted here, held so it can be brought back. Cleared by undoing it or by
   // leaving the account: an undo for a row on a screen you are no longer looking at is a
   // surprise, not a convenience.
@@ -34,6 +35,8 @@ export function AccountScreen() {
   }
 
   const { account, entries } = ledger.data;
+  const waitingHere =
+    inboxCount.data?.by_account.find((each) => each.account_id === account.id)?.waiting ?? 0;
 
   return (
     <section className="screen">
@@ -51,11 +54,22 @@ export function AccountScreen() {
             year ahead, which is not a number anyone plans with. The outlook is where the
             road ahead is read, with its low point and the row that runs it short. */}
         <p className="mt-label balance__meta">
-          Held now · <Link to="/outlook" className="balance__link">See the outlook</Link>
+          Balance now · <Link to="/outlook" className="balance__link">See the forecast</Link>
         </p>
         <CountIt key={account.id} account={account} />
       </header>
 
+      {waitingHere > 0 && (
+        <p className="review-strip" role="status">
+          <span>
+            {waitingHere} imported {waitingHere === 1 ? "transaction" : "transactions"} for this account{" "}
+            {waitingHere === 1 ? "needs" : "need"} a quick check.
+          </span>
+          <Link to="/inbox">Review now</Link>
+        </p>
+      )}
+
+      <h2 className="home__heading">Add a transaction</h2>
       <EntryForm account={account} />
 
       {deleted && (

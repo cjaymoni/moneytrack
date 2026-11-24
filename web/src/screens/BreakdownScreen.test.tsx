@@ -83,8 +83,8 @@ describe("BreakdownScreen", () => {
     expect(within(spending).getByText("9,999.00")).toBeTruthy();
     expect(within(spending).getByText("66%")).toBeTruthy();
     expect(within(spending).getByText("Trotro")).toBeTruthy();
-    expect(within(spending).getByText("Transport, not further filed")).toBeTruthy();
-    expect(within(spending).getByText("Uncategorised")).toBeTruthy();
+    expect(within(spending).getByText("Transport, other")).toBeTruthy();
+    expect(within(spending).getByText("No category")).toBeTruthy();
 
     const widths = [...spending.querySelectorAll<HTMLElement>(".bar__fill")].map(
       (fill) => fill.style.width,
@@ -103,7 +103,7 @@ describe("BreakdownScreen", () => {
   it("says when a month has nothing in it", async () => {
     renderAt("/breakdown?month=2026-10");
 
-    expect(await screen.findByText(/Open an account/)).toBeTruthy();
+    expect(await screen.findByText(/Add an account/)).toBeTruthy();
   });
 });
 

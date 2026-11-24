@@ -34,9 +34,10 @@ export function NewAccount() {
 
   return (
     <section className="screen screen--narrow">
-      <h1 className="screen__title">Open an account</h1>
+      <h1 className="screen__title">Add an account</h1>
       <p className="screen__lede">
-        A wallet, a bank account, the cash in your pocket. Each holds one currency.
+        A mobile money wallet, a bank account, or the cash in your pocket. Each account has
+        one currency.
       </p>
 
       <form className="form" onSubmit={submit}>
@@ -52,7 +53,7 @@ export function NewAccount() {
         </label>
 
         <fieldset className="field">
-          <legend className="mt-label">Kind</legend>
+          <legend className="mt-label">Type</legend>
           <div className="segments" role="radiogroup">
             {KINDS.map((option) => (
               <label key={option} className="segment">
@@ -81,7 +82,7 @@ export function NewAccount() {
         </label>
 
         <label className="field">
-          <span className="mt-label">What it holds today</span>
+          <span className="mt-label">Balance today</span>
           <input
             inputMode="decimal"
             autoComplete="off"
@@ -91,14 +92,14 @@ export function NewAccount() {
             onChange={(event) => setOpening(event.target.value)}
           />
           <span className="field__help">
-            In {currency}, as you would write it — 250.50. Leave it empty for nothing.
+            In {currency}, like 250.50. Leave it empty if it's zero.
           </span>
         </label>
 
         <FormError error={create.error} />
 
         <button type="submit" className="btn btn--primary" disabled={create.isPending}>
-          {create.isPending ? "Opening" : "Open account"}
+          {create.isPending ? "Adding" : "Add account"}
         </button>
       </form>
     </section>

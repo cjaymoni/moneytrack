@@ -65,10 +65,10 @@ export function RecurringScreen() {
   return (
     <section className="screen">
       <div className="screen__head">
-        <h1 className="screen__title">Repeating</h1>
+        <h1 className="screen__title">Regular payments</h1>
         <p className="screen__lede">
-          Rows that come round again. Each is written into the ledger a year ahead as expected,
-          so the outlook and the budgets can see it coming.
+          Things that happen on a schedule, like rent or salary. Each is added as a planned
+          transaction for the year ahead, so your forecast and budgets know it's coming.
         </p>
       </div>
 
@@ -77,10 +77,10 @@ export function RecurringScreen() {
       {series.isPending && <Loading />}
       {series.isError && <Failure error={series.error} retry={() => void series.refetch()} />}
       {series.data && series.data.length === 0 && (
-        <p className="screen__lede">Nothing repeats yet.</p>
+        <p className="screen__lede">No regular payments yet.</p>
       )}
       {series.data && series.data.length > 0 && (
-        <ol className="series" aria-label="Repeating rows">
+        <ol className="series" aria-label="Regular payments">
           {series.data.map((each) => (
             <Series key={each.id} series={each} />
           ))}
@@ -113,7 +113,7 @@ function Series({ series }: { series: Recurring }) {
       <div className="series__actions">
         {asking ? (
           <>
-            <span className="field__help">Its expected rows still to come will go. What has happened stays.</span>
+            <span className="field__help">Its future planned payments will be removed. Past ones stay.</span>
             <button type="button" className="btn btn--quiet" onClick={() => setAsking(false)}>
               Keep it
             </button>
@@ -123,7 +123,7 @@ function Series({ series }: { series: Recurring }) {
               disabled={stop.isPending}
               onClick={() => stop.mutate(series.id)}
             >
-              {stop.isPending ? "Stopping" : "Stop repeating"}
+              {stop.isPending ? "Stopping" : "Stop it"}
             </button>
           </>
         ) : (
@@ -157,7 +157,7 @@ function StartSeries() {
   const chosen = categories.data?.find((category) => category.id === categoryId);
 
   if (accounts.data && accounts.data.length === 0) {
-    return <p className="screen__lede">Open an account first: a repeating row goes into one.</p>;
+    return <p className="screen__lede">Add an account first, so the payment has somewhere to go.</p>;
   }
 
   function pickDirection(value: Direction) {
@@ -193,13 +193,13 @@ function StartSeries() {
   }
 
   return (
-    <form className="entry start-series" onSubmit={submit} aria-label="Start a repeating row">
+    <form className="entry start-series" onSubmit={submit} aria-label="Add a regular payment">
       <div className="entry__top">
         <div className="segments segments--pair" role="radiogroup" aria-label="Direction">
           {(["out", "in"] as const).map((option) => (
             <label key={option} className="segment">
               <input type="radio" name="series-direction" checked={direction === option} onChange={() => pickDirection(option)} />
-              <span>{option === "out" ? "Out" : "In"}</span>
+              <span>{option === "out" ? "Money out" : "Money in"}</span>
             </label>
           ))}
         </div>
@@ -232,7 +232,7 @@ function StartSeries() {
 
       <div className="start-series__fields">
         <label className="field">
-          <span className="mt-label">What it is</span>
+          <span className="mt-label">Description</span>
           <input
             required={!chosen}
             maxLength={200}
@@ -264,7 +264,7 @@ function StartSeries() {
 
       <div className="start-series__fields start-series__when">
         <label className="field">
-          <span className="mt-label">First on</span>
+          <span className="mt-label">First date</span>
           <input type="date" required value={startsOn} onChange={(event) => setStartsOn(event.target.value)} />
         </label>
         <label className="field">
@@ -286,7 +286,7 @@ function StartSeries() {
       <p className="field__help" aria-live="polite">
         {cadence(freq, interval, startsOn)}, from {longDate(`${startsOn}T12:00:00`)}
         {endsOn ? ` until ${longDate(`${endsOn}T12:00:00`)}` : ""}.
-        {startsOn < today ? " Days already gone are written as expected rows for you to confirm." : ""}
+        {startsOn < today ? " Dates already past are added as planned, for you to mark as paid." : ""}
       </p>
 
       <FormError error={start.error} />
@@ -294,7 +294,7 @@ function StartSeries() {
       <div className="entry__foot">
         <span />
         <button type="submit" className="btn btn--primary entry__submit" disabled={start.isPending}>
-          {start.isPending ? "Starting" : "Start repeating"}
+          {start.isPending ? "Adding" : "Add regular payment"}
         </button>
       </div>
     </form>

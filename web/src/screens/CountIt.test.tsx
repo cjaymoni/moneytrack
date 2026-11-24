@@ -28,7 +28,7 @@ const CORRECTED: CountResult = {
     amount: cedis(4_000, "40.00"),
     booked_at: "2026-11-23T10:00:00Z",
     category_id: null,
-    label: "Counted: 340.00 GHS",
+    label: "Balance updated to 340.00 GHS",
     counterparty: null,
     note: null,
     status: "confirmed",
@@ -60,9 +60,9 @@ afterEach(() => vi.unstubAllGlobals());
 async function countAs(text: string) {
   const user = userEvent.setup();
   renderWithClient(<CountIt account={CASH} />);
-  await user.click(screen.getByRole("button", { name: "Count it" }));
-  await user.type(screen.getByLabelText(/What it actually holds now/), text);
-  await user.click(screen.getByRole("button", { name: "Make it agree" }));
+  await user.click(screen.getByRole("button", { name: "Update balance" }));
+  await user.type(screen.getByLabelText(/What's actually in it now/), text);
+  await user.click(screen.getByRole("button", { name: "Update" }));
   return user;
 }
 
@@ -70,7 +70,7 @@ describe("CountIt", () => {
   it("sends the count as typed and says what the server recorded", async () => {
     await countAs("340");
 
-    expect(await screen.findByText(/The ledger said 380\.00; you counted 340\.00/)).toBeTruthy();
+    expect(await screen.findByText(/The balance here was 380\.00; you entered 340\.00/)).toBeTruthy();
     expect(screen.getByText("−40.00")).toBeTruthy();
     const sent = calls.find((call) => call.url === "/api/accounts/a-cash/reconcile");
     expect(sent?.body).toEqual({ counted: "340" });
@@ -80,7 +80,7 @@ describe("CountIt", () => {
     answer = { ...CORRECTED, counted: cedis(38_000, "380.00"), adjustment: null };
     await countAs("380");
 
-    expect(await screen.findByText(/It agrees: the ledger also says 380\.00 GHS/)).toBeTruthy();
+    expect(await screen.findByText(/Already right: the balance here is also 380\.00 GHS/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
   });
 
@@ -89,7 +89,7 @@ describe("CountIt", () => {
 
     await user.click(await screen.findByRole("button", { name: "Undo" }));
 
-    await waitFor(() => expect(screen.getByText(/Taken back/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Undone/)).toBeTruthy());
     expect(calls.some((call) => call.method === "DELETE" && call.url === "/api/transactions/t-adj")).toBe(true);
   });
 });

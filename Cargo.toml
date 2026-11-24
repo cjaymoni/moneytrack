@@ -50,6 +50,9 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 argon2 = "0.6.0"
 getrandom = "0.4.3"
 sha2 = "0.11.1"
+# Statement imports. Quoted cells with embedded commas and newlines are the reason not to
+# split lines by hand.
+csv = "1.4.0"
 base64ct = { version = "1.8.3", features = ["std"] }
 subtle = "2.6.1"
 tempfile = "3.27.0"
@@ -79,6 +82,16 @@ indexing_slicing = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
+
+# Full debug info in every dependency is most of what fills target/. Our own crates keep
+# file and line numbers, so panics and backtraces still point at the right line;
+# dependencies carry none. To inspect locals in a debugger, remove these two sections for
+# that session.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
 
 [profile.release]
 lto = "thin"
