@@ -73,7 +73,8 @@ a { color: inherit; }
 .field input, .field select {
   font: inherit; font-size: var(--mt-body); color: var(--mt-ink);
   background: transparent; border: 0;
-  border-bottom: var(--mt-hairline) solid var(--mt-rule-strong);
+  /* The underline is the field's only edge, so it clears 3:1 against the page. */
+  border-bottom: var(--mt-hairline) solid var(--mt-ink-muted);
   border-radius: 0; min-height: var(--mt-target); padding: 0 var(--mt-c1);
   width: 100%;
 }
@@ -125,9 +126,9 @@ a { color: inherit; }
   border-radius: var(--mt-r-sm); cursor: pointer;
   transition: background var(--mt-fast) var(--mt-ease);
 }
-.chip:hover { background: var(--mt-sunk); }
+@media (hover: hover) { .chip:hover { background: var(--mt-sunk); } }
 .chip[aria-pressed="true"] { background: var(--mt-grade); border-color: var(--mt-grade); color: var(--mt-ground); }
-.chip[aria-pressed="true"]:hover { background: var(--mt-grade-hover); }
+@media (hover: hover) { .chip[aria-pressed="true"]:hover { background: var(--mt-grade-hover); } }
 .chip[aria-pressed="true"]:focus-visible { outline-color: var(--mt-ink); }
 .chip:disabled { cursor: default; opacity: 0.6; }
 
@@ -177,41 +178,43 @@ a { color: inherit; }
 .rail__open { justify-self: start; margin-top: var(--mt-c2); }
 .rail__more { border-top: var(--mt-hairline) solid var(--mt-rule); padding-top: var(--mt-c4); }
 /* Menu items read as words, not labels: sentence case at body size, so they scan quickly. */
+/* The menu: every place is one row of the same height — icon, name, and how many things
+   wait there — so the list reads as a list. The current place sits on the sunk ground with
+   a bar of ink at its edge; hover is the same ground, lighter in intent. */
+.rail__list { list-style: none; display: grid; gap: 2px; }
 .rail__link {
-  display: flex; align-items: center; min-height: var(--mt-target);
-  font-size: var(--mt-body-sm); font-weight: 500;
-  text-decoration: none; color: var(--mt-ink-secondary);
+  display: flex; align-items: center; gap: var(--mt-c3);
+  min-height: 44px; padding: 0 var(--mt-c3); margin: 0 calc(var(--mt-c3) * -1);
+  border-radius: var(--mt-r-md); text-decoration: none;
+  font-size: var(--mt-body); font-weight: 500; color: var(--mt-ink-secondary);
 }
-.rail__link:hover { color: var(--mt-ink); }
+@media (hover: hover) { .rail__link:hover { background: var(--mt-sunk); color: var(--mt-ink); } }
 .rail__link[aria-current="page"] {
-  color: var(--mt-ink); border-left: 2px solid var(--mt-ink);
-  padding-left: var(--mt-c3); margin-left: calc(var(--mt-c3) * -1 - 2px);
+  background: var(--mt-sunk); color: var(--mt-ink); font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--mt-ink);
 }
+.rail__link .icon { flex: none; color: var(--mt-ink-muted); }
+.rail__link[aria-current="page"] .icon { color: var(--mt-ink); }
+.rail__label { flex: 1; min-width: 0; }
+.rail__link--quiet { font-size: var(--mt-body-sm); }
 
-.accounts { list-style: none; display: grid; }
-.account-link {
-  display: grid; grid-template-columns: 1fr auto; column-gap: var(--mt-c3); row-gap: 2px;
-  align-items: baseline; padding: var(--mt-c3) var(--mt-c3) var(--mt-c3) var(--mt-c3);
-  margin: 0 calc(var(--mt-c3) * -1);
-  text-decoration: none; border-radius: var(--mt-r-sm);
-  border-left: 2px solid transparent;
+/* How many things wait: a small tablet at the row's end, never a pill. */
+.rail__badge {
+  flex: none; min-width: 24px; padding: 2px 6px; text-align: center;
+  font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--mt-ink-secondary); background: var(--mt-sunk); border-radius: var(--mt-r-sm);
 }
-.account-link:hover { background: var(--mt-sunk); }
-.account-link[aria-current="page"] { border-left-color: var(--mt-ink); background: var(--mt-sunk); }
-.account-link__name { font-weight: 600; font-size: 14.5px; }
-.account-link__kind {
-  grid-row: 2; font-size: var(--mt-micro); font-weight: 600;
-  letter-spacing: var(--mt-track-label); text-transform: uppercase; color: var(--mt-ink-muted);
-}
-.account-link__amt {
-  grid-row: 1 / 3; grid-column: 2; align-self: center;
-  font-weight: 600; letter-spacing: -0.02em; text-align: right; white-space: nowrap;
-}
+.rail__link[aria-current="page"] .rail__badge { background: var(--mt-ground); }
+.rail__badge--urgent { color: var(--mt-await); background: var(--mt-await-wash); box-shadow: inset 0 0 0 1px var(--mt-await-edge); }
+
+/* An account is a row like the rest, with its type under its name and its balance last. */
+.account-link { align-items: center; padding-top: var(--mt-c2); padding-bottom: var(--mt-c2); }
+.account-link__text { flex: 1; min-width: 0; display: grid; }
+.account-link__name { font-weight: 600; font-size: var(--mt-body-sm); color: var(--mt-ink); overflow-wrap: anywhere; }
+.account-link__kind { font-size: 0.75rem; font-weight: 500; color: var(--mt-ink-secondary); }
+.account-link__amt { font-weight: 600; font-size: var(--mt-body-sm); letter-spacing: -0.02em; white-space: nowrap; color: var(--mt-ink); }
 .account-link__amt--short { color: var(--mt-grade); }
-.account-link__cur {
-  margin-left: var(--mt-c1); font-size: var(--mt-micro); letter-spacing: 0.04em;
-  color: var(--mt-ink-secondary);
-}
+.account-link__cur { margin-left: var(--mt-c1); font-size: 0.6875rem; color: var(--mt-ink-secondary); }
 
 .totals { display: grid; }
 .totals__row {
@@ -241,7 +244,7 @@ a { color: inherit; }
   font-size: var(--mt-amount-hero); font-weight: 600;
   letter-spacing: var(--mt-track-hero); line-height: 0.96;
 }
-.balance__cur { font-size: 22px; letter-spacing: 0; color: var(--mt-ink-secondary); }
+.balance__cur { font-size: 1.375rem; letter-spacing: 0; color: var(--mt-ink-secondary); }
 .balance__meta { margin-top: var(--mt-c1); }
 .balance__then { color: var(--mt-ink); }
 .balance__link { color: var(--mt-ink); }
@@ -267,7 +270,7 @@ a { color: inherit; }
   flex: 1; min-width: 0; width: 100%;
   font: inherit; font-size: var(--mt-amount-lg); font-weight: 600;
   letter-spacing: var(--mt-track-hero); color: var(--mt-ink);
-  background: transparent; border: 0; border-bottom: var(--mt-hairline) solid var(--mt-rule-strong);
+  background: transparent; border: 0; border-bottom: var(--mt-hairline) solid var(--mt-ink-muted);
   padding: 0 var(--mt-c1); min-height: var(--mt-target);
 }
 .amount-input--entry::placeholder { color: var(--mt-ink-muted); }
@@ -289,7 +292,7 @@ a { color: inherit; }
   display: flex; justify-content: space-between; align-items: baseline;
   padding: var(--mt-c3) 0; color: var(--mt-ink-muted);
 }
-.ledger__opening-fig { font-size: 13px; font-weight: 600; color: var(--mt-ink-secondary); }
+.ledger__opening-fig { font-size: 0.8125rem; font-weight: 600; color: var(--mt-ink-secondary); }
 .ledger__rows { list-style: none; }
 .ledger--empty { padding: var(--mt-c6) 0; display: grid; gap: var(--mt-c2); }
 .ledger__empty-title { font-weight: 600; }
@@ -301,15 +304,15 @@ a { color: inherit; }
   padding: var(--mt-c3) 0 var(--mt-c3); border-top: var(--mt-hairline) solid var(--mt-rule);
 }
 .mt-row .date {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; white-space: nowrap;
+  font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.04em; white-space: nowrap;
   color: var(--mt-ink-muted);
 }
-.mt-row .label { font-size: 14.5px; font-weight: 500; letter-spacing: -0.005em; overflow-wrap: anywhere; }
-.mt-row .sub { font-size: 11.5px; color: var(--mt-ink-secondary); margin-top: 3px; letter-spacing: 0.02em; }
+.mt-row .label { font-size: 0.90625rem; font-weight: 500; letter-spacing: -0.005em; overflow-wrap: anywhere; }
+.mt-row .sub { font-size: 0.71875rem; color: var(--mt-ink-secondary); margin-top: 3px; letter-spacing: 0.02em; }
 .mt-row .figures { text-align: right; white-space: nowrap; }
 .mt-row .amt { font-size: var(--mt-amount); font-weight: 600; letter-spacing: -0.02em; }
 .mt-row .amt.in { color: var(--mt-income); }
-.mt-row .after { margin-top: 3px; font-size: 11.5px; font-weight: 600; letter-spacing: 0; color: var(--mt-ink-secondary); }
+.mt-row .after { margin-top: 3px; font-size: 0.71875rem; font-weight: 600; letter-spacing: 0; color: var(--mt-ink-secondary); }
 .mt-row .after.short { color: var(--mt-grade); }
 .mt-row--future .date,
 .mt-row--future .label,
@@ -351,7 +354,7 @@ a { color: inherit; }
   column-gap: var(--mt-c4); row-gap: 6px; align-items: baseline;
   padding: var(--mt-c3) 0 var(--mt-c3);
 }
-.bar__name { font-size: 14.5px; font-weight: 500; overflow-wrap: anywhere; }
+.bar__name { font-size: 0.90625rem; font-weight: 500; overflow-wrap: anywhere; }
 .bar__share { font-size: var(--mt-micro); font-weight: 600; letter-spacing: 0.04em; color: var(--mt-ink-muted); }
 .bar__amt { font-size: var(--mt-amount); font-weight: 600; letter-spacing: -0.02em; text-align: right; white-space: nowrap; }
 .bar__track { grid-column: 1 / -1; height: 4px; background: var(--mt-sunk); border-radius: 1px; overflow: hidden; }
@@ -359,7 +362,7 @@ a { color: inherit; }
 .bar__fill--in { background: var(--mt-income); opacity: 0.75; }
 .bar--part { padding: var(--mt-c2) 0; }
 .bar--part .bar__name { font-size: var(--mt-body-sm); font-weight: 400; color: var(--mt-ink-secondary); }
-.bar--part .bar__amt { font-size: 13.5px; }
+.bar--part .bar__amt { font-size: 0.84375rem; }
 .bar--part .bar__track { height: 2px; }
 .bar--muted .bar__name { color: var(--mt-ink-muted); }
 
@@ -399,11 +402,11 @@ a { color: inherit; }
 .grade:first-child { border-top: 0; }
 .grade__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--mt-c3); flex-wrap: wrap; }
 .grade__name {
-  font: inherit; font-size: 15.5px; font-weight: 600; color: var(--mt-ink);
+  font: inherit; font-size: 0.96875rem; font-weight: 600; color: var(--mt-ink);
   background: none; border: 0; padding: 0; cursor: pointer; text-align: left; border-radius: var(--mt-r-sm);
 }
 .grade__name:hover { text-decoration: underline; text-underline-offset: 3px; }
-.grade__value { font-size: 15px; font-weight: 600; letter-spacing: -0.015em; white-space: nowrap; }
+.grade__value { font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.015em; white-space: nowrap; }
 .grade__of { font-weight: 400; color: var(--mt-ink-secondary); font-size: var(--mt-body-sm); letter-spacing: 0; }
 .grade__foot { display: flex; justify-content: space-between; gap: var(--mt-c3); flex-wrap: wrap; }
 .grade__foot .mt-micro { color: var(--mt-ink-secondary); }
@@ -450,7 +453,7 @@ a { color: inherit; }
   padding: var(--mt-c4) 0; border-top: var(--mt-hairline) solid var(--mt-rule);
 }
 .series__row:first-child { border-top: 0; }
-.series__label { font-size: 15.5px; font-weight: 600; }
+.series__label { font-size: 0.96875rem; font-weight: 600; }
 .series__sub { font-size: var(--mt-body-sm); color: var(--mt-ink-secondary); }
 .series__amt { font-size: var(--mt-amount); font-weight: 600; letter-spacing: -0.02em; white-space: nowrap; text-align: right; }
 .series__amt.in { color: var(--mt-income); }
@@ -483,14 +486,14 @@ a { color: inherit; }
 .sides { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mt-c10); }
 .side__title { padding-bottom: var(--mt-c2); border-bottom: var(--mt-hairline) solid var(--mt-rule-strong); }
 .tree { list-style: none; }
-.tree li { padding: var(--mt-c3) 0; border-top: var(--mt-hairline) solid var(--mt-rule); font-size: 14.5px; font-weight: 500; }
+.tree li { padding: var(--mt-c3) 0; border-top: var(--mt-hairline) solid var(--mt-rule); font-size: 0.90625rem; font-weight: 500; }
 .tree li:first-child { border-top: 0; }
 .tree .tree__child { padding-left: var(--mt-c6); color: var(--mt-ink-secondary); font-weight: 400; }
 
 /* The label is the way into changing a row. It looks like the label until it is pointed at. */
 .mt-row .label--edit {
   display: block; width: 100%; text-align: left;
-  font: inherit; font-size: 14.5px; font-weight: 500; letter-spacing: -0.005em; color: inherit;
+  font: inherit; font-size: 0.90625rem; font-weight: 500; letter-spacing: -0.005em; color: inherit;
   background: none; border: 0; padding: 0; cursor: pointer; border-radius: var(--mt-r-sm);
   overflow-wrap: anywhere;
 }
@@ -607,12 +610,13 @@ a { color: inherit; }
   font-family: var(--mt-face-stamp); font-size: var(--mt-stamp-face); letter-spacing: 0.08em;
   text-transform: uppercase; line-height: 1.4;
   color: var(--mt-grade); border: var(--mt-hairline) solid var(--mt-grade); border-radius: var(--mt-r-sm);
-  transform: rotate(-6deg); opacity: 0.8;
+  /* Full strength: the stamp names the row's state, so its text keeps full contrast.
+     The tilt is what says it was pressed on. */
+  transform: rotate(-6deg);
 }
 .mt-row .sub span:first-child.mt-stamp { margin-left: 0; }
 
 /* How many lines wait: amber, because that is what amber means. */
-.rail__count { margin-left: var(--mt-c2); color: var(--mt-await); font-weight: 600; }
 
 /* The strip above a ledger saying machine guesses are waiting. */
 .review-strip {
@@ -739,7 +743,7 @@ a { color: inherit; }
 .ranked-wrap { display: grid; gap: var(--mt-c3); }
 .ranked { list-style: none; display: grid; gap: var(--mt-c3); }
 .ranked__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--mt-c4); row-gap: 6px; align-items: baseline; }
-.ranked__name { font-size: 14.5px; font-weight: 500; overflow-wrap: anywhere; }
+.ranked__name { font-size: 0.90625rem; font-weight: 500; overflow-wrap: anywhere; }
 .ranked__name--none { color: var(--mt-ink-muted); font-style: italic; }
 .ranked__amt { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ranked__share { margin-left: var(--mt-c1); font-size: var(--mt-micro); font-weight: 600; color: var(--mt-ink-muted); }
@@ -758,4 +762,208 @@ a { color: inherit; }
 }
 @media (prefers-reduced-motion: reduce) {
   .trend { transition: none; }
+}
+
+/* ---------- readability ----------
+   Labels, buttons and switches read as ordinary words: sentence case, no wide tracking, a
+   touch larger. Small tracked capitals made every label equally loud and slow to read. The
+   stamps keep their capitals — they are marks, not text to read. */
+.mt-label, .btn, .segment span, .account-link__kind, .mt-row .happened, .mt-byhand,
+.balance__name, .ledger__head, .mt-micro {
+  text-transform: none; letter-spacing: 0;
+}
+.mt-label { font-size: var(--mt-body-sm); font-weight: 600; }
+.btn { font-size: var(--mt-body-sm); font-weight: 600; }
+.segment span { font-size: var(--mt-body-sm); font-weight: 500; }
+/* Secondary ink, not muted: it sits on the sunk ground when its account is selected. */
+.account-link__kind { font-size: 0.75rem; font-weight: 500; color: var(--mt-ink-secondary); }
+.mt-row .happened { font-size: 0.75rem; }
+.balance__name { font-size: var(--mt-body); }
+.balance__meta-plain { font-size: var(--mt-body-sm); color: var(--mt-ink-secondary); }
+.balance__meta-plain .balance__link { color: var(--mt-ink); font-weight: 600; }
+
+/* The menu: Home and To review first, then the rest grouped by what you came to do. */
+.rail__menu { gap: 0; }
+.rail__group { display: grid; margin-top: var(--mt-c6); }
+.rail__group-title {
+  font-size: 0.75rem; font-weight: 600; color: var(--mt-ink-muted);
+  padding: 0 0 var(--mt-c2);
+}
+.rail__list--last { margin-top: var(--mt-c6); padding-top: var(--mt-c3); border-top: var(--mt-hairline) solid var(--mt-rule); }
+
+/* An account's two actions side by side; "Update balance" opens in place below them. */
+.account__actions { display: flex; flex-wrap: wrap; gap: var(--mt-c3); align-items: flex-start; }
+.account__actions .count { flex-basis: 100%; }
+.account__actions .count__open { margin-top: 0; }
+.account__add { display: grid; gap: var(--mt-c4); }
+.account__add-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--mt-c3); }
+.account__add-head .home__heading { flex: 1; }
+
+/* A transaction with no category says what to do about it, and looks pressable. */
+.mt-row .filed--none {
+  color: var(--mt-ink-secondary); padding: 0 var(--mt-c2);
+  border: var(--mt-hairline) solid var(--mt-rule-strong); border-radius: var(--mt-r-sm);
+}
+.mt-row .filed--none:hover { color: var(--mt-ink); text-decoration: none; background: var(--mt-sunk); }
+
+.chip--more { color: var(--mt-ink-secondary); background: transparent; }
+
+/* Home's quick actions. */
+.home__actions { display: flex; flex-wrap: wrap; gap: var(--mt-c3); align-items: flex-end; }
+.home__into { min-width: 180px; }
+
+@media (max-width: 820px) {
+  .rail__totals { display: none; }
+  .rail__section:nth-child(2) { display: grid; }
+}
+.account__add .home__heading { border-bottom: 0; padding-bottom: 0; }
+
+/* ---------- getting around ---------- */
+/* The first thing a keyboard reaches: straight past the menu to the page. Out of sight
+   until focused. */
+.skip {
+  position: absolute; left: var(--mt-c4); top: var(--mt-c2); z-index: 10;
+  padding: var(--mt-c2) var(--mt-c4); background: var(--mt-ink); color: var(--mt-ground);
+  border-radius: var(--mt-r-md); font-weight: 600; text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip:focus { transform: none; }
+.main:focus { outline: none; }
+
+/* The menu button only exists on narrow screens, where the menu folds away. */
+.topbar__start { display: flex; align-items: center; gap: var(--mt-c3); min-width: 0; }
+.menu-toggle { display: none; }
+
+@media (max-width: 820px) {
+  .topbar { flex-wrap: wrap; row-gap: var(--mt-c2); }
+  .topbar__who { flex-wrap: wrap; justify-content: flex-end; }
+  .menu-toggle { display: inline-flex; }
+  /* Folded away until "Menu" is pressed, so the page comes first. */
+  .rail { display: none; }
+  .rail.rail--open { display: grid; }
+  /* Phones zoom into any field set below 16px; at 16px they leave the page alone. */
+  .field input, .field select, .amount-input { font-size: 1rem; }
+  .amount-input--entry { font-size: var(--mt-amount-lg); }
+}
+
+/* A live region with nothing to say takes no room in the layout, but stays in the page so
+   what it says later is announced. */
+.live:empty { position: absolute; }
+
+/* Finding a transaction: a search box and the show switch on one line, wrapping on phones. */
+.ledger-filter { display: flex; flex-wrap: wrap; gap: var(--mt-c4); align-items: flex-end; }
+.ledger-filter__text { flex: 1 1 240px; }
+.ledger__earlier { justify-self: start; margin: var(--mt-c2) 0; }
+/* A transaction's description is also its edit button; the word "Edit" says so without hover. */
+.mt-row .label__edit {
+  margin-left: var(--mt-c2); font-size: 0.75rem; font-weight: 500; color: var(--mt-ink-muted);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.split__sort { display: inline-block; margin: 0 0 var(--mt-c2); font-size: var(--mt-body-sm); font-weight: 600; color: var(--mt-ink); }
+.ranked__name--none { color: var(--mt-ink); }
+
+/* Categories: each one a line with its actions; rename and delete open beneath it. */
+.screen__action { justify-self: start; }
+.tree__item { display: grid; gap: var(--mt-c2); }
+.tree__line { display: flex; justify-content: space-between; align-items: center; gap: var(--mt-c3); }
+.tree__actions { display: flex; gap: var(--mt-c1); }
+.tree__actions .btn { min-height: 36px; padding: 0 var(--mt-c2); }
+.tree__edit { display: flex; flex-wrap: wrap; gap: var(--mt-c2); align-items: flex-end; }
+.tree__edit .field { flex: 1 1 160px; }
+.tree__delete { display: grid; gap: var(--mt-c3); padding: var(--mt-c3); background: var(--mt-sunk); border-radius: var(--mt-r-md); }
+.tree__delete-actions { display: flex; gap: var(--mt-c2); justify-content: flex-end; flex-wrap: wrap; }
+
+.add-budget__more summary { cursor: pointer; font-size: var(--mt-body-sm); font-weight: 600; width: max-content; }
+.add-budget__more[open] summary { margin-bottom: var(--mt-c3); }
+.add-budget__more .field { max-width: 240px; }
+.add-budget__done { justify-self: start; }
+
+/* "Repeats every [2] [weeks]": one control, read as a sentence. */
+.start-series__repeat { border: 0; padding: 0; margin: 0; }
+.start-series__every { display: flex; gap: var(--mt-c2); }
+.start-series__every select { flex: 1; }
+
+/* The theme switch: in the top bar on wide screens, inside the folded menu on phones. */
+.rail__theme { display: none; margin-top: var(--mt-c4); }
+@media (max-width: 820px) {
+  .topbar__theme { display: none; }
+  .rail__theme { display: block; }
+}
+.screen__lede--wide { max-width: 60ch; margin-bottom: 0; }
+
+/* Sort uncategorised: one card per payee — who, the rows, the categories to choose from. */
+.sort__groups { list-style: none; display: grid; gap: var(--mt-c6); }
+.sort__group {
+  display: grid; gap: var(--mt-c3); padding-top: var(--mt-c5);
+  border-top: var(--mt-hairline) solid var(--mt-rule-strong);
+}
+.sort__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--mt-c2) var(--mt-c3); }
+.sort__payee { font-size: var(--mt-title); font-weight: 600; }
+.sort__rows { list-style: none; display: grid; gap: var(--mt-c1); font-size: var(--mt-body-sm); }
+.sort__rows li { display: flex; gap: var(--mt-c2); align-items: baseline; }
+.sort__amt { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sort__amt.in { color: var(--mt-income); }
+.sort__done { display: flex; align-items: center; justify-content: space-between; gap: var(--mt-c3); flex-wrap: wrap; font-size: var(--mt-body-sm); }
+
+/* ---------- getting around, round two ---------- */
+
+
+/* Insights: three views as tabs, each saying what it is for. */
+.tabs { display: flex; gap: var(--mt-c1); border-bottom: var(--mt-hairline) solid var(--mt-rule); overflow-x: auto; }
+.tabs__tab {
+  display: grid; padding: var(--mt-c2) var(--mt-c4) var(--mt-c3); text-decoration: none;
+  color: var(--mt-ink-secondary); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
+}
+.tabs__tab[aria-current="page"] { color: var(--mt-ink); border-bottom-color: var(--mt-ink); }
+@media (hover: hover) { .tabs__tab:hover { color: var(--mt-ink); background: var(--mt-sunk); } }
+.tabs__name { font-weight: 600; }
+.tabs__hint { font-size: 0.75rem; color: var(--mt-ink-muted); }
+
+/* How it works: a short glossary, folded until wanted. */
+.how summary { cursor: pointer; font-weight: 600; font-size: var(--mt-body-sm); width: max-content; }
+.how__list { display: grid; gap: var(--mt-c3); margin-top: var(--mt-c3); }
+.how__list dt { font-weight: 600; }
+.how__list dd { color: var(--mt-ink-secondary); font-size: var(--mt-body-sm); max-width: 60ch; }
+.settings__theme { max-width: 280px; }
+.wordmark:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Getting started: three steps, ticked off as they are done. */
+.start { display: grid; gap: var(--mt-c4); padding: var(--mt-c5); background: var(--mt-surface); border: var(--mt-hairline) solid var(--mt-rule-strong); border-radius: var(--mt-r-lg); }
+.start__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--mt-c3); }
+.start__head .home__heading { border: 0; padding: 0; }
+.start__steps { list-style: none; display: grid; gap: var(--mt-c4); }
+.start__step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--mt-c3); align-items: start; }
+.start__mark {
+  display: grid; place-items: center; width: 24px; height: 24px; border-radius: var(--mt-r-sm);
+  border: 1.5px solid var(--mt-ink-muted); font-size: 0.875rem; font-weight: 700;
+}
+.start__step--done .start__mark { background: var(--mt-income); border-color: var(--mt-income); color: var(--mt-ground); }
+.start__step--done .start__title { color: var(--mt-ink-secondary); text-decoration: line-through; }
+.start__title { font-weight: 600; }
+.start__step .field__help a { font-weight: 600; color: var(--mt-ink); }
+.start__hide { justify-self: start; }
+
+/* Import: the reading first, the settings folded beneath it. */
+.import__read { width: 100%; border-collapse: collapse; font-size: var(--mt-body-sm); }
+.import__read caption { text-align: left; font-weight: 600; padding-bottom: var(--mt-c2); }
+.import__read th { text-align: left; font-weight: 500; color: var(--mt-ink-muted); padding: var(--mt-c1) var(--mt-c2) var(--mt-c1) 0; border-bottom: var(--mt-hairline) solid var(--mt-rule); }
+.import__read td { padding: var(--mt-c2) var(--mt-c2) var(--mt-c2) 0; border-bottom: var(--mt-hairline) solid var(--mt-rule); overflow-wrap: anywhere; }
+.import__fix summary { cursor: pointer; font-weight: 600; font-size: var(--mt-body-sm); width: max-content; }
+.import__fix[open] summary { margin-bottom: var(--mt-c4); }
+.import__settings { border: 0; padding: 0; margin: 0; display: grid; gap: var(--mt-c4); }
+
+/* Correcting a balance is rare: a quiet link under the figure, not a button beside "Add". */
+.count__open--link {
+  justify-self: start; padding: 0; margin: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--mt-body-sm); color: var(--mt-ink-secondary);
+  text-decoration: underline; text-underline-offset: 2px; min-height: 32px;
+}
+@media (hover: hover) { .count__open--link:hover { color: var(--mt-ink); } }
+.entry__more summary { cursor: pointer; font-size: var(--mt-body-sm); font-weight: 600; color: var(--mt-ink-secondary); width: max-content; }
+.entry__more-fields { display: grid; gap: var(--mt-c3); margin-top: var(--mt-c3); max-width: 420px; }
+
+/* The menu stays in view while a long page scrolls, with its own scroll if it is taller
+   than the window. On phones it is a folded panel instead. */
+@media (min-width: 821px) {
+  .rail { position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; }
 }

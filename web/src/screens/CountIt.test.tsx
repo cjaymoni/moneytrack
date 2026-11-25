@@ -60,7 +60,7 @@ afterEach(() => vi.unstubAllGlobals());
 async function countAs(text: string) {
   const user = userEvent.setup();
   renderWithClient(<CountIt account={CASH} />);
-  await user.click(screen.getByRole("button", { name: "Update balance" }));
+  await user.click(screen.getByRole("button", { name: "Balance wrong? Correct it" }));
   await user.type(screen.getByLabelText(/What's actually in it now/), text);
   await user.click(screen.getByRole("button", { name: "Update" }));
   return user;

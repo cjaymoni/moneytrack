@@ -110,9 +110,14 @@ pub fn router(state: AppState) -> Router {
             "/transactions/{id}/category",
             post(api::ledger::set_category),
         )
+        .route("/transactions/category", post(api::ledger::file_many))
         .route(
             "/categories",
             get(api::ledger::list_categories).post(api::ledger::create_category),
+        )
+        .route(
+            "/categories/{id}",
+            patch(api::ledger::rename_category).delete(api::ledger::delete_category),
         )
         .route("/accounts/{id}/reconcile", post(api::ledger::reconcile))
         .route("/ledger", get(api::ledger::account_ledger))

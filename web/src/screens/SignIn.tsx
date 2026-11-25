@@ -3,12 +3,15 @@ import { Link } from "react-router";
 import { useSignIn } from "../api/queries";
 import { FormError } from "../ui/states";
 import { ThemeSwitcher } from "../ui/ThemeSwitcher";
+import { usePageTitle } from "../ui/title";
 
 /** Signing in and registering: one form, two verbs. */
 export function SignIn({ mode }: { mode: "login" | "register" }) {
+  usePageTitle(mode === "login" ? "Sign in" : "Sign up");
   const signIn = useSignIn(mode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const registering = mode === "register";
 
   function submit(event: FormEvent) {
@@ -41,7 +44,7 @@ export function SignIn({ mode }: { mode: "login" | "register" }) {
           <label className="field">
             <span className="mt-label">Password</span>
             <input
-              type="password"
+              type={showPassword ? "text" : "password"}
               autoComplete={registering ? "new-password" : "current-password"}
               required
               minLength={registering ? 12 : undefined}
@@ -49,6 +52,14 @@ export function SignIn({ mode }: { mode: "login" | "register" }) {
               onChange={(event) => setPassword(event.target.value)}
             />
             {registering && <span className="field__help">At least 12 characters.</span>}
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={showPassword}
+              onChange={(event) => setShowPassword(event.target.checked)}
+            />
+            <span>Show password</span>
           </label>
 
           <FormError error={signIn.error} />

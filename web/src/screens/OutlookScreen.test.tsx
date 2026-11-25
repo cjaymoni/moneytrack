@@ -119,6 +119,9 @@ describe("OutlookScreen", () => {
 
     expect(await screen.findByText("Stays above zero for the next 30 days.")).toBeTruthy();
     expect(asked[0]).toBe("/api/outlook?days=30");
+    // With nothing planned, the page says what to do next, and the low point reads plainly.
+    expect(screen.getByRole("link", { name: "Add a regular payment" }).getAttribute("href")).toBe("/repeating");
+    expect(screen.getByText("Lowest point is today")).toBeTruthy();
   });
 
   it("says when an account is short already", async () => {

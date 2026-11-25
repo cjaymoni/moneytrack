@@ -12,6 +12,7 @@ import { ordered, fullName } from "../ui/CategoryPicker";
 import { localDate } from "../ui/dates";
 import { balance, longDate } from "../ui/format";
 import { Failure, FormError, Loading } from "../ui/states";
+import { usePageTitle } from "../ui/title";
 
 const PERIODS: { value: BudgetPeriod; name: string; per: string }[] = [
   { value: "weekly", name: "Weekly", per: "a week" },
@@ -39,13 +40,17 @@ const MAX_OVER = 10;
  * share of the cap the server sent, a cell per tenth — a count of cells, not an amount.
  */
 export function BudgetsScreen() {
+  usePageTitle("Budgets");
   const budgets = useBudgets();
+  const [adding, setAdding] = useState<boolean | null>(null);
 
   if (budgets.isPending) return <Loading />;
   if (budgets.isError) return <Failure error={budgets.error} retry={() => void budgets.refetch()} />;
 
   const running = budgets.data.filter((budget) => budget.now);
   const earlier = budgets.data.filter((budget) => !budget.now);
+  // The form opens by itself only when there is nothing to show yet.
+  const formOpen = adding ?? running.length === 0;
 
   return (
     <section className="screen">
@@ -57,10 +62,16 @@ export function BudgetsScreen() {
         </p>
       </div>
 
-      <AddBudget />
+      {formOpen ? (
+        <AddBudget onClose={running.length > 0 ? () => setAdding(false) : undefined} />
+      ) : (
+        <button type="button" className="btn btn--primary screen__action" onClick={() => setAdding(true)}>
+          Add a budget
+        </button>
+      )}
 
       {running.length === 0 ? (
-        <p className="screen__lede">No budgets yet. Set one above.</p>
+        <p className="screen__lede">No budgets yet.</p>
       ) : (
         <ol className="grades" aria-label="Budgets">
           {running.map((budget) => (
@@ -222,7 +233,7 @@ function ChangeBudget({ budget, onDone }: { budget: Budget; onDone: () => void }
   );
 }
 
-function AddBudget() {
+function AddBudget({ onClose }: { onClose?: (() => void) | undefined }) {
   const create = useCreateBudget();
   const categories = useCategories();
   const accounts = useAccounts();
@@ -284,7 +295,7 @@ function AddBudget() {
           </select>
         </label>
         <label className="field">
-          <span className="mt-label">Limit</span>
+          <span className="mt-label">Limit{held.length > 1 ? "" : `, ${chosenCurrency}`}</span>
           <input
             className="amount-input"
             inputMode="decimal"
@@ -295,7 +306,7 @@ function AddBudget() {
             onChange={(event) => setCap(event.target.value)}
           />
         </label>
-        {held.length > 1 ? (
+        {held.length > 1 && (
           <label className="field">
             <span className="mt-label">Currency</span>
             <select value={chosenCurrency} onChange={(event) => setCurrency(event.target.value)}>
@@ -304,12 +315,13 @@ function AddBudget() {
               ))}
             </select>
           </label>
-        ) : (
-          <div className="field">
-            <span className="mt-label">Currency</span>
-            <span className="add-budget__currency">{chosenCurrency}</span>
-          </div>
         )}
+        <button type="submit" className="btn btn--primary" disabled={create.isPending}>
+          {create.isPending ? "Setting" : "Set budget"}
+        </button>
+      </div>
+      <details className="add-budget__more">
+        <summary>More options</summary>
         <label className="field">
           <span className="mt-label">Warn me</span>
           <select value={warnAt} onChange={(event) => setWarnAt(Number(event.target.value))}>
@@ -320,15 +332,17 @@ function AddBudget() {
             ))}
           </select>
         </label>
-        <button type="submit" className="btn btn--primary" disabled={create.isPending}>
-          {create.isPending ? "Setting" : "Set budget"}
-        </button>
-      </div>
+      </details>
       <p className="field__help">
-        {period === "monthly" && "Counts from the 1st of this month, so spending already done this month is in it."}
-        {period === "yearly" && "Counts from 1 January, so spending already done this year is in it."}
+        {period === "monthly" && "Counts from the 1st of this month."}
+        {period === "yearly" && "Counts from 1 January."}
         {period === "weekly" && "Each week starts today."}
       </p>
+      {onClose && (
+        <button type="button" className="btn btn--quiet add-budget__done" onClick={onClose}>
+          Done
+        </button>
+      )}
       <FormError error={create.error} />
     </form>
   );

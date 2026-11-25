@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ImportOutcome, ImportPreview } from "../api/types";
 import { resetCsrf } from "../api/client";
@@ -58,12 +58,15 @@ describe("ImportScreen", () => {
       new File([STATEMENT], "oct.csv", { type: "text/csv" }),
     );
 
-    expect(await screen.findByText("Which column is which")).toBeTruthy();
+    // The reading comes first, as a table; the column settings are folded beneath it.
+    const reading = await screen.findByRole("table", { name: "How the first transactions will be read" });
+    expect(within(reading).getAllByRole("row")[1]?.textContent).toMatch(/03\/10\/2026POS PURCHASE-120\.50SHOPRITE/);
+    expect(screen.getByText("Fix how it's read")).toBeTruthy();
     expect((screen.getByLabelText("Description") as HTMLSelectElement).value).toBe("1");
     expect((screen.getByLabelText("Payee") as HTMLSelectElement).value).toBe("3");
     expect(sent("/api/imports/preview")).toMatchObject({ account_id: "a1", content_base64: btoa(STATEMENT) });
 
-    await user.click(screen.getByRole("button", { name: "Import" }));
+    await user.click(screen.getByRole("button", { name: "Looks right — import" }));
 
     await waitFor(() => expect(sent("/api/imports")).toBeTruthy());
     expect(sent("/api/imports")).toMatchObject({
@@ -87,9 +90,9 @@ describe("ImportScreen", () => {
     const user = userEvent.setup();
     renderInApp(<ImportScreen />);
     await user.upload(await screen.findByLabelText("Statement file"), new File([STATEMENT], "oct.csv"));
-    await screen.findByText("Which column is which");
+    await screen.findByRole("table", { name: "How the first transactions will be read" });
 
-    await user.click(screen.getByRole("button", { name: "Import" }));
+    await user.click(screen.getByRole("button", { name: "Looks right — import" }));
 
     expect(await screen.findByText(/2 are new/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Review them now" })).toBeTruthy();

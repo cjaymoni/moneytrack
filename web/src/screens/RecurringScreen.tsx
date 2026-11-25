@@ -5,13 +5,13 @@ import { CategoryPicker, kindFor } from "../ui/CategoryPicker";
 import { localDate } from "../ui/dates";
 import { longDate, signed } from "../ui/format";
 import { Failure, FormError, Loading } from "../ui/states";
+import { usePageTitle } from "../ui/title";
 
-const FREQUENCIES: { value: Frequency; name: string }[] = [
-  { value: "weekly", name: "Weekly" },
-  { value: "monthly", name: "Monthly" },
-  { value: "yearly", name: "Yearly" },
-  { value: "daily", name: "Daily" },
-];
+/** "Repeats every [n] [unit]": the units in the order people think of them. */
+const FREQUENCY_ORDER: Frequency[] = ["daily", "weekly", "monthly", "yearly"];
+const INTERVALS = [1, 2, 3, 4, 6];
+/** How many categories show before "More categories". */
+const CHIPS_AT_FIRST = 7;
 
 const UNITS: Record<Frequency, [string, string]> = {
   daily: ["day", "days"],
@@ -60,7 +60,10 @@ export function cadence(freq: Frequency, interval: number, startsOn: string): st
  * see them. Every date and amount here is the server's; this screen names the cadence.
  */
 export function RecurringScreen() {
+  usePageTitle("Regular payments");
   const series = useRecurring();
+  // The form opens by itself only when there are no regular payments to show yet.
+  const [adding, setAdding] = useState<boolean | null>(null);
 
   return (
     <section className="screen">
@@ -72,7 +75,15 @@ export function RecurringScreen() {
         </p>
       </div>
 
-      <StartSeries />
+      {series.data && (adding ?? series.data.length === 0) ? (
+        <StartSeries onClose={series.data.length > 0 ? () => setAdding(false) : undefined} />
+      ) : (
+        series.data && (
+          <button type="button" className="btn btn--primary screen__action" onClick={() => setAdding(true)}>
+            Add a regular payment
+          </button>
+        )
+      )}
 
       {series.isPending && <Loading />}
       {series.isError && <Failure error={series.error} retry={() => void series.refetch()} />}
@@ -137,7 +148,7 @@ function Series({ series }: { series: Recurring }) {
   );
 }
 
-function StartSeries() {
+function StartSeries({ onClose }: { onClose?: (() => void) | undefined }) {
   const start = useStartRecurring();
   const accounts = useAccounts();
   const categories = useCategories();
@@ -227,6 +238,7 @@ function StartSeries() {
           value={categoryId}
           onChange={setCategoryId}
           label="Category"
+          shown={CHIPS_AT_FIRST}
         />
       )}
 
@@ -253,32 +265,40 @@ function StartSeries() {
         </label>
       </div>
 
-      <div className="segments start-series__freq" role="radiogroup" aria-label="How often">
-        {FREQUENCIES.map((option) => (
-          <label key={option.value} className="segment">
-            <input type="radio" name="series-freq" checked={freq === option.value} onChange={() => setFreq(option.value)} />
-            <span>{option.name}</span>
-          </label>
-        ))}
-      </div>
-
       <div className="start-series__fields start-series__when">
+        <fieldset className="field start-series__repeat">
+          <legend className="mt-label">Repeats every</legend>
+          <div className="start-series__every">
+            <select
+              aria-label="How many"
+              value={interval}
+              onChange={(event) => setInterval(Number(event.target.value))}
+            >
+              {INTERVALS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Unit"
+              value={freq}
+              onChange={(event) => setFreq(event.target.value as Frequency)}
+            >
+              {FREQUENCY_ORDER.map((option) => (
+                <option key={option} value={option}>
+                  {interval === 1 ? UNITS[option][0] : UNITS[option][1]}
+                </option>
+              ))}
+            </select>
+          </div>
+        </fieldset>
         <label className="field">
           <span className="mt-label">First date</span>
           <input type="date" required value={startsOn} onChange={(event) => setStartsOn(event.target.value)} />
         </label>
         <label className="field">
-          <span className="mt-label">Every</span>
-          <select value={interval} onChange={(event) => setInterval(Number(event.target.value))}>
-            {[1, 2, 3, 4, 6].map((n) => (
-              <option key={n} value={n}>
-                {n === 1 ? UNITS[freq][0] : `${n} ${UNITS[freq][1]}`}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span className="mt-label">Until</span>
+          <span className="mt-label">Until (optional)</span>
           <input type="date" value={endsOn} min={startsOn} onChange={(event) => setEndsOn(event.target.value)} />
         </label>
       </div>
@@ -292,7 +312,13 @@ function StartSeries() {
       <FormError error={start.error} />
 
       <div className="entry__foot">
-        <span />
+        {onClose ? (
+          <button type="button" className="btn btn--quiet" onClick={onClose}>
+            Done
+          </button>
+        ) : (
+          <span />
+        )}
         <button type="submit" className="btn btn--primary entry__submit" disabled={start.isPending}>
           {start.isPending ? "Adding" : "Add regular payment"}
         </button>

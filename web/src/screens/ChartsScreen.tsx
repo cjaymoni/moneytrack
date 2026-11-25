@@ -7,6 +7,8 @@ import { axisDay, axisMonth, dayName, tickLabel } from "../ui/charts";
 import { Failure, Loading } from "../ui/states";
 import { monthName, monthOf } from "./BreakdownScreen";
 import { Line } from "./OutlookScreen";
+import { usePageTitle } from "../ui/title";
+import { InsightsTabs } from "../ui/InsightsTabs";
 
 /** How many months the month-by-month chart can show. */
 const RANGES = [6, 12] as const;
@@ -25,6 +27,7 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
  * click away, so nothing is only a colour or a shape.
  */
 export function ChartsScreen() {
+  usePageTitle("Trends");
   const [params, setParams] = useSearchParams();
   const thisMonth = monthOf(new Date());
   const askedRange = Number(params.get("months"));
@@ -43,8 +46,9 @@ export function ChartsScreen() {
 
   return (
     <section className="screen charts">
+      <InsightsTabs />
       <header className="month-bar">
-        <h1 className="screen__title">Charts</h1>
+        <h1 className="screen__title">Trends</h1>
         <div className="segments window-pick" role="radiogroup" aria-label="How many months">
           {RANGES.map((option) => (
             <label key={option} className="segment">
@@ -59,6 +63,11 @@ export function ChartsScreen() {
           ))}
         </div>
       </header>
+
+      <p className="screen__lede screen__lede--wide">
+        Your money over time. For one month split by category, see{" "}
+        <Link to="/breakdown">Spending by category</Link>.
+      </p>
 
       {trend.isPending && <Loading />}
       {trend.isError && <Failure error={trend.error} retry={() => void trend.refetch()} />}
@@ -120,7 +129,10 @@ function MonthByMonth({ trend, picked, onPick, showCurrency, isStale }: MonthByM
       </p>
 
       {isEmpty ? (
-        <p className="field__help">Nothing came in or went out in these months.</p>
+        <p className="field__help">
+          Nothing came in or went out in these months. Once you add transactions or{" "}
+          <Link to="/import">import a statement</Link>, each month shows here.
+        </p>
       ) : (
         <div className={`trend${months.length > 6 ? " trend--dense" : ""}${isStale ? " is-stale" : ""}`}>
           <div className="trend__grid" aria-hidden="true">
@@ -353,9 +365,13 @@ function CategoryBars({ breakdown, month }: { breakdown: Breakdown; month: strin
       <ol className="ranked" aria-label={`Spending by category in ${currency}`}>
         {spending.lines.map((line) => (
           <li key={line.category_id ?? "none"} className="ranked__row">
-            <span className={line.category_id ? "ranked__name" : "ranked__name ranked__name--none"}>
-              {line.name ?? "No category"}
-            </span>
+            {line.category_id ? (
+              <span className="ranked__name">{line.name}</span>
+            ) : (
+              <Link to="/sort" className="ranked__name ranked__name--none">
+                No category — sort these
+              </Link>
+            )}
             <span className="ranked__amt">
               {balance(line.total)} <span className="ranked__share">{line.share.display}</span>
             </span>

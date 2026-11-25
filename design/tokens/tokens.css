@@ -31,19 +31,20 @@
   --mt-chart-in:      #16784A;
   --mt-chart-out:     #D58A3A;
 
-  /* ---- Type ---- */
+  /* ---- Type. In rem, so text follows the reader's browser font-size setting; the
+     comments give the size at the default 16px. ---- */
   --mt-face:          Archivo, "Helvetica Neue", system-ui, sans-serif;
   --mt-face-stamp:    "Stardos Stencil", Archivo, sans-serif;  /* stamps only */
 
-  --mt-amount-hero:   54px;  /* the balance */
-  --mt-amount-lg:     34px;  /* sheet totals */
-  --mt-amount:        16px;  /* ledger rows */
-  --mt-title:         19px;
-  --mt-body:          15px;
-  --mt-body-sm:       13.5px;
-  --mt-label:         12px;   /* uppercase, tracked */
-  --mt-micro:         11px;   /* uppercase, tracked hard — the platform floor */
-  --mt-stamp-face:    11px;   /* the stamp carries state: never below the floor */
+  --mt-amount-hero:   3.375rem;  /* the balance */
+  --mt-amount-lg:     2.125rem;  /* sheet totals */
+  --mt-amount:        1rem;  /* ledger rows */
+  --mt-title:         1.1875rem;
+  --mt-body:          0.9375rem;
+  --mt-body-sm:       0.84375rem;
+  --mt-label:         0.75rem;   /* 12px: labels */
+  --mt-micro:         0.6875rem;   /* 11px: the platform floor */
+  --mt-stamp-face:    0.6875rem;   /* the stamp carries state: never below the floor */
 
   --mt-track-label:   0.07em;
   --mt-track-micro:   0.14em;

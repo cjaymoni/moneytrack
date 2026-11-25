@@ -54,6 +54,7 @@ export const keys = {
   budgets: ["budgets"] as const,
   recurring: ["recurring"] as const,
   inbox: ["inbox"] as const,
+  transactions: ["transactions"] as const,
   // Under the inbox's key, so anything that invalidates the inbox invalidates this too.
   inboxCount: ["inbox", "count"] as const,
 };
@@ -227,6 +228,7 @@ export function useSetCategory() {
       }),
     onSuccess: (row) => {
       void client.invalidateQueries({ queryKey: keys.ledger(row.account_id) });
+      void client.invalidateQueries({ queryKey: keys.transactions });
       void client.invalidateQueries({ queryKey: ["breakdown"] });
       void client.invalidateQueries({ queryKey: ["trend"] });
       void client.invalidateQueries({ queryKey: ["daily"] });
@@ -235,9 +237,70 @@ export function useSetCategory() {
   });
 }
 
+/** Every row in every account, oldest first: what the uncategorised view sorts through. */
+export function useAllTransactions() {
+  return useQuery({ queryKey: keys.transactions, queryFn: () => get<Transaction[]>("/transactions") });
+}
+
+/** What filing several rows at once sends: the rows, where they go, and a payee to remember. */
+export interface FileMany {
+  transactionIds: string[];
+  categoryId: string | null;
+  remember?: { matched_field: "counterparty" | "label"; pattern: string };
+}
+
+/**
+ * Files several rows under one category in one request, and remembers the payee for the
+ * next statement if asked. Every view that groups by category is asked again.
+ */
+export function useFileMany() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ transactionIds, categoryId, remember }: FileMany) =>
+      post<{ filed: number }>("/transactions/category", {
+        transaction_ids: transactionIds,
+        category_id: categoryId,
+        ...(remember ? { remember } : {}),
+      }),
+    onSuccess: () => afterCategoryChange(client),
+  });
+}
+
+export function useRenameCategory() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      patch<Category>(`/categories/${encodeURIComponent(id)}`, { name }),
+    onSuccess: () => afterCategoryChange(client),
+  });
+}
+
+/** Deletes a category, moving its rows to `moveTo` or to no category. */
+export function useDeleteCategory() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, moveTo }: { id: string; moveTo: string | null }) =>
+      del<unknown>(
+        `/categories/${encodeURIComponent(id)}${moveTo ? `?move_to=${encodeURIComponent(moveTo)}` : ""}`,
+      ),
+    onSuccess: () => afterCategoryChange(client),
+  });
+}
+
+/** Every query that groups by category or shows a row's category. */
+function afterCategoryChange(client: QueryClient) {
+  for (const key of [keys.categories, keys.transactions, keys.budgets, keys.recurring, keys.inbox]) {
+    void client.invalidateQueries({ queryKey: key });
+  }
+  for (const prefix of ["ledger", "breakdown", "trend", "daily"]) {
+    void client.invalidateQueries({ queryKey: [prefix] });
+  }
+}
+
 /** Every query a change to one row in one account can have changed. */
 function afterRowChange(client: QueryClient, accountId: string) {
   void client.invalidateQueries({ queryKey: keys.budgets });
+  void client.invalidateQueries({ queryKey: keys.transactions });
   void client.invalidateQueries({ queryKey: ["outlook"] });
   void client.invalidateQueries({ queryKey: keys.ledger(accountId) });
   void client.invalidateQueries({ queryKey: keys.accounts });

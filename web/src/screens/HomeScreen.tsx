@@ -1,17 +1,22 @@
-import { Link, Navigate } from "react-router";
+import { useState, type ReactNode } from "react";
+import { Link, useNavigate } from "react-router";
 import type { Account, Breakdown, Budget } from "../api/types";
 import {
   useAccounts,
+  useAllTransactions,
   useBreakdown,
   useBudgets,
   useInboxCount,
   useOutlook,
   useTotals,
 } from "../api/queries";
-import { KIND_NAMES, balance, gutterDate, isNegative, longDate, signed } from "../ui/format";
+import { KIND_NAMES, balance, gutterDate, isNegative, longDate, plural, signed } from "../ui/format";
 import { budgetsToWatch, shortfalls, upcoming, type Shortfall } from "../ui/home";
 import { Failure, Loading } from "../ui/states";
 import { monthName, monthOf } from "./BreakdownScreen";
+import { usePageTitle } from "../ui/title";
+import { HowItWorks } from "../ui/HowItWorks";
+import { isComplete, readHidden, saveHidden, steps, type Progress } from "../ui/gettingStarted";
 
 /** How far ahead "Coming up" looks, and how many payments it lists. */
 const AHEAD_DAYS = 30;
@@ -27,22 +32,155 @@ const TOP_SPENDING = 3;
  * page; this one puts them side by side.
  */
 export function HomeScreen() {
+  usePageTitle("Home");
   const accounts = useAccounts();
 
   if (accounts.isPending) return <Loading />;
   if (accounts.isError) return <Failure error={accounts.error} retry={() => void accounts.refetch()} />;
-  // Nothing else here means anything without an account, and adding one is the only next step.
-  if (accounts.data.length === 0) return <Navigate to="/accounts/new" replace />;
+  // A new person stays on Home, with a checklist of what to do first, rather than being
+  // dropped on a form with no idea what comes after it.
+  if (accounts.data.length === 0) {
+    return (
+      <section className="screen home">
+        <div className="screen__head">
+          <h1 className="screen__title">Welcome to moneytrack</h1>
+          <p className="screen__lede screen__lede--wide">
+            Keep track of every cedi in and out — MoMo, bank and cash in one place. Three
+            steps get you going.
+          </p>
+        </div>
+        <GetStarted accounts={accounts.data} />
+      </section>
+    );
+  }
 
   return (
     <section className="screen home">
       <h1 className="screen__title">Home</h1>
+      <GetStarted accounts={accounts.data} />
+      <QuickActions accounts={accounts.data} />
       <NeedsYou />
       <YouHave accounts={accounts.data} />
       <ThisMonth />
       <ComingUp />
       <Budgets />
     </section>
+  );
+}
+
+/**
+ * The first three things to do, ticked off as they are done, until all are done or the
+ * person puts the list away. Each step goes straight to where it is done.
+ */
+function GetStarted({ accounts }: { accounts: Account[] }) {
+  const transactions = useAllTransactions();
+  const budgets = useBudgets();
+  const [hidden, setHidden] = useState(readHidden);
+  const progress: Progress = {
+    hasAccount: accounts.length > 0,
+    hasTransaction: (transactions.data?.length ?? 0) > 0,
+    hasBudget: (budgets.data?.length ?? 0) > 0,
+  };
+  // Until both answers are in, a step may look undone that is done.
+  if (hidden || transactions.isPending || budgets.isPending || isComplete(progress)) return null;
+  const done = steps(progress).filter((step) => step.done).length;
+  const first = accounts[0];
+
+  return (
+    <section className="start" aria-labelledby="start-heading">
+      <div className="start__head">
+        <h2 id="start-heading" className="home__heading">
+          Get started
+        </h2>
+        <span className="home__muted">{done} of 3 done</span>
+      </div>
+      <ol className="start__steps">
+        <Step done={progress.hasAccount} title="Add an account">
+          Your MoMo wallet, a bank account or your cash. <Link to="/accounts/new">Add an account</Link>
+        </Step>
+        <Step done={progress.hasTransaction} title="Record what came in and went out">
+          Add a transaction by hand, or bring in a statement from your bank or MoMo app.{" "}
+          {first ? (
+            <>
+              <Link to={`/accounts/${first.id}?add=1`}>Add a transaction</Link> or{" "}
+              <Link to="/import">import a statement</Link>
+            </>
+          ) : (
+            "You can do this once you have an account."
+          )}
+        </Step>
+        <Step done={progress.hasBudget} title="Set a budget">
+          A monthly limit, so you can see what's left to spend. <Link to="/budgets">Set a budget</Link>
+        </Step>
+      </ol>
+      <HowItWorks />
+      {progress.hasAccount && (
+        <button
+          type="button"
+          className="btn btn--quiet start__hide"
+          onClick={() => {
+            saveHidden();
+            setHidden(true);
+          }}
+        >
+          Hide this list
+        </button>
+      )}
+    </section>
+  );
+}
+
+function Step({ done, title, children }: { done: boolean; title: string; children: ReactNode }) {
+  return (
+    <li className={done ? "start__step start__step--done" : "start__step"}>
+      <span className="start__mark" aria-hidden="true">
+        {done ? "✓" : ""}
+      </span>
+      <div>
+        <p className="start__title">
+          {title}
+          {done && <span className="visually-hidden"> — done</span>}
+        </p>
+        {!done && <p className="field__help">{children}</p>}
+      </div>
+    </li>
+  );
+}
+
+/**
+ * The two things people come to do, as buttons, so nobody has to know which page they live
+ * on. With more than one account, adding asks which one first.
+ */
+function QuickActions({ accounts }: { accounts: Account[] }) {
+  const navigate = useNavigate();
+  const [into, setInto] = useState(accounts[0]?.id ?? "");
+  const target = accounts.some((account) => account.id === into) ? into : (accounts[0]?.id ?? "");
+
+  return (
+    <div className="home__actions">
+      {accounts.length > 1 && (
+        <label className="field home__into">
+          <span className="mt-label">Account</span>
+          <select value={target} onChange={(event) => setInto(event.target.value)}>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <button
+        type="button"
+        className="btn btn--primary"
+        onClick={() => void navigate(`/accounts/${target}?add=1`)}
+      >
+        Add a transaction
+      </button>
+      <Link to="/import" className="btn btn--ghost">
+        Import a statement
+      </Link>
+    </div>
   );
 }
 
@@ -53,14 +191,18 @@ function NeedsYou() {
   const waiting = count.data?.total ?? 0;
   const short = outlook.data ? shortfalls(outlook.data) : [];
 
-  if (waiting === 0 && short.length === 0) return null;
+  // One polite live region, always in the page, so a notice that appears is announced;
+  // a region added together with its text often is not.
   return (
-    <div className="home__alerts">
+    <div className="home__alerts live" role="status">
       {waiting > 0 && (
-        <p className="review-strip" role="status">
+        <p className="review-strip">
           <span>
-            {waiting} imported {waiting === 1 ? "transaction needs" : "transactions need"} a quick check
-            before {waiting === 1 ? "it goes" : "they go"} into your accounts.
+            {waiting}{" "}
+            {plural(waiting, {
+              one: "imported transaction needs a quick check before it goes into your accounts.",
+              other: "imported transactions need a quick check before they go into your accounts.",
+            })}
           </span>
           <Link to="/inbox">Review now</Link>
         </p>
@@ -75,7 +217,7 @@ function NeedsYou() {
 function ShortfallLine({ shortfall }: { shortfall: Shortfall }) {
   const amount = `${balance(shortfall.low)} ${shortfall.currency}`;
   return (
-    <p className="verdict verdict--short home__alert" role="alert">
+    <p className="verdict verdict--short home__alert">
       <span>
         {shortfall.already
           ? `${shortfall.accountName} is below zero: ${amount}.`
@@ -130,6 +272,7 @@ function YouHave({ accounts }: { accounts: Account[] }) {
 function ThisMonth() {
   const month = monthOf(new Date());
   const breakdown = useBreakdown(month);
+  const budgets = useBudgets();
 
   return (
     <section className="home__block" aria-labelledby="home-month">
@@ -139,6 +282,11 @@ function ThisMonth() {
       {breakdown.isPending && <Loading />}
       {breakdown.isError && <Failure error={breakdown.error} retry={() => void breakdown.refetch()} />}
       {breakdown.data?.map((each) => <MonthSummary key={each.currency} breakdown={each} />)}
+      {budgets.data && budgets.data.length === 0 && (
+        <p className="field__help">
+          Want to know what's left to spend? <Link to="/budgets">Set a monthly budget</Link>
+        </p>
+      )}
       <Link to="/breakdown" className="home__more">
         See all spending
       </Link>
@@ -169,7 +317,7 @@ function MonthSummary({ breakdown }: { breakdown: Breakdown }) {
           </dd>
         </div>
         <div>
-          <dt>Difference</dt>
+          <dt>{isNegative(net) ? "Spent more than came in" : "Left over"}</dt>
           <dd className={isNegative(net) ? "short" : undefined}>
             {balance(net)} <span className="home__muted">{currency}</span>
           </dd>
@@ -189,8 +337,8 @@ function MonthSummary({ breakdown }: { breakdown: Breakdown }) {
       )}
       {unfiled && (
         <p className="field__help">
-          {balance(unfiled.total)} {currency} of spending has no category yet. Pick one by clicking
-          “No category” on a transaction.
+          {balance(unfiled.total)} {currency} of spending has no category yet.{" "}
+          <Link to="/sort">Sort it now</Link>
         </p>
       )}
     </div>

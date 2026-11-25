@@ -117,7 +117,10 @@ describe("BudgetsScreen", () => {
     const user = userEvent.setup();
     renderWithClient(<BudgetsScreen />);
 
-    await user.type(await screen.findByLabelText("Limit"), "500");
+    // Budgets exist, so the list comes first and the form opens on request.
+    expect(screen.queryByRole("form", { name: "Set a budget" })).toBeNull();
+    await user.click(await screen.findByRole("button", { name: "Add a budget" }));
+    await user.type(screen.getByLabelText(/^Limit/), "500");
     await user.click(screen.getByRole("button", { name: "Set budget" }));
 
     await waitFor(() => expect(calls.some((call) => call.method === "POST" && call.url === "/api/budgets")).toBe(true));

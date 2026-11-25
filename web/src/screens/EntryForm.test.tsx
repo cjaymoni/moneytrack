@@ -28,16 +28,18 @@ interface Call {
 }
 
 let calls: Call[];
+let categoryList: unknown[];
 
 beforeEach(() => {
   calls = [];
+  categoryList = CATEGORIES;
   resetCsrf();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
       if (url === "/api/csrf") return new Response(JSON.stringify({ token: "tok-123" }));
-      if (url === "/api/categories") return new Response(JSON.stringify(CATEGORIES));
+      if (url === "/api/categories") return new Response(JSON.stringify(categoryList));
       if (url === "/api/transactions") {
         const sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
         return new Response(
@@ -139,5 +141,46 @@ describe("EntryForm", () => {
     await user.type(day, "2099-01-01");
 
     expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("asks who it came from for money in, and who it went to for money out", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    expect(await screen.findByLabelText("Paid to")).toBeTruthy();
+    await user.click(screen.getByRole("radio", { name: "Money in" }));
+    expect(screen.getByLabelText("Received from")).toBeTruthy();
+  });
+
+  it("shows a few categories at first and the rest on request", async () => {
+    const many = Array.from({ length: 10 }, (_, index) => ({
+      id: `c${index}`,
+      name: `Spend ${index}`,
+      parent_id: null,
+      kind: "expense",
+      sort_order: index,
+    }));
+    categoryList = many;
+    const user = userEvent.setup();
+    renderForm();
+    await screen.findByRole("button", { name: "Spend 0" });
+    expect(screen.queryByRole("button", { name: "Spend 9" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "More categories (3)" }));
+
+    expect(screen.getByRole("button", { name: "Spend 9" })).toBeTruthy();
+  });
+
+  it("keeps who and planned under More, and opens it when a future date makes the row planned", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const more = (await screen.findByText(/More: who it was with/)).closest("details") as HTMLDetailsElement;
+    expect(more.open).toBe(false);
+
+    const date = screen.getByLabelText("Date");
+    await user.clear(date);
+    await user.type(date, "2099-01-15");
+
+    expect(more.open).toBe(true);
+    expect((screen.getByRole("checkbox", { name: /Planned/ }) as HTMLInputElement).checked).toBe(true);
   });
 });

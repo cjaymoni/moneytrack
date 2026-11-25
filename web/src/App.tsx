@@ -7,6 +7,8 @@ import { NewAccount } from "./screens/NewAccount";
 import { CategoriesScreen } from "./screens/CategoriesScreen";
 import { BreakdownScreen } from "./screens/BreakdownScreen";
 import { ChartsScreen } from "./screens/ChartsScreen";
+import { SortScreen } from "./screens/SortScreen";
+import { SettingsScreen } from "./screens/SettingsScreen";
 import { OutlookScreen } from "./screens/OutlookScreen";
 import { BudgetsScreen } from "./screens/BudgetsScreen";
 import { RecurringScreen } from "./screens/RecurringScreen";
@@ -40,6 +42,8 @@ export function App() {
         <Route path="categories" element={<CategoriesScreen />} />
         <Route path="breakdown" element={<BreakdownScreen />} />
         <Route path="charts" element={<ChartsScreen />} />
+        <Route path="sort" element={<SortScreen />} />
+        <Route path="settings" element={<SettingsScreen user={me.data} />} />
         <Route path="outlook" element={<OutlookScreen />} />
         <Route path="budgets" element={<BudgetsScreen />} />
         <Route path="repeating" element={<RecurringScreen />} />

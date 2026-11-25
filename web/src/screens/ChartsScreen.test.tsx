@@ -196,7 +196,7 @@ describe("ChartsScreen", () => {
     const { container } = renderCharts();
     const bars = await screen.findByRole("list", { name: "Spending by category in GHS" });
     expect(within(bars).getByText("Rent & housing")).toBeTruthy();
-    expect(within(bars).getByText("No category")).toBeTruthy();
+    expect(within(bars).getByRole("link", { name: "No category — sort these" }).getAttribute("href")).toBe("/sort");
     const widths = [...container.querySelectorAll<HTMLElement>(".ranked__fill")].map((bar) => bar.style.width);
     expect(widths).toEqual(["79.36%", "20.63%"]);
   });
@@ -239,7 +239,8 @@ describe("ChartsScreen", () => {
       },
     ];
     renderCharts();
-    expect(await screen.findByText("Nothing came in or went out in these months.")).toBeTruthy();
+    expect(await screen.findByText(/Nothing came in or went out in these months\./)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "import a statement" }).getAttribute("href")).toBe("/import");
   });
 
   it("draws the picked month day by day, at the heights the server sent", async () => {

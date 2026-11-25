@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { grouped, signed } from "./format";
+import { grouped, plural, shortDate, signed } from "./format";
 
 const cedis = (display: string, minor_units: number) => ({ minor_units, currency: "GHS", display });
 
@@ -29,5 +29,21 @@ describe("signed", () => {
   it("takes the sign from the direction and never from arithmetic", () => {
     expect(signed(cedis("4200.00", 420_000), "in")).toBe("+4,200.00");
     expect(signed(cedis("5.00", 500), "out")).toBe("−5.00");
+  });
+});
+
+describe("plural", () => {
+  const forms = { one: "transaction", other: "transactions" };
+  it("picks the form the count needs", () => {
+    expect(plural(1, forms)).toBe("transaction");
+    expect(plural(0, forms)).toBe("transactions");
+    expect(plural(2, forms)).toBe("transactions");
+  });
+});
+
+describe("shortDate", () => {
+  it("writes the day and month in ordinary case, without a leading zero", () => {
+    expect(shortDate("2027-02-22T12:00:00")).toBe("22 Feb");
+    expect(shortDate("2027-02-03T12:00:00")).toBe("3 Feb");
   });
 });

@@ -27,8 +27,8 @@ export function CountIt({ account }: { account: Account }) {
 
   if (!open) {
     return (
-      <button type="button" className="btn btn--ghost count__open" onClick={() => setOpen(true)}>
-        Update balance
+      <button type="button" className="count__open count__open--link" onClick={() => setOpen(true)}>
+        Balance wrong? Correct it
       </button>
     );
   }

@@ -1,13 +1,16 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Link } from "react-router";
+import type { Category, LedgerEntry, Money, Transaction } from "../api/types";
+import { NO_FILTER, isFiltering, matches, type LedgerFilter } from "../ui/ledgerFilter";
 
 /** How far ahead the ledger lists expected rows. */
 const AHEAD_DAYS = 45;
-import type { Category, LedgerEntry, Money, Transaction } from "../api/types";
+/** How many recent transactions show before "Show earlier". */
+const RECENT_SHOWN = 20;
 
 import { useEditTransaction, useSetCategory } from "../api/queries";
 import { CategoryPicker, fullName, kindFor } from "../ui/CategoryPicker";
-import { balance, gutterDate, isNegative, longDate, signed } from "../ui/format";
+import { balance, gutterDate, isNegative, longDate, plural, signed } from "../ui/format";
 import { FormError } from "../ui/states";
 import { RowEditor } from "./RowEditor";
 
@@ -25,6 +28,7 @@ export function LedgerList({
   categories = [],
   now = new Date(),
   onDeleted = () => {},
+  filter = NO_FILTER,
 }: {
   entries: LedgerEntry[];
   opening: Money;
@@ -33,23 +37,33 @@ export function LedgerList({
   now?: Date;
   /** Told when a row is deleted, so the screen can offer to undo it. */
   onDeleted?: (row: Transaction) => void;
+  /** What the person is searching for; the whole ledger when absent. */
+  filter?: LedgerFilter;
 }) {
   const todayRef = useRef<HTMLDivElement>(null);
+  const [showAll, setShowAll] = useState(false);
+  const filtering = isFiltering(filter);
+  const nameOf = (id: string | null) => categories.find((category) => category.id === id)?.name;
+  const shownEntries = filtering
+    ? entries.filter((entry) => matches(entry, filter, nameOf(entry.transaction.category_id) ?? undefined))
+    : entries;
 
   // Which rows are history and which are forecast is a matter of when they are booked, read
   // against the reader's clock. Pending rows in the past stay where they fell, marked.
-  const past = entries.filter((entry) => new Date(entry.transaction.booked_at) <= now);
+  const allPast = shownEntries.filter((entry) => new Date(entry.transaction.booked_at) <= now);
+  // A long history opens on its most recent rows; the rest are a click away. A search shows
+  // every match.
+  const earlier = filtering || showAll ? 0 : Math.max(0, allPast.length - RECENT_SHOWN);
+  const past = allPast.slice(earlier);
   // The forecast is shown for the weeks ahead, not the year a repeating series writes: past
   // that, a list stops being something a person reads, and the outlook reads it for them.
   const horizon = new Date(now.getTime() + AHEAD_DAYS * 86_400_000);
-  const ahead = entries.filter((entry) => new Date(entry.transaction.booked_at) > now);
+  const ahead = shownEntries.filter((entry) => new Date(entry.transaction.booked_at) > now);
   const future = ahead.filter((entry) => new Date(entry.transaction.booked_at) <= horizon);
   const beyond = ahead.length - future.length;
 
-  // Long ledgers open at today rather than at the first row ever recorded.
-  useEffect(() => {
-    if (past.length > 8) todayRef.current?.scrollIntoView({ block: "center" });
-  }, [past.length]);
+  // A long ledger already opens on its recent rows (see `earlier`), so the page is not
+  // scrolled for the person: scrolling would carry them past the add form above.
 
   if (entries.length === 0) {
     return (
@@ -63,6 +77,14 @@ export function LedgerList({
     );
   }
 
+  if (filtering && shownEntries.length === 0) {
+    return (
+      <p className="ledger ledger--empty field__help" role="status">
+        No transactions match. Try fewer words, or show all transactions.
+      </p>
+    );
+  }
+
   return (
     <section className="ledger" aria-label="Transactions">
       <div className="ledger__head" aria-hidden="true">
@@ -70,10 +92,18 @@ export function LedgerList({
         <span className="mt-micro">Transaction</span>
         <span className="mt-micro ledger__head-num">Amount · balance after</span>
       </div>
-      <p className="ledger__opening">
-        <span className="mt-micro">Starting balance</span>
-        <span className="ledger__opening-fig">{balance(opening)}</span>
-      </p>
+      {earlier > 0 ? (
+        <button type="button" className="btn btn--quiet ledger__earlier" onClick={() => setShowAll(true)}>
+          Show {earlier} earlier {plural(earlier, { one: "transaction", other: "transactions" })}
+        </button>
+      ) : (
+        !filtering && (
+          <p className="ledger__opening">
+            <span className="mt-micro">Starting balance</span>
+            <span className="ledger__opening-fig">{balance(opening)}</span>
+          </p>
+        )
+      )}
       <ol className="ledger__rows">
         {past.map((entry) => (
           <Row
@@ -149,12 +179,15 @@ function Row({
         <button
           type="button"
           className="label label--edit"
+          aria-label={`${transaction.label}, edit`}
           aria-expanded={editing}
           aria-controls={editorId}
           onClick={() => setOpen(editing ? "none" : "edit")}
         >
           {transaction.label}
-          <span className="visually-hidden">, edit</span>
+          <span className="label__edit" aria-hidden="true">
+            Edit
+          </span>
         </button>
         <div className="sub">
           {transaction.counterparty && (
@@ -166,12 +199,12 @@ function Row({
           <button
             type="button"
             className={category ? "filed" : "filed filed--none"}
+            aria-label={category ? `Category: ${fullName(category, categories)}` : "No category. Add category"}
             aria-expanded={filing}
             aria-controls={pickerId}
             onClick={() => setOpen(filing ? "none" : "file")}
           >
-            <span className="visually-hidden">Category: </span>
-            {category ? fullName(category, categories) : "No category"}
+            {category ? fullName(category, categories) : "+ Add category"}
           </button>
           {transaction.recurring_id && (
             <>

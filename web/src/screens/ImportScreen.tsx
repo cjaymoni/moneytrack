@@ -11,6 +11,10 @@ import {
   guessMapping,
 } from "../ui/importing";
 import { Failure, FormError, Loading } from "../ui/states";
+import { usePageTitle } from "../ui/title";
+
+/** How many transactions the "as they will be read" table shows. */
+const READ_ROWS = 3;
 
 const DATE_ORDERS: { value: DateOrder; name: string }[] = [
   { value: "day_month_year", name: "Day first" },
@@ -26,6 +30,7 @@ const DATE_ORDERS: { value: DateOrder; name: string }[] = [
  * line waits in the inbox until the person has looked at it.
  */
 export function ImportScreen() {
+  usePageTitle("Import a statement");
   const accounts = useAccounts();
   const preview = usePreviewImport();
   const upload = useImport();
@@ -103,7 +108,7 @@ export function ImportScreen() {
         <h1 className="screen__title">Import a statement</h1>
         <p className="screen__lede">
           A CSV or OFX file downloaded from your bank or mobile money app. Its transactions wait
-          in To review for a quick check; nothing goes into your accounts until you add it.
+          in Check imports for a quick look; nothing goes into your accounts until you add it.
         </p>
       </div>
 
@@ -151,7 +156,7 @@ export function ImportScreen() {
             className="btn btn--primary"
             disabled={!file || tooLarge || upload.isPending || (format === "csv" && !mapping)}
           >
-            {upload.isPending ? "Reading the file" : "Import"}
+            {upload.isPending ? "Reading the file" : format === "csv" && mapping ? "Looks right — import" : "Import"}
           </button>
         </div>
       </form>
@@ -210,9 +215,50 @@ function MappingForm({
     </label>
   );
 
+  // The first few transactions as they will be read, so the person checks the result, not
+  // the settings. Cells are shown as text; nothing here reads or adds an amount.
+  const dataRows = preview.rows.slice(mapping.skip_rows + (mapping.has_header ? 1 : 0), mapping.skip_rows + (mapping.has_header ? 1 : 0) + READ_ROWS);
+  const amountOf = (row: string[]) =>
+    amount.kind === "signed"
+      ? row[amount.column] || "—"
+      : row[amount.money_out]
+        ? `out ${row[amount.money_out]}`
+        : row[amount.money_in]
+          ? `in ${row[amount.money_in]}`
+          : "—";
+
   return (
-    <fieldset className="import__mapping">
-      <legend className="mt-label">Which column is which</legend>
+    <div className="import__mapping">
+      <table className="import__read">
+        <caption>How the first transactions will be read</caption>
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">Description</th>
+            <th scope="col">Amount</th>
+            {mapping.counterparty !== null && <th scope="col">Payee</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {dataRows.map((row, index) => (
+            <tr key={index}>
+              <td>{row[mapping.date] || "—"}</td>
+              <td>{row[mapping.label] || "—"}</td>
+              <td>{amountOf(row)}</td>
+              {mapping.counterparty !== null && <td>{row[mapping.counterparty] || ""}</td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="field__help">
+        If these look right, import. If a column is wrong, fix it below; the answer is kept for
+        this account.
+      </p>
+
+      <details className="import__fix">
+        <summary>Fix how it's read</summary>
+      <fieldset className="import__settings">
+      <legend className="visually-hidden">Which column is which</legend>
 
       <label className="field">
         <span className="mt-label">Column headings are in</span>
@@ -295,14 +341,10 @@ function MappingForm({
         {optional("Balance after", mapping.balance, (balance) => set({ balance }))}
       </div>
 
-      <p className="field__help">
-        The first transaction reads as: <b>{firstData[mapping.date] ?? "—"}</b>, “{firstData[mapping.label] ?? ""}”,{" "}
-        {amount.kind === "signed"
-          ? firstData[amount.column] || "no amount"
-          : firstData[amount.money_out] || firstData[amount.money_in] || "no amount"}
-        . Every row is read the same way; any that can't be read are listed after import.
-      </p>
-    </fieldset>
+      </fieldset>
+      </details>
+      <p className="field__help">Any line that can't be read is listed after the import.</p>
+    </div>
   );
 }
 

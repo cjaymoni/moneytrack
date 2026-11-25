@@ -1,8 +1,10 @@
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import type { Outlook, OutlookPoint } from "../api/types";
 import { useOutlook } from "../api/queries";
-import { KIND_NAMES, balance, gutterDate, isNegative, longDate, signed } from "../ui/format";
+import { KIND_NAMES, balance, gutterDate, isNegative, longDate, shortDate, signed } from "../ui/format";
 import { Failure, Loading } from "../ui/states";
+import { usePageTitle } from "../ui/title";
+import { InsightsTabs } from "../ui/InsightsTabs";
 
 const WINDOWS = [30, 90, 180] as const;
 
@@ -17,6 +19,7 @@ const WINDOWS = [30, 90, 180] as const;
  * this screen's to measure; up and down, only by the level the server sent.
  */
 export function OutlookScreen() {
+  usePageTitle("Forecast");
   const [params, setParams] = useSearchParams();
   const asked = Number(params.get("days"));
   const days = (WINDOWS as readonly number[]).includes(asked) ? asked : 90;
@@ -24,6 +27,7 @@ export function OutlookScreen() {
 
   return (
     <section className="screen">
+      <InsightsTabs />
       <header className="month-bar">
         <h1 className="screen__title">Forecast</h1>
         <div className="segments window-pick" role="radiogroup" aria-label="How far ahead">
@@ -73,7 +77,7 @@ function AccountOutlook({ outlook, days }: { outlook: Outlook; days: number }) {
       <Verdict outlook={outlook} short={short} days={days} />
 
       <div className="balance">
-        <p className="mt-label">{lowRow ? "Lowest balance coming up" : "Lowest balance coming up — today"}</p>
+        <p className="mt-label">{lowRow ? "Lowest point coming up" : "Lowest point is today"}</p>
         <p className="balance__fig">
           <span className={isNegative(outlook.low) ? "short" : undefined}>{balance(outlook.low)}</span>
           <span className="balance__cur">{account.currency}</span>
@@ -95,7 +99,10 @@ function AccountOutlook({ outlook, days }: { outlook: Outlook; days: number }) {
       <Line outlook={outlook} />
 
       {points.length === 0 ? (
-        <p className="field__help">Nothing planned in the next {days} days.</p>
+        <p className="field__help">
+          Nothing planned in the next {days} days. Add rent, salary and other regular payments to
+          see where your balance is heading. <Link to="/repeating">Add a regular payment</Link>
+        </p>
       ) : (
         <ol className="ledger__rows outlook__rows" aria-label={`Planned for ${account.name}`}>
           {points.map((point) => (
@@ -176,7 +183,7 @@ export function Line({ outlook }: { outlook: Outlook }) {
       <span className="line__low" style={{ left: `${lowLeft}%`, top: `${lowTop}%` }} />
       <span className="line__ends mt-micro">
         <span>Today</span>
-        <span>{gutterDate(outlook.until)}</span>
+        <span>{shortDate(outlook.until)}</span>
       </span>
     </div>
   );

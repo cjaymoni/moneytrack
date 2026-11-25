@@ -57,6 +57,11 @@ export function gutterDate(instant: string): string {
   return dayMonth.format(new Date(instant)).toUpperCase();
 }
 
+/** A day in running text or on an axis: `22 Feb`, in the reader's own time zone. */
+export function shortDate(instant: string): string {
+  return dayMonth.format(new Date(instant)).replace(/^0/, "");
+}
+
 /** The same day, spelled out for a screen reader or a tooltip. */
 export function longDate(instant: string): string {
   return fullDate.format(new Date(instant));
@@ -69,3 +74,15 @@ export const KIND_NAMES = {
   cash: "Cash",
   card: "Card",
 } as const;
+
+/** English plural rules, asked once. */
+const PLURALS = new Intl.PluralRules("en-GB");
+
+/**
+ * The wording for `count` of something: `one` for 1, `other` otherwise — chosen by the
+ * locale's own plural rules rather than by comparing with 1, so the sentence survives being
+ * translated into a language with more than two forms.
+ */
+export function plural(count: number, forms: { one: string; other: string }): string {
+  return PLURALS.select(count) === "one" ? forms.one : forms.other;
+}

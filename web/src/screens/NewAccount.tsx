@@ -4,11 +4,13 @@ import type { AccountKind } from "../api/types";
 import { useCreateAccount, useCurrencies } from "../api/queries";
 import { KIND_NAMES } from "../ui/format";
 import { FormError } from "../ui/states";
+import { usePageTitle } from "../ui/title";
 
 const KINDS: AccountKind[] = ["momo", "bank", "cash", "card"];
 
 /** Opening an account: what it is called, what kind, which currency, what it holds now. */
 export function NewAccount() {
+  usePageTitle("Add an account");
   const navigate = useNavigate();
   const create = useCreateAccount();
   const currencies = useCurrencies();
@@ -37,7 +39,7 @@ export function NewAccount() {
       <h1 className="screen__title">Add an account</h1>
       <p className="screen__lede">
         A mobile money wallet, a bank account, or the cash in your pocket. Each account has
-        one currency.
+        one currency. Next, you'll add its transactions by hand or import a statement.
       </p>
 
       <form className="form" onSubmit={submit}>

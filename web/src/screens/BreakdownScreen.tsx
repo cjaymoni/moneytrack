@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import type { Breakdown, BreakdownLine, BreakdownSide } from "../api/types";
 import { useBreakdown } from "../api/queries";
 import { balance, isNegative } from "../ui/format";
 import { Failure, Loading } from "../ui/states";
+import { usePageTitle } from "../ui/title";
+import { InsightsTabs } from "../ui/InsightsTabs";
 
 /** `YYYY-MM` for the month a date falls in, on the reader's clock. */
 export function monthOf(date: Date): string {
@@ -34,6 +36,7 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
  * width, which is a percentage of a bar and not of anyone's money.
  */
 export function BreakdownScreen() {
+  usePageTitle("Spending by category");
   const [params, setParams] = useSearchParams();
   const asked = params.get("month");
   const thisMonth = monthOf(new Date());
@@ -44,8 +47,9 @@ export function BreakdownScreen() {
 
   return (
     <section className="screen">
+      <InsightsTabs />
       <header className="month-bar">
-        <h1 className="screen__title">Spending</h1>
+        <h1 className="screen__title">Spending by category</h1>
         <nav className="month-nav" aria-label="Month">
           <button
             type="button"
@@ -69,6 +73,10 @@ export function BreakdownScreen() {
           </button>
         </nav>
       </header>
+      <p className="screen__lede screen__lede--wide">
+        One month at a time, split by category. To compare months, see{" "}
+        <Link to="/charts">Trends</Link>.
+      </p>
 
       {breakdown.isPending && <Loading />}
       {breakdown.isError && (
@@ -132,7 +140,10 @@ function Month({ breakdown, month }: { breakdown: Breakdown; month: string }) {
       </div>
 
       {empty ? (
-        <p className="screen__lede">No transactions in {monthName(month)}.</p>
+        <p className="screen__lede">
+          No transactions in {monthName(month)}. Add some by hand on an account, or{" "}
+          <Link to="/import">import a statement</Link>, and they'll be split by category here.
+        </p>
       ) : (
         <>
           <Side title="Spending" side={spending} kind="out" />
@@ -177,6 +188,11 @@ function Line({ line, kind }: { line: BreakdownLine; kind: "in" | "out" }) {
         kind={kind}
         muted={line.category_id === null}
       />
+      {line.category_id === null && (
+        <Link to="/sort" className="split__sort">
+          Sort these into categories
+        </Link>
+      )}
       {line.children.length > 0 && (
         <ol className="split__parts">
           {line.children.map((part) => (

@@ -389,6 +389,72 @@ pub async fn set_category(
     read(&row)
 }
 
+/// The most rows one request may file at once.
+pub const MAX_FILED_AT_ONCE: usize = 500;
+
+/// Files several rows under one category, or under none, in one statement — and, when the
+/// person asks, remembers the payee so the next statement from it is filed the same way.
+///
+/// All or nothing: if any row is not this user's, is deleted, or is a transfer leg (which is
+/// netted, never filed), nothing changes and the request is refused.
+///
+/// # Errors
+/// [`ApiError::NotFound`] for a category, or for a row that is not this user's or not
+/// fileable, [`ApiError::Invalid`] for a repeated row, or [`ApiError::Internal`].
+pub async fn set_category_many(
+    pool: &Pool,
+    user: UserId,
+    device: DeviceId,
+    ids: &[TxId],
+    category: Option<CategoryId>,
+    remember: Option<&mt_core::categorise::Lesson>,
+) -> Result<usize, ApiError> {
+    let distinct: std::collections::HashSet<TxId> = ids.iter().copied().collect();
+    if distinct.len() != ids.len() {
+        return Err(ApiError::Invalid {
+            field: "transaction_ids".to_owned(),
+            reason: "the same transaction is listed twice".to_owned(),
+        });
+    }
+    if let Some(category) = category {
+        categories::get(pool, user, category).await?;
+    }
+
+    let mut client = db::client(pool).await?;
+    let transaction = client
+        .transaction()
+        .await
+        .map_err(|error| ApiError::database("begin filing transactions", &error))?;
+    let now = OffsetDateTime::now_utc();
+    let wanted: Vec<Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
+    let category = category.map(|id| *id.as_uuid());
+    let filed = transaction
+        .execute(
+            "UPDATE transactions
+                SET category_id = $3,
+                    updated_at = greatest($4::timestamptz, created_at::timestamptz)
+                                 ::ledger_instant,
+                    device_id = $5
+              WHERE user_id = $1 AND id = ANY($2) AND deleted_at IS NULL
+                AND transfer_id IS NULL",
+            &[user.as_uuid(), &wanted, &category, &now, device.as_uuid()],
+        )
+        .await
+        .map_err(|error| ApiError::database("file transactions", &error))?;
+    if usize::try_from(filed).ok() != Some(ids.len()) {
+        // Dropping the transaction rolls back the rows that did match.
+        return Err(ApiError::NotFound { entity: ENTITY });
+    }
+    if let Some(lesson) = remember {
+        crate::repo::rules::learn(&transaction, user, device, lesson).await?;
+    }
+    transaction
+        .commit()
+        .await
+        .map_err(|error| ApiError::database("commit filing transactions", &error))?;
+    Ok(ids.len())
+}
+
 /// What a caller may change about a row. Everything a person typed; not the account it is
 /// in, where it came from, or anything sync owns.
 ///

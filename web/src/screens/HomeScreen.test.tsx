@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import userEvent from "@testing-library/user-event";
 import type { Account, Breakdown, Budget, InboxCount, Money, Outlook } from "../api/types";
 import { renderWithClient } from "../test-utils";
 import { HomeScreen } from "./HomeScreen";
@@ -119,12 +120,18 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
+function Where() {
+  const location = useLocation();
+  return <p>At {location.pathname + location.search}</p>;
+}
+
 function renderHome() {
   return renderWithClient(
     <MemoryRouter initialEntries={["/"]}>
       <Routes>
         <Route path="/" element={<HomeScreen />} />
         <Route path="/accounts/new" element={<p>Add an account form</p>} />
+        <Route path="/accounts/:id" element={<Where />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -136,7 +143,7 @@ describe("HomeScreen", () => {
 
     expect(await screen.findByText(/3 imported transactions need a quick check/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Review now" }).getAttribute("href")).toBe("/inbox");
-    expect((await screen.findByRole("alert")).textContent).toMatch(
+    expect((await screen.findByText(/goes below zero/)).closest("p")?.textContent).toMatch(
       /MTN MoMo goes below zero on .*when Rent is paid, to −503\.00 GHS/,
     );
   });
@@ -191,7 +198,7 @@ describe("HomeScreen", () => {
     renderHome();
 
     expect(await screen.findByRole("link", { name: "Add a regular payment" })).toBeTruthy();
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/below zero/)).toBeNull();
   });
 
   it("names a budget close to its limit", async () => {
@@ -217,9 +224,72 @@ describe("HomeScreen", () => {
     expect(screen.queryByText(/need a quick check/)).toBeNull();
   });
 
-  it("sends someone with no accounts to add their first", async () => {
-    answers["/api/accounts"] = [];
+  it("offers adding a transaction, straight into the only account's form", async () => {
+    const user = userEvent.setup();
     renderHome();
-    expect(await screen.findByText("Add an account form")).toBeTruthy();
+    await user.click(await screen.findByRole("button", { name: "Add a transaction" }));
+    expect(await screen.findByText("At /accounts/a1?add=1")).toBeTruthy();
+  });
+
+  it("asks which account first when there are several", async () => {
+    const user = userEvent.setup();
+    answers["/api/accounts"] = [MOMO, { ...MOMO, id: "a2", name: "GCB Bank", kind: "bank" }];
+    renderHome();
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Account" }), "a2");
+    await user.click(screen.getByRole("button", { name: "Add a transaction" }));
+    expect(await screen.findByText("At /accounts/a2?add=1")).toBeTruthy();
+  });
+
+  it("links to importing a statement", async () => {
+    renderHome();
+    expect((await screen.findByRole("link", { name: "Import a statement" })).getAttribute("href")).toBe("/import");
+  });
+
+  it("welcomes someone with no accounts with a checklist, starting with adding one", async () => {
+    answers["/api/accounts"] = [];
+    answers["/api/budgets"] = [];
+    renderHome();
+    expect(await screen.findByRole("heading", { name: "Welcome to moneytrack" })).toBeTruthy();
+    expect(await screen.findByText("0 of 3 done")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Add an account" }).getAttribute("href")).toBe("/accounts/new");
+    expect(screen.queryByRole("button", { name: "Hide this list" })).toBeNull();
+  });
+
+  it("ticks off what is done and points at what is next", async () => {
+    answers["/api/transactions"] = [];
+    renderHome();
+    const start = await screen.findByRole("region", { name: "Get started" });
+    expect(within(start).getByText("2 of 3 done")).toBeTruthy();
+    expect(within(start).getByRole("link", { name: "Add a transaction" }).getAttribute("href")).toBe("/accounts/a1?add=1");
+  });
+
+  it("puts the checklist away when asked, and it stays away", async () => {
+    const user = userEvent.setup();
+    answers["/api/transactions"] = [];
+    localStorage.removeItem("mt-getting-started-hidden");
+    const first = renderHome();
+    await user.click(await screen.findByRole("button", { name: "Hide this list" }));
+    expect(screen.queryByRole("region", { name: "Get started" })).toBeNull();
+    first.unmount();
+
+    renderHome();
+    await screen.findByRole("region", { name: "You have" });
+    expect(screen.queryByRole("region", { name: "Get started" })).toBeNull();
+    localStorage.removeItem("mt-getting-started-hidden");
+  });
+
+  it("leaves the checklist off once everything is done", async () => {
+    answers["/api/transactions"] = [{ id: "t" }];
+    renderHome();
+    await screen.findByRole("region", { name: "You have" });
+    expect(screen.queryByRole("region", { name: "Get started" })).toBeNull();
+  });
+
+  it("says what is left over this month, and suggests a budget when there is none", async () => {
+    answers["/api/budgets"] = [];
+    renderHome();
+    const month = await screen.findByRole("region", { name: /so far$/ });
+    expect(await within(month).findByText("Left over")).toBeTruthy();
+    expect(within(month).getByRole("link", { name: "Set a monthly budget" })).toBeTruthy();
   });
 });

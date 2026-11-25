@@ -553,6 +553,133 @@ pub async fn set_category(
     Ok(Json(TransactionOut::try_from(&written)?))
 }
 
+/// Files several rows under one category at once, and remembers the payee if asked.
+///
+/// # Errors
+/// [`ApiError::Invalid`] for a list that is empty, too long or repeats a row, or a payee to
+/// remember that will not do; [`ApiError::NotFound`] if a row or the category is not this
+/// user's or a row cannot be filed.
+pub async fn file_many(
+    State(state): State<AppState>,
+    session: Session,
+    Json(body): Json<dto::FileManyIn>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if body.transaction_ids.is_empty()
+        || body.transaction_ids.len() > transactions::MAX_FILED_AT_ONCE
+    {
+        return Err(ApiError::Invalid {
+            field: "transaction_ids".to_owned(),
+            reason: format!(
+                "expected 1 to {} transactions",
+                transactions::MAX_FILED_AT_ONCE
+            ),
+        });
+    }
+    let ids = body
+        .transaction_ids
+        .iter()
+        .map(|id| dto::id::<TxId>("transaction_ids", id))
+        .collect::<ApiResult<Vec<_>>>()?;
+    let category = body
+        .category_id
+        .as_deref()
+        .map(|id| dto::id::<CategoryId>("category_id", id))
+        .transpose()?;
+    let lesson = match (&body.remember, category) {
+        (None, _) => None,
+        (Some(_), None) => {
+            return Err(ApiError::Invalid {
+                field: "remember".to_owned(),
+                reason: "there is no category to remember the payee under".to_owned(),
+            });
+        }
+        (Some(remember), Some(category_id)) => Some(lesson_from(remember, category_id)?),
+    };
+    let device = users::web_device(&state.pool, session.user).await?;
+    let filed = transactions::set_category_many(
+        &state.pool,
+        session.user,
+        device,
+        &ids,
+        category,
+        lesson.as_ref(),
+    )
+    .await?;
+    Ok(Json(serde_json::json!({ "filed": filed })))
+}
+
+/// The rule a "remember this payee" asks for, checked as input.
+fn lesson_from(
+    remember: &dto::RememberIn,
+    category_id: CategoryId,
+) -> ApiResult<mt_core::categorise::Lesson> {
+    let matched_field = match remember.matched_field.as_str() {
+        "counterparty" => mt_core::enums::MatchedField::Counterparty,
+        "label" => mt_core::enums::MatchedField::Label,
+        _ => {
+            return Err(ApiError::Invalid {
+                field: "remember.matched_field".to_owned(),
+                reason: "expected counterparty or label".to_owned(),
+            });
+        }
+    };
+    let pattern = remember.pattern.trim();
+    let length = pattern.chars().count();
+    if !(1..=mt_core::model::MAX_PATTERN_LEN).contains(&length) {
+        return Err(ApiError::Invalid {
+            field: "remember.pattern".to_owned(),
+            reason: format!(
+                "expected 1 to {} characters",
+                mt_core::model::MAX_PATTERN_LEN
+            ),
+        });
+    }
+    Ok(mt_core::categorise::Lesson {
+        matched_field,
+        pattern: pattern.to_owned(),
+        category_id,
+    })
+}
+
+/// Renames a category.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if it is not this user's, or [`ApiError::Invalid`] for a name the
+/// model refuses.
+pub async fn rename_category(
+    State(state): State<AppState>,
+    session: Session,
+    Path(id): Path<String>,
+    Json(body): Json<dto::RenameCategoryIn>,
+) -> ApiResult<Json<CategoryOut>> {
+    let id: CategoryId = dto::id("id", &id)?;
+    let device = users::web_device(&state.pool, session.user).await?;
+    let category = categories::rename(&state.pool, session.user, device, id, &body.name).await?;
+    Ok(Json(CategoryOut::from(&category)))
+}
+
+/// Deletes a category, moving its transactions to `move_to` or to no category.
+///
+/// # Errors
+/// As `categories::delete`.
+pub async fn delete_category(
+    State(state): State<AppState>,
+    session: Session,
+    Path(id): Path<String>,
+    Query(query): Query<dto::DeleteCategoryQuery>,
+) -> ApiResult<axum::http::StatusCode> {
+    let id: CategoryId = dto::id("id", &id)?;
+    let move_to = query
+        .move_to
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .map(|value| dto::id::<CategoryId>("move_to", value))
+        .transpose()?;
+    let device = users::web_device(&state.pool, session.user).await?;
+    categories::delete(&state.pool, session.user, device, id, move_to).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
 /// Changes a row.
 ///
 /// # Errors

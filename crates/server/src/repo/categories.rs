@@ -4,7 +4,7 @@
 //! schema can refuse a category that is its own parent, but not a grandparent chain, so the
 //! parent is read here first and handed to the core to judge.
 
-use deadpool_postgres::Pool;
+use deadpool_postgres::{GenericClient, Pool};
 use mt_core::enums::CategoryKind;
 use mt_core::ids::{CategoryId, DeviceId, UserId};
 use mt_core::model::{Category, SyncMeta};
@@ -253,6 +253,237 @@ pub async fn get(pool: &Pool, user: UserId, id: CategoryId) -> Result<Category, 
         Some(row) => read(&row),
         None => Err(ApiError::NotFound { entity: ENTITY }),
     }
+}
+
+/// Renames a category.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if the category is not this user's, [`ApiError::Invalid`] for a
+/// name the model refuses, or [`ApiError::Internal`].
+pub async fn rename(
+    pool: &Pool,
+    user: UserId,
+    device: DeviceId,
+    id: CategoryId,
+    name: &str,
+) -> Result<Category, ApiError> {
+    let mut renamed = get(pool, user, id).await?;
+    renamed.name = name.trim().to_owned();
+    renamed.validate().map_err(|reason| ApiError::Invalid {
+        field: "name".to_owned(),
+        reason: reason.to_string(),
+    })?;
+
+    let now = OffsetDateTime::now_utc();
+    let client = db::client(pool).await?;
+    let row = client
+        .query_one(
+            &format!(
+                "UPDATE categories
+                    SET name = $3,
+                        updated_at = greatest($4::timestamptz, created_at::timestamptz)
+                                     ::ledger_instant,
+                        device_id = $5
+                  WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL
+                  RETURNING {COLUMNS}"
+            ),
+            &[
+                user.as_uuid(),
+                id.as_uuid(),
+                &renamed.name,
+                &now,
+                device.as_uuid(),
+            ],
+        )
+        .await
+        .map_err(|error| ApiError::database("rename a category", &error))?;
+    read(&row)
+}
+
+/// Deletes a category, moving what was filed under it to `move_to`, or to no category.
+///
+/// Everything that names the category moves in the same database transaction: its
+/// transactions, the regular payments that write into it, the rules that file into it, and
+/// any waiting statement line it was proposed for. A rule with nowhere to go is deleted with
+/// it, so the next statement is not filed under a category that no longer exists.
+///
+/// A category with subcategories, or with a budget, is refused rather than guessed about:
+/// the person moves or removes those first.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if either category is not this user's, [`ApiError::Invalid`] for
+/// a `move_to` that is the category itself or of the other kind, [`ApiError::Conflict`] for
+/// one with subcategories or a budget, or [`ApiError::Internal`].
+pub async fn delete(
+    pool: &Pool,
+    user: UserId,
+    device: DeviceId,
+    id: CategoryId,
+    move_to: Option<CategoryId>,
+) -> Result<(), ApiError> {
+    let mut client = db::client(pool).await?;
+    let transaction = client
+        .transaction()
+        .await
+        .map_err(|error| ApiError::database("begin deleting a category", &error))?;
+
+    // Both locked in one statement, in id order, so two deletes moving into each other
+    // wait for one another rather than deadlock.
+    let wanted: Vec<CategoryId> = std::iter::once(id).chain(move_to).collect();
+    let locked = lock(&transaction, user, &wanted).await?;
+    let find = |wanted: CategoryId| {
+        locked
+            .iter()
+            .find(|category| category.id == wanted)
+            .ok_or(ApiError::NotFound { entity: ENTITY })
+    };
+    let doomed = find(id)?;
+    if let Some(target) = move_to {
+        if target == id {
+            return Err(ApiError::Invalid {
+                field: "move_to".to_owned(),
+                reason: "it is the category being deleted".to_owned(),
+            });
+        }
+        let target = find(target)?;
+        if target.kind != doomed.kind {
+            return Err(ApiError::Invalid {
+                field: "move_to".to_owned(),
+                reason: format!(
+                    "it is an {} category and this one is {}",
+                    target.kind.as_str(),
+                    doomed.kind.as_str()
+                ),
+            });
+        }
+    }
+    let count = |sql: &'static str| {
+        let transaction = &transaction;
+        async move {
+            transaction
+                .query_one(sql, &[user.as_uuid(), id.as_uuid()])
+                .await
+                .and_then(|row| row.try_get::<_, i64>(0))
+                .map_err(|error| ApiError::database("check what a category holds", &error))
+        }
+    };
+    if count(
+        "SELECT count(*) FROM categories
+          WHERE user_id = $1 AND parent_id = $2 AND deleted_at IS NULL",
+    )
+    .await?
+        > 0
+    {
+        return Err(ApiError::Conflict {
+            reason: "it has subcategories; move or delete those first".to_owned(),
+        });
+    }
+    if count(
+        "SELECT count(*) FROM budgets
+          WHERE user_id = $1 AND category_id = $2 AND deleted_at IS NULL",
+    )
+    .await?
+        > 0
+    {
+        return Err(ApiError::Conflict {
+            reason: "it has a budget; remove the budget first".to_owned(),
+        });
+    }
+
+    let now = OffsetDateTime::now_utc();
+    let target = move_to.map(|target| *target.as_uuid());
+    let moves: [(&str, &'static str); 3] = [
+        (
+            "move its transactions",
+            "UPDATE transactions
+                SET category_id = $3,
+                    updated_at = greatest($4::timestamptz, created_at::timestamptz)::ledger_instant,
+                    device_id = $5
+              WHERE user_id = $1 AND category_id = $2 AND deleted_at IS NULL",
+        ),
+        (
+            "move its regular payments",
+            "UPDATE recurring
+                SET category_id = $3,
+                    updated_at = greatest($4::timestamptz, created_at::timestamptz)::ledger_instant,
+                    device_id = $5
+              WHERE user_id = $1 AND category_id = $2 AND deleted_at IS NULL",
+        ),
+        (
+            "move its rules",
+            "UPDATE category_rules
+                SET category_id = coalesce($3, category_id),
+                    deleted_at = CASE WHEN $3::uuid IS NULL THEN $4::timestamptz END,
+                    updated_at = greatest($4::timestamptz, created_at::timestamptz)::ledger_instant,
+                    device_id = $5
+              WHERE user_id = $1 AND category_id = $2 AND deleted_at IS NULL",
+        ),
+    ];
+    for (operation, sql) in moves {
+        transaction
+            .execute(
+                sql,
+                &[
+                    user.as_uuid(),
+                    id.as_uuid(),
+                    &target,
+                    &now,
+                    device.as_uuid(),
+                ],
+            )
+            .await
+            .map_err(|error| ApiError::database(operation, &error))?;
+    }
+    // A waiting statement line carries only a proposal; it has no device or sync columns.
+    transaction
+        .execute(
+            "UPDATE inbox_items
+                SET category_id = $3,
+                    updated_at = greatest($4::timestamptz, created_at::timestamptz)::ledger_instant
+              WHERE user_id = $1 AND category_id = $2 AND status = 'pending'",
+            &[user.as_uuid(), id.as_uuid(), &target, &now],
+        )
+        .await
+        .map_err(|error| ApiError::database("move its waiting lines", &error))?;
+    transaction
+        .execute(
+            "UPDATE categories
+                SET deleted_at = $3,
+                    updated_at = greatest($3::timestamptz, created_at::timestamptz)::ledger_instant,
+                    device_id = $4
+              WHERE user_id = $1 AND id = $2",
+            &[user.as_uuid(), id.as_uuid(), &now, device.as_uuid()],
+        )
+        .await
+        .map_err(|error| ApiError::database("delete a category", &error))?;
+
+    transaction
+        .commit()
+        .await
+        .map_err(|error| ApiError::database("commit deleting a category", &error))
+}
+
+/// The live categories of this user's among `ids`, locked for the rest of the transaction
+/// in id order. One that is missing is simply not returned.
+async fn lock(
+    client: &impl GenericClient,
+    user: UserId,
+    ids: &[CategoryId],
+) -> Result<Vec<Category>, ApiError> {
+    let ids: Vec<Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
+    let rows = client
+        .query(
+            &format!(
+                "SELECT {COLUMNS} FROM categories
+                  WHERE user_id = $1 AND id = ANY($2) AND deleted_at IS NULL
+                  ORDER BY id
+                  FOR UPDATE"
+            ),
+            &[user.as_uuid(), &ids],
+        )
+        .await
+        .map_err(|error| ApiError::database("lock categories", &error))?;
+    rows.iter().map(read).collect()
 }
 
 /// Reads one row.

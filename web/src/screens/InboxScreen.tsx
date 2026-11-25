@@ -5,6 +5,7 @@ import { useAcceptInbox, useCategories, useInbox, useMergeInbox, useRejectInbox 
 import { CategoryPicker, kindFor } from "../ui/CategoryPicker";
 import { gutterDate, longDate, signed } from "../ui/format";
 import { Failure, FormError, Loading } from "../ui/states";
+import { usePageTitle } from "../ui/title";
 
 /** Why a row looks like a duplicate, in the inbox's words. */
 const SIGNAL_WORDS: Record<string, string> = {
@@ -33,6 +34,7 @@ export function reasons(signals: string[]): string {
  * server where that payee belongs.
  */
 export function InboxScreen() {
+  usePageTitle("Check imports");
   const inbox = useInbox();
   const categories = useCategories();
   const accept = useAcceptInbox();
@@ -51,7 +53,7 @@ export function InboxScreen() {
   return (
     <section className="screen">
       <div className="screen__head">
-        <h1 className="screen__title">To review</h1>
+        <h1 className="screen__title">Check imports</h1>
         <p className="screen__lede">
           Transactions from statements you imported. Check each one, pick a category and add it.
           Nothing goes into your accounts until you do.

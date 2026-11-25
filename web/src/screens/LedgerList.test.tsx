@@ -124,7 +124,7 @@ describe("LedgerList", () => {
     );
 
     expect(screen.getByRole("button", { name: /Food & groceries · Chop bar/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /No category/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "No category. Add category" })).toBeTruthy();
   });
 
   it("marks a correction to a count as counted", () => {
@@ -196,5 +196,48 @@ describe("LedgerList", () => {
     expect(screen.queryByText("Rent")).toBeNull();
     expect(screen.getByText(/3 more planned transactions after the next 45 days/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "See them in the forecast" }).getAttribute("href")).toBe("/outlook?days=180");
+  });
+
+  it("opens on the most recent transactions, with the rest a click away", async () => {
+    const many = Array.from({ length: 25 }, (_, index) =>
+      entry(String(index), `Row ${index}`, `2026-10-${String(index + 1).padStart(2, "0")}T09:00:00Z`, "out", cedis(100, "1.00"), cedis(0, "0.00")),
+    );
+    render(<LedgerList now={NOW} opening={cedis(0, "0.00")} currency="GHS" entries={many} />);
+    expect(screen.queryByText("Row 0")).toBeNull();
+    expect(screen.getByText("Row 24")).toBeTruthy();
+
+    screen.getByRole("button", { name: "Show 5 earlier transactions" }).click();
+
+    expect(await screen.findByText("Row 0")).toBeTruthy();
+    expect(screen.getByText("Starting balance")).toBeTruthy();
+  });
+
+  it("shows only what matches a search, or says nothing does", () => {
+    const rows = [
+      entry("1", "Waakye", "2026-11-02T09:00:00Z", "out", cedis(100, "1.00"), cedis(0, "0.00")),
+      entry("2", "Trotro", "2026-11-03T09:00:00Z", "out", cedis(100, "1.00"), cedis(0, "0.00")),
+    ];
+    const { rerender } = render(
+      <LedgerList now={NOW} opening={cedis(0, "0.00")} currency="GHS" entries={rows} filter={{ text: "waak", show: "all" }} />,
+    );
+    expect(screen.getByText("Waakye")).toBeTruthy();
+    expect(screen.queryByText("Trotro")).toBeNull();
+
+    rerender(
+      <LedgerList now={NOW} opening={cedis(0, "0.00")} currency="GHS" entries={rows} filter={{ text: "kenkey", show: "all" }} />,
+    );
+    expect(screen.getByText(/No transactions match/)).toBeTruthy();
+  });
+
+  it("says a row can be edited without needing a hover", () => {
+    render(
+      <LedgerList
+        now={NOW}
+        opening={cedis(0, "0.00")}
+        currency="GHS"
+        entries={[entry("1", "Waakye", "2026-11-02T09:00:00Z", "out", cedis(100, "1.00"), cedis(0, "0.00"))]}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Waakye, edit" })).toBeTruthy();
   });
 });

@@ -211,6 +211,40 @@ pub struct SetCategoryIn {
     pub category_id: Option<String>,
 }
 
+/// Several rows to file under one category at once.
+#[derive(Debug, Deserialize)]
+pub struct FileManyIn {
+    /// The rows, at most `transactions::MAX_FILED_AT_ONCE`.
+    pub transaction_ids: Vec<String>,
+    /// The category, or null to leave them uncategorised.
+    pub category_id: Option<String>,
+    /// A payee to file the same way next time, if the person asked.
+    pub remember: Option<RememberIn>,
+}
+
+/// What to remember about the payee.
+#[derive(Debug, Deserialize)]
+pub struct RememberIn {
+    /// `counterparty` or `label`: where the payee's name appears.
+    pub matched_field: String,
+    /// The text to look for, as it appears on the rows.
+    pub pattern: String,
+}
+
+/// A rename.
+#[derive(Debug, Deserialize)]
+pub struct RenameCategoryIn {
+    /// The new name.
+    pub name: String,
+}
+
+/// Where a deleted category's transactions go.
+#[derive(Debug, Deserialize)]
+pub struct DeleteCategoryQuery {
+    /// The category to move them to; absent leaves them uncategorised.
+    pub move_to: Option<String>,
+}
+
 /// One period's earning and spending in one currency, by category.
 #[derive(Debug, Clone, Serialize)]
 pub struct BreakdownOut {
