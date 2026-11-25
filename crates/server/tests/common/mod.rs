@@ -29,6 +29,21 @@ fn admin_url() -> String {
     })
 }
 
+/// A client that keeps cookies, as a browser does.
+///
+/// It opens a fresh connection per request rather than reusing one. After refusing an
+/// oversized upload the server closes the connection without reading the rest of the body;
+/// a pooled client could hand the next request to that closed connection and fail with a
+/// reset that has nothing to do with the test. Concurrent requests never share a connection
+/// either way.
+fn browser() -> reqwest::Client {
+    reqwest::Client::builder()
+        .cookie_store(true)
+        .pool_max_idle_per_host(0)
+        .build()
+        .unwrap()
+}
+
 /// A running server, its database, and a client that keeps cookies.
 pub struct TestServer {
     pub base: String,
@@ -84,10 +99,7 @@ impl TestServer {
 
         Self {
             base: format!("http://{address}/api"),
-            client: reqwest::Client::builder()
-                .cookie_store(true)
-                .build()
-                .unwrap(),
+            client: browser(),
             token: Mutex::new(None),
             database,
         }
@@ -97,10 +109,7 @@ impl TestServer {
     pub fn another_browser(&self) -> Self {
         Self {
             base: self.base.clone(),
-            client: reqwest::Client::builder()
-                .cookie_store(true)
-                .build()
-                .unwrap(),
+            client: browser(),
             token: Mutex::new(None),
             // Only the browser that created the database drops it.
             database: String::new(),
@@ -142,6 +151,19 @@ impl TestServer {
         client.batch_execute(sql).await.expect("run test setup");
         drop(client);
         handle.abort();
+    }
+
+    /// A connection of its own to this server's database, for holding a lock while a request
+    /// runs — to show the request waits for it. Never used to check what the API did.
+    pub async fn side_connection(&self) -> tokio_postgres::Client {
+        let url = swap_database(&admin_url(), &self.database);
+        let (client, connection) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
+            .await
+            .expect("connect to the test database");
+        tokio::spawn(async move {
+            connection.await.ok();
+        });
+        client
     }
 
     /// A PATCH carrying the CSRF token.

@@ -68,8 +68,8 @@ describe("RecurringScreen", () => {
     renderWithClient(<RecurringScreen />);
 
     await user.click(await screen.findByRole("button", { name: "Stop…" }));
-    expect(screen.getByText(/expected rows still to come will go/)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Stop repeating" }));
+    expect(screen.getByText(/future planned payments will be removed/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Stop it" }));
 
     await waitFor(() => expect(calls.some((call) => call.method === "DELETE" && call.url === "/api/recurring/r-rent")).toBe(true));
   });
@@ -78,10 +78,15 @@ describe("RecurringScreen", () => {
     const user = userEvent.setup();
     renderWithClient(<RecurringScreen />);
 
-    await user.type(await screen.findByLabelText(/Amount each time/), "4200");
-    await user.click(screen.getByText("In"));
-    await user.type(screen.getByLabelText("What it is"), "Salary");
-    await user.click(screen.getByRole("button", { name: "Start repeating" }));
+    // Series exist, so the list comes first and the form opens on request.
+    await user.click(await screen.findByRole("button", { name: "Add a regular payment" }));
+    await user.type(screen.getByLabelText(/Amount each time/), "4200");
+    await user.click(screen.getByText("Money in"));
+    await user.type(screen.getByLabelText("Description"), "Salary");
+    await user.selectOptions(screen.getByRole("combobox", { name: "How many" }), "2");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Unit" }), "weekly");
+    expect(screen.getByRole("option", { name: "weeks" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Add regular payment" }));
 
     await waitFor(() => expect(calls.some((call) => call.method === "POST" && call.url === "/api/recurring")).toBe(true));
     const sent = calls.find((call) => call.method === "POST" && call.url === "/api/recurring")?.body as Record<string, unknown>;
@@ -90,8 +95,8 @@ describe("RecurringScreen", () => {
       direction: "in",
       amount: "4200",
       label: "Salary",
-      freq: "monthly",
-      interval: 1,
+      freq: "weekly",
+      interval: 2,
     });
     expect(sent.offset_minutes).toBe(-new Date().getTimezoneOffset() || 0);
   });

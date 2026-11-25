@@ -259,6 +259,11 @@ impl<'a> DuplicateIndex<'a> {
     /// A reference matching a row in a *different* account, when the candidate's account is
     /// known to be another one, is not a match at all: per-account sequence numbers collide
     /// constantly and that is not evidence of anything.
+    ///
+    /// Nor is a reference on a row that moved a different amount, or the other way. Banks
+    /// reuse one reference across a transfer and the charge levied on it, and some fill the
+    /// column with `N/A`; offering a GHS 1 levy as "certainly" the GHS 500 transfer invites a
+    /// merge that drops the levy from the ledger.
     fn by_external_id_match(&self, candidate: &Candidate) -> Vec<Suspect> {
         let Some(external_id) = candidate.external_id.as_deref() else {
             return Vec::new();
@@ -275,6 +280,9 @@ impl<'a> DuplicateIndex<'a> {
 
         let mut found: Vec<Suspect> = rows
             .iter()
+            .filter(|existing| {
+                existing.amount == candidate.amount && existing.direction == candidate.direction
+            })
             .filter_map(|existing| {
                 let score_bps = match candidate.account_id {
                     Some(account_id) if account_id == existing.account_id => SCORE_CERTAIN,

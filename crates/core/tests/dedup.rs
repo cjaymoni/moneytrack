@@ -496,3 +496,19 @@ fn a_reference_the_ledger_already_holds_twice_offers_both_rows() {
     assert_eq!(found.len(), 2);
     assert!(found.iter().all(mt_core::dedup::Suspect::is_certain));
 }
+
+#[test]
+fn a_shared_reference_on_a_different_amount_is_not_a_match() {
+    // A transfer and the levy on it often carry one reference. The levy is not the transfer.
+    let account = id();
+    let rows = vec![Transaction {
+        external_id: Some("TRF-0412".to_owned()),
+        ..existing(account, 50_000, NOW, Some("KOFI"))
+    }];
+    let levy = Candidate {
+        external_id: Some("TRF-0412".to_owned()),
+        ..parsed(Some(account), 500, NOW, Some("KOFI"))
+    };
+
+    assert!(suspects(&levy, &rows, &MatchRules::default()).is_empty());
+}

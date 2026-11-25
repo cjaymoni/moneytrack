@@ -12,6 +12,7 @@ import { ordered, fullName } from "../ui/CategoryPicker";
 import { localDate } from "../ui/dates";
 import { balance, longDate } from "../ui/format";
 import { Failure, FormError, Loading } from "../ui/states";
+import { usePageTitle } from "../ui/title";
 
 const PERIODS: { value: BudgetPeriod; name: string; per: string }[] = [
   { value: "weekly", name: "Weekly", per: "a week" },
@@ -39,27 +40,38 @@ const MAX_OVER = 10;
  * share of the cap the server sent, a cell per tenth — a count of cells, not an amount.
  */
 export function BudgetsScreen() {
+  usePageTitle("Budgets");
   const budgets = useBudgets();
+  const [adding, setAdding] = useState<boolean | null>(null);
 
   if (budgets.isPending) return <Loading />;
   if (budgets.isError) return <Failure error={budgets.error} retry={() => void budgets.refetch()} />;
 
   const running = budgets.data.filter((budget) => budget.now);
   const earlier = budgets.data.filter((budget) => !budget.now);
+  // The form opens by itself only when there is nothing to show yet.
+  const formOpen = adding ?? running.length === 0;
 
   return (
     <section className="screen">
       <div className="screen__head">
         <h1 className="screen__title">Budgets</h1>
         <p className="screen__lede">
-          A cap on what goes out, per category. A cap on a category covers the ones under it.
+          A spending limit for a category, or for everything. A limit on a category includes the
+          categories inside it.
         </p>
       </div>
 
-      <AddBudget />
+      {formOpen ? (
+        <AddBudget onClose={running.length > 0 ? () => setAdding(false) : undefined} />
+      ) : (
+        <button type="button" className="btn btn--primary screen__action" onClick={() => setAdding(true)}>
+          Add a budget
+        </button>
+      )}
 
       {running.length === 0 ? (
-        <p className="screen__lede">No caps yet. Set one above.</p>
+        <p className="screen__lede">No budgets yet.</p>
       ) : (
         <ol className="grades" aria-label="Budgets">
           {running.map((budget) => (
@@ -69,8 +81,8 @@ export function BudgetsScreen() {
       )}
 
       {earlier.length > 0 && (
-        <section aria-label="Earlier caps" className="earlier">
-          <h2 className="mt-label">Earlier caps</h2>
+        <section aria-label="Earlier budgets" className="earlier">
+          <h2 className="mt-label">Earlier budgets</h2>
           <ul>
             {earlier.map((budget) => (
               <li key={budget.id} className="field__help">
@@ -91,7 +103,6 @@ function BudgetRow({ budget }: { budget: Budget }) {
   const now = budget.now;
   if (!now) return null;
   const over = now.level === "over";
-  const period = PERIODS.find((each) => each.value === budget.period);
 
   return (
     <li className="grade">
@@ -103,7 +114,7 @@ function BudgetRow({ budget }: { budget: Budget }) {
           onClick={() => setChanging(!changing)}
         >
           {budget.name}
-          <span className="visually-hidden">, change this cap</span>
+          <span className="visually-hidden">, edit</span>
         </button>
         <span className="grade__value">
           {balance(now.spent)} <span className="grade__of">of {balance(budget.cap)} {budget.cap.currency}</span>
@@ -117,8 +128,8 @@ function BudgetRow({ budget }: { budget: Budget }) {
             : `${balance(now.remaining)} left, ${daysLeft(now)} to go`}
         </span>
         <span className={over ? "mt-micro over" : "mt-micro"}>
-          {now.used_display} of {period?.per ?? "the period"}'s cap
-          {now.level === "warning" ? " · nearly there" : ""}
+          {now.used_display} of the limit used
+          {now.level === "warning" ? " · close to the limit" : ""}
         </span>
       </div>
       <Expected now={now} expected={budget.expected} />
@@ -154,9 +165,9 @@ function Expected({ now, expected }: { now: Standing; expected: Standing | null 
   const worse = expected.level !== now.level;
   return (
     <p className={expected.level === "over" ? "grade__expected over" : "grade__expected"}>
-      Expected rows this period take it to {balance(expected.spent)} ({expected.used_display})
-      {worse && expected.level === "over" ? " — past the cap" : ""}
-      {worse && expected.level === "warning" ? " — nearly there" : ""}.
+      Planned payments this period take it to {balance(expected.spent)} ({expected.used_display})
+      {worse && expected.level === "over" ? " — over the limit" : ""}
+      {worse && expected.level === "warning" ? " — close to the limit" : ""}.
     </p>
   );
 }
@@ -182,15 +193,15 @@ function ChangeBudget({ budget, onDone }: { budget: Budget; onDone: () => void }
   }
 
   return (
-    <form className="row-editor grade__editor" onSubmit={save} aria-label={`Change the cap on ${budget.name}`}>
+    <form className="row-editor grade__editor" onSubmit={save} aria-label={`Change the limit for ${budget.name}`}>
       <div className="row-editor__fields">
         <label className="field">
-          <span className="mt-label">Cap, {budget.cap.currency}</span>
+          <span className="mt-label">Limit, {budget.cap.currency}</span>
           <input className="amount-input" inputMode="decimal" required value={cap} onChange={(event) => setCap(event.target.value)} />
-          <span className="field__help">From this period on. Earlier periods keep the cap they had.</span>
+          <span className="field__help">Applies from this period on. Earlier periods keep their old limit.</span>
         </label>
         <label className="field">
-          <span className="mt-label">Warn</span>
+          <span className="mt-label">Warn me</span>
           <select value={warnAt} onChange={(event) => setWarnAt(Number(event.target.value))}>
             {WARNINGS.map((option) => (
               <option key={option.bps} value={option.bps}>
@@ -208,7 +219,7 @@ function ChangeBudget({ budget, onDone }: { budget: Budget; onDone: () => void }
           disabled={change.isPending || remove.isPending}
           onClick={() => remove.mutate(budget.id, { onSuccess: () => onDone() })}
         >
-          {remove.isPending ? "Removing" : "Remove cap"}
+          {remove.isPending ? "Removing" : "Remove budget"}
         </button>
         <span className="row-editor__spacer" />
         <button type="button" className="btn btn--quiet" onClick={onDone}>
@@ -222,7 +233,7 @@ function ChangeBudget({ budget, onDone }: { budget: Budget; onDone: () => void }
   );
 }
 
-function AddBudget() {
+function AddBudget({ onClose }: { onClose?: (() => void) | undefined }) {
   const create = useCreateBudget();
   const categories = useCategories();
   const accounts = useAccounts();
@@ -273,7 +284,7 @@ function AddBudget() {
       </div>
       <div className="add-budget__fields">
         <label className="field">
-          <span className="mt-label">On</span>
+          <span className="mt-label">For</span>
           <select value={category} onChange={(event) => setCategory(event.target.value)}>
             <option value="">All spending</option>
             {spending.map((option) => (
@@ -284,7 +295,7 @@ function AddBudget() {
           </select>
         </label>
         <label className="field">
-          <span className="mt-label">Cap</span>
+          <span className="mt-label">Limit{held.length > 1 ? "" : `, ${chosenCurrency}`}</span>
           <input
             className="amount-input"
             inputMode="decimal"
@@ -295,7 +306,7 @@ function AddBudget() {
             onChange={(event) => setCap(event.target.value)}
           />
         </label>
-        {held.length > 1 ? (
+        {held.length > 1 && (
           <label className="field">
             <span className="mt-label">Currency</span>
             <select value={chosenCurrency} onChange={(event) => setCurrency(event.target.value)}>
@@ -304,14 +315,15 @@ function AddBudget() {
               ))}
             </select>
           </label>
-        ) : (
-          <div className="field">
-            <span className="mt-label">Currency</span>
-            <span className="add-budget__currency">{chosenCurrency}</span>
-          </div>
         )}
+        <button type="submit" className="btn btn--primary" disabled={create.isPending}>
+          {create.isPending ? "Setting" : "Set budget"}
+        </button>
+      </div>
+      <details className="add-budget__more">
+        <summary>More options</summary>
         <label className="field">
-          <span className="mt-label">Warn</span>
+          <span className="mt-label">Warn me</span>
           <select value={warnAt} onChange={(event) => setWarnAt(Number(event.target.value))}>
             {WARNINGS.map((option) => (
               <option key={option.bps} value={option.bps}>
@@ -320,15 +332,17 @@ function AddBudget() {
             ))}
           </select>
         </label>
-        <button type="submit" className="btn btn--primary" disabled={create.isPending}>
-          {create.isPending ? "Setting" : "Set cap"}
-        </button>
-      </div>
+      </details>
       <p className="field__help">
-        {period === "monthly" && "Counts from the 1st of this month, so spending already done this month is in it."}
-        {period === "yearly" && "Counts from 1 January, so spending already done this year is in it."}
-        {period === "weekly" && "Weeks are counted from today."}
+        {period === "monthly" && "Counts from the 1st of this month."}
+        {period === "yearly" && "Counts from 1 January."}
+        {period === "weekly" && "Each week starts today."}
       </p>
+      {onClose && (
+        <button type="button" className="btn btn--quiet add-budget__done" onClick={onClose}>
+          Done
+        </button>
+      )}
       <FormError error={create.error} />
     </form>
   );

@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import type { Breakdown, BreakdownLine, BreakdownSide } from "../api/types";
 import { useBreakdown } from "../api/queries";
 import { balance, isNegative } from "../ui/format";
 import { Failure, Loading } from "../ui/states";
+import { usePageTitle } from "../ui/title";
+import { InsightsTabs } from "../ui/InsightsTabs";
 
 /** `YYYY-MM` for the month a date falls in, on the reader's clock. */
 export function monthOf(date: Date): string {
@@ -34,6 +36,7 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
  * width, which is a percentage of a bar and not of anyone's money.
  */
 export function BreakdownScreen() {
+  usePageTitle("Spending by category");
   const [params, setParams] = useSearchParams();
   const asked = params.get("month");
   const thisMonth = monthOf(new Date());
@@ -44,8 +47,9 @@ export function BreakdownScreen() {
 
   return (
     <section className="screen">
+      <InsightsTabs />
       <header className="month-bar">
-        <h1 className="screen__title">Where it went</h1>
+        <h1 className="screen__title">Spending by category</h1>
         <nav className="month-nav" aria-label="Month">
           <button
             type="button"
@@ -69,6 +73,10 @@ export function BreakdownScreen() {
           </button>
         </nav>
       </header>
+      <p className="screen__lede screen__lede--wide">
+        One month at a time, split by category. To compare months, see{" "}
+        <Link to="/charts">Trends</Link>.
+      </p>
 
       {breakdown.isPending && <Loading />}
       {breakdown.isError && (
@@ -84,7 +92,7 @@ function Currencies({ all, month }: { all: Breakdown[]; month: string }) {
   const [chosen, setChosen] = useState(0);
 
   if (all.length === 0) {
-    return <p className="screen__lede">Open an account to see where its money goes.</p>;
+    return <p className="screen__lede">Add an account to see your spending.</p>;
   }
   const shown = all[Math.min(chosen, all.length - 1)] ?? all[0];
   if (!shown) return null;
@@ -118,13 +126,13 @@ function Month({ breakdown, month }: { breakdown: Breakdown; month: string }) {
   return (
     <>
       <div className="balance">
-        <p className="mt-label">Spent</p>
+        <p className="mt-label">Money out</p>
         <p className="balance__fig">
           <span>{balance(spending.total)}</span>
           <span className="balance__cur">{currency}</span>
         </p>
         <p className="mt-label balance__meta">
-          Came in <span className="balance__then">{balance(income.total)}</span> · Net{" "}
+          Money in <span className="balance__then">{balance(income.total)}</span> · Difference{" "}
           <span className={isNegative(net) ? "balance__then short" : "balance__then"}>
             {balance(net)}
           </span>
@@ -132,14 +140,17 @@ function Month({ breakdown, month }: { breakdown: Breakdown; month: string }) {
       </div>
 
       {empty ? (
-        <p className="screen__lede">Nothing recorded in {monthName(month)}.</p>
+        <p className="screen__lede">
+          No transactions in {monthName(month)}. Add some by hand on an account, or{" "}
+          <Link to="/import">import a statement</Link>, and they'll be split by category here.
+        </p>
       ) : (
         <>
           <Side title="Spending" side={spending} kind="out" />
           <Side title="Income" side={income} kind="in" />
           <p className="field__help">
-            Transfers between your own accounts are left out: they are neither spending nor
-            income. Expected rows are not counted until they happen.
+            Moving money between your own accounts isn't counted as spending or income. Planned
+            transactions count once they're marked as paid or received.
           </p>
         </>
       )}
@@ -165,7 +176,7 @@ function Side({ title, side, kind }: { title: string; side: BreakdownSide; kind:
 }
 
 function Line({ line, kind }: { line: BreakdownLine; kind: "in" | "out" }) {
-  const name = line.name ?? "Uncategorised";
+  const name = line.name ?? "No category";
   const ownHasAny = line.children.length > 0 && line.own.minor_units !== 0;
 
   return (
@@ -177,6 +188,11 @@ function Line({ line, kind }: { line: BreakdownLine; kind: "in" | "out" }) {
         kind={kind}
         muted={line.category_id === null}
       />
+      {line.category_id === null && (
+        <Link to="/sort" className="split__sort">
+          Sort these into categories
+        </Link>
+      )}
       {line.children.length > 0 && (
         <ol className="split__parts">
           {line.children.map((part) => (
@@ -187,7 +203,7 @@ function Line({ line, kind }: { line: BreakdownLine; kind: "in" | "out" }) {
           {ownHasAny && (
             <li>
               <Bar
-                name={`${name}, not further filed`}
+                name={`${name}, other`}
                 amount={balance(line.own)}
                 share={line.own_share}
                 kind={kind}

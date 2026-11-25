@@ -3,13 +3,26 @@
 // There is no client-side model of the ledger. After a write, the queries that could have
 // changed are thrown away and asked again, and the server's walk is the only one there is.
 
-import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  QueryClient,
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { ApiError, del, get, patch, post } from "./client";
 import type {
   Account,
   Breakdown,
   Budget,
   CountResult,
+  Daily,
+  CsvMapping,
+  ImportFormat,
+  ImportOutcome,
+  ImportPreview,
+  Inbox,
+  InboxCount,
   NewBudget,
   NewRecurring,
   Recurring,
@@ -23,6 +36,7 @@ import type {
   NewTransaction,
   Transaction,
   TransactionEdit,
+  Trend,
   User,
 } from "./types";
 
@@ -34,9 +48,15 @@ export const keys = {
   currencies: ["currencies"] as const,
   categories: ["categories"] as const,
   breakdown: (month: string) => ["breakdown", month] as const,
+  trend: (until: string, months: number) => ["trend", until, months] as const,
+  daily: (month: string) => ["daily", month] as const,
   outlook: (days: number) => ["outlook", days] as const,
   budgets: ["budgets"] as const,
   recurring: ["recurring"] as const,
+  inbox: ["inbox"] as const,
+  transactions: ["transactions"] as const,
+  // Under the inbox's key, so anything that invalidates the inbox invalidates this too.
+  inboxCount: ["inbox", "count"] as const,
 };
 
 /** Who is signed in, or `null` for nobody. Any other failure is an error. */
@@ -97,6 +117,33 @@ export function useBreakdown(month: string) {
         `/breakdown?month=${encodeURIComponent(month)}&offset_minutes=${offset}`,
       );
     },
+  });
+}
+
+/**
+ * Money in and out for the `months` months ending with `until`, one trend per currency held.
+ *
+ * Every figure, the scale and every bar's height are `mt-core`'s. While a new range loads,
+ * the last one stays on screen rather than the chart blinking out.
+ */
+export function useTrend(until: string, months: number) {
+  return useQuery({
+    queryKey: keys.trend(until, months),
+    queryFn: () =>
+      get<Trend[]>(
+        `/trend?until=${encodeURIComponent(until)}&months=${months}&offset_minutes=${offsetMinutes()}`,
+      ),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** A month's spending day by day, one per currency held. Heights and scale are `mt-core`'s. */
+export function useDaily(month: string) {
+  return useQuery({
+    queryKey: keys.daily(month),
+    queryFn: () =>
+      get<Daily[]>(`/daily?month=${encodeURIComponent(month)}&offset_minutes=${offsetMinutes()}`),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -161,6 +208,8 @@ export function useCreateCategory() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: keys.categories });
       void client.invalidateQueries({ queryKey: ["breakdown"] });
+      void client.invalidateQueries({ queryKey: ["trend"] });
+      void client.invalidateQueries({ queryKey: ["daily"] });
     },
   });
 }
@@ -179,20 +228,86 @@ export function useSetCategory() {
       }),
     onSuccess: (row) => {
       void client.invalidateQueries({ queryKey: keys.ledger(row.account_id) });
+      void client.invalidateQueries({ queryKey: keys.transactions });
       void client.invalidateQueries({ queryKey: ["breakdown"] });
+      void client.invalidateQueries({ queryKey: ["trend"] });
+      void client.invalidateQueries({ queryKey: ["daily"] });
       void client.invalidateQueries({ queryKey: keys.budgets });
     },
   });
 }
 
+/** Every row in every account, oldest first: what the uncategorised view sorts through. */
+export function useAllTransactions() {
+  return useQuery({ queryKey: keys.transactions, queryFn: () => get<Transaction[]>("/transactions") });
+}
+
+/** What filing several rows at once sends: the rows, where they go, and a payee to remember. */
+export interface FileMany {
+  transactionIds: string[];
+  categoryId: string | null;
+  remember?: { matched_field: "counterparty" | "label"; pattern: string };
+}
+
+/**
+ * Files several rows under one category in one request, and remembers the payee for the
+ * next statement if asked. Every view that groups by category is asked again.
+ */
+export function useFileMany() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ transactionIds, categoryId, remember }: FileMany) =>
+      post<{ filed: number }>("/transactions/category", {
+        transaction_ids: transactionIds,
+        category_id: categoryId,
+        ...(remember ? { remember } : {}),
+      }),
+    onSuccess: () => afterCategoryChange(client),
+  });
+}
+
+export function useRenameCategory() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      patch<Category>(`/categories/${encodeURIComponent(id)}`, { name }),
+    onSuccess: () => afterCategoryChange(client),
+  });
+}
+
+/** Deletes a category, moving its rows to `moveTo` or to no category. */
+export function useDeleteCategory() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, moveTo }: { id: string; moveTo: string | null }) =>
+      del<unknown>(
+        `/categories/${encodeURIComponent(id)}${moveTo ? `?move_to=${encodeURIComponent(moveTo)}` : ""}`,
+      ),
+    onSuccess: () => afterCategoryChange(client),
+  });
+}
+
+/** Every query that groups by category or shows a row's category. */
+function afterCategoryChange(client: QueryClient) {
+  for (const key of [keys.categories, keys.transactions, keys.budgets, keys.recurring, keys.inbox]) {
+    void client.invalidateQueries({ queryKey: key });
+  }
+  for (const prefix of ["ledger", "breakdown", "trend", "daily"]) {
+    void client.invalidateQueries({ queryKey: [prefix] });
+  }
+}
+
 /** Every query a change to one row in one account can have changed. */
 function afterRowChange(client: QueryClient, accountId: string) {
   void client.invalidateQueries({ queryKey: keys.budgets });
+  void client.invalidateQueries({ queryKey: keys.transactions });
   void client.invalidateQueries({ queryKey: ["outlook"] });
   void client.invalidateQueries({ queryKey: keys.ledger(accountId) });
   void client.invalidateQueries({ queryKey: keys.accounts });
   void client.invalidateQueries({ queryKey: keys.totals });
   void client.invalidateQueries({ queryKey: ["breakdown"] });
+  void client.invalidateQueries({ queryKey: ["trend"] });
+  void client.invalidateQueries({ queryKey: ["daily"] });
 }
 
 /**
@@ -222,6 +337,8 @@ function afterSeriesChange(client: QueryClient) {
   void client.invalidateQueries({ queryKey: keys.totals });
   void client.invalidateQueries({ queryKey: ["outlook"] });
   void client.invalidateQueries({ queryKey: ["breakdown"] });
+  void client.invalidateQueries({ queryKey: ["trend"] });
+  void client.invalidateQueries({ queryKey: ["daily"] });
   void client.invalidateQueries({ queryKey: keys.budgets });
 }
 
@@ -334,8 +451,94 @@ export function useCreateTransaction() {
       void client.invalidateQueries({ queryKey: keys.accounts });
       void client.invalidateQueries({ queryKey: keys.totals });
       void client.invalidateQueries({ queryKey: ["breakdown"] });
+      void client.invalidateQueries({ queryKey: ["trend"] });
+      void client.invalidateQueries({ queryKey: ["daily"] });
       void client.invalidateQueries({ queryKey: ["outlook"] });
       void client.invalidateQueries({ queryKey: keys.budgets });
     },
+  });
+}
+
+// ---------------------------------------------------------------------------- imports ----
+
+/** The lines waiting for review, with what each might duplicate. */
+export function useInbox() {
+  return useQuery({ queryKey: keys.inbox, queryFn: () => get<Inbox>("/inbox") });
+}
+
+/** How many lines wait, in all and per account. Cheap: nothing is read or matched. */
+export function useInboxCount() {
+  return useQuery({ queryKey: keys.inboxCount, queryFn: () => get<InboxCount>("/inbox/count") });
+}
+
+/** Splits the start of a CSV file into cells, and fetches the account's last mapping. */
+export function usePreviewImport() {
+  return useMutation({
+    mutationFn: (request: { account_id: string; content_base64: string }) =>
+      post<ImportPreview>("/imports/preview", request),
+  });
+}
+
+export interface ImportRequest {
+  account_id: string;
+  file_name: string;
+  format: ImportFormat;
+  content_base64: string;
+  mapping?: CsvMapping;
+}
+
+/** Uploads a statement. Its lines go to the inbox, never straight to the ledger. */
+export function useImport() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (request: ImportRequest) =>
+      post<ImportOutcome>("/imports", { ...request, offset_minutes: offsetMinutes() }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.inbox }),
+  });
+}
+
+/**
+ * Everything settling an inbox line can change. Accepting writes rows, merging can confirm
+ * an expected one, and a learned rule changes the next proposal; which account it touched
+ * is not worth tracking for a screen the person is about to leave anyway.
+ */
+function afterSettling(client: QueryClient) {
+  void client.invalidateQueries({ queryKey: keys.inbox });
+  void client.invalidateQueries({ queryKey: ["ledger"] });
+  void client.invalidateQueries({ queryKey: keys.accounts });
+  void client.invalidateQueries({ queryKey: keys.totals });
+  void client.invalidateQueries({ queryKey: ["outlook"] });
+  void client.invalidateQueries({ queryKey: ["breakdown"] });
+  void client.invalidateQueries({ queryKey: ["trend"] });
+  void client.invalidateQueries({ queryKey: ["daily"] });
+  void client.invalidateQueries({ queryKey: keys.budgets });
+}
+
+/** Accepts lines into the ledger, each filed where the person chose. */
+export function useAcceptInbox() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (items: { id: string; category_id: string | null }[]) =>
+      post<{ accepted: number }>("/inbox/accept", { items }),
+    onSuccess: () => afterSettling(client),
+  });
+}
+
+/** Settles a line as a row already in the ledger. */
+export function useMergeInbox() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, transactionId }: { id: string; transactionId: string }) =>
+      post<unknown>(`/inbox/${encodeURIComponent(id)}/merge`, { transaction_id: transactionId }),
+    onSuccess: () => afterSettling(client),
+  });
+}
+
+/** Settles a line as not a movement worth recording. */
+export function useRejectInbox() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => post<unknown>(`/inbox/${encodeURIComponent(id)}/reject`, {}),
+    onSuccess: () => afterSettling(client),
   });
 }

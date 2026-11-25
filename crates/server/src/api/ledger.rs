@@ -320,14 +320,7 @@ pub async fn breakdown(
     let rows = transactions::all(&state.pool, session.user).await?;
     let filed = categories::list(&state.pool, session.user).await?;
 
-    let mut currencies: Vec<mt_core::money::Currency> = Vec::new();
-    for account in &held {
-        if !currencies.contains(&account.currency) {
-            currencies.push(account.currency);
-        }
-    }
-
-    currencies
+    currencies_held(&held)
         .into_iter()
         .map(|currency| {
             mt_core::breakdown::breakdown(currency, &rows, &filed, period, zone, basis)
@@ -339,6 +332,125 @@ pub async fn breakdown(
         })
         .collect::<ApiResult<Vec<_>>>()
         .map(Json)
+}
+
+/// Which months a trend covers, and on whose clock.
+#[derive(Debug, Deserialize)]
+pub struct TrendQuery {
+    /// The last month shown, `YYYY-MM`.
+    pub until: String,
+    /// How many months, ending with `until`: 1 to 24. Absent means 6.
+    pub months: Option<u8>,
+    /// The reader's offset from UTC in minutes, east positive.
+    pub offset_minutes: Option<i32>,
+}
+
+/// The most months a trend covers: two years.
+const MOST_TREND_MONTHS: u8 = 24;
+
+/// Money in and out, month by month, for each currency the person holds.
+///
+/// One trend per currency, never converted. Each month's figures, the scale they share and
+/// every height on it are `mt-core`'s; the screen draws bars from the heights. Counts what
+/// happened, as the breakdown does by default.
+///
+/// # Errors
+/// [`ApiError::Invalid`] for a month, count or offset that will not read, or
+/// [`ApiError::Rule`].
+pub async fn trend(
+    State(state): State<AppState>,
+    session: Session,
+    Query(query): Query<TrendQuery>,
+) -> ApiResult<Json<Vec<dto::TrendOut>>> {
+    let count = query.months.unwrap_or(6);
+    if !(1..=MOST_TREND_MONTHS).contains(&count) {
+        return Err(ApiError::Invalid {
+            field: "months".to_owned(),
+            reason: format!("expected a number of months from 1 to {MOST_TREND_MONTHS}"),
+        });
+    }
+    let last = month_period(&query.until).map_err(|_| ApiError::Invalid {
+        field: "until".to_owned(),
+        reason: "expected YYYY-MM".to_owned(),
+    })?;
+    let periods =
+        mt_core::trend::months_ending(last.starts_on.year(), last.starts_on.month(), count)
+            .ok_or_else(|| ApiError::Invalid {
+                field: "until".to_owned(),
+                reason: "too far back to count months from".to_owned(),
+            })?;
+    let zone = offset(query.offset_minutes.unwrap_or(0))?;
+
+    recurring::top_up(&state.pool, session.user).await?;
+    let held = accounts::list(&state.pool, session.user).await?;
+    let rows = transactions::all(&state.pool, session.user).await?;
+
+    currencies_held(&held)
+        .into_iter()
+        .map(|currency| {
+            mt_core::trend::trend(currency, &rows, &periods, zone, BalanceBasis::Confirmed)
+                .map(|result| dto::trend_out(&result))
+                .map_err(|reason| ApiError::Rule {
+                    rule: "trend",
+                    reason: reason.to_string(),
+                })
+        })
+        .collect::<ApiResult<Vec<_>>>()
+        .map(Json)
+}
+
+/// Which month to split by day, and on whose clock.
+#[derive(Debug, Deserialize)]
+pub struct DailyQuery {
+    /// `YYYY-MM`.
+    pub month: String,
+    /// The reader's offset from UTC in minutes, east positive. Decides which date a row
+    /// near midnight is on.
+    pub offset_minutes: Option<i32>,
+}
+
+/// A month's spending, day by day, for each currency the person holds.
+///
+/// One per currency, never converted. The totals, the scale and every height on it are
+/// `mt-core`'s. Counts what happened, as the breakdown does by default.
+///
+/// # Errors
+/// [`ApiError::Invalid`] for a month or offset that will not read, or [`ApiError::Rule`].
+pub async fn daily(
+    State(state): State<AppState>,
+    session: Session,
+    Query(query): Query<DailyQuery>,
+) -> ApiResult<Json<Vec<dto::DailyOut>>> {
+    let period = month_period(&query.month)?;
+    let zone = offset(query.offset_minutes.unwrap_or(0))?;
+
+    recurring::top_up(&state.pool, session.user).await?;
+    let held = accounts::list(&state.pool, session.user).await?;
+    let rows = transactions::all(&state.pool, session.user).await?;
+
+    currencies_held(&held)
+        .into_iter()
+        .map(|currency| {
+            mt_core::trend::daily(currency, &rows, period, zone, BalanceBasis::Confirmed)
+                .map(|result| dto::daily_out(&result))
+                .map_err(|reason| ApiError::Rule {
+                    rule: "daily",
+                    reason: reason.to_string(),
+                })
+        })
+        .collect::<ApiResult<Vec<_>>>()
+        .map(Json)
+}
+
+/// Each currency an account is held in, once, in the order the accounts come.
+fn currencies_held(held: &[mt_core::model::Account]) -> Vec<mt_core::money::Currency> {
+    let mut currencies: Vec<mt_core::money::Currency> = Vec::new();
+    for account in held {
+        if !currencies.contains(&account.currency) {
+            currencies.push(account.currency);
+        }
+    }
+    currencies
 }
 
 /// The first and last local dates of a `YYYY-MM` month.
@@ -439,6 +551,133 @@ pub async fn set_category(
     let written =
         transactions::set_category(&state.pool, session.user, device, id, category).await?;
     Ok(Json(TransactionOut::try_from(&written)?))
+}
+
+/// Files several rows under one category at once, and remembers the payee if asked.
+///
+/// # Errors
+/// [`ApiError::Invalid`] for a list that is empty, too long or repeats a row, or a payee to
+/// remember that will not do; [`ApiError::NotFound`] if a row or the category is not this
+/// user's or a row cannot be filed.
+pub async fn file_many(
+    State(state): State<AppState>,
+    session: Session,
+    Json(body): Json<dto::FileManyIn>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if body.transaction_ids.is_empty()
+        || body.transaction_ids.len() > transactions::MAX_FILED_AT_ONCE
+    {
+        return Err(ApiError::Invalid {
+            field: "transaction_ids".to_owned(),
+            reason: format!(
+                "expected 1 to {} transactions",
+                transactions::MAX_FILED_AT_ONCE
+            ),
+        });
+    }
+    let ids = body
+        .transaction_ids
+        .iter()
+        .map(|id| dto::id::<TxId>("transaction_ids", id))
+        .collect::<ApiResult<Vec<_>>>()?;
+    let category = body
+        .category_id
+        .as_deref()
+        .map(|id| dto::id::<CategoryId>("category_id", id))
+        .transpose()?;
+    let lesson = match (&body.remember, category) {
+        (None, _) => None,
+        (Some(_), None) => {
+            return Err(ApiError::Invalid {
+                field: "remember".to_owned(),
+                reason: "there is no category to remember the payee under".to_owned(),
+            });
+        }
+        (Some(remember), Some(category_id)) => Some(lesson_from(remember, category_id)?),
+    };
+    let device = users::web_device(&state.pool, session.user).await?;
+    let filed = transactions::set_category_many(
+        &state.pool,
+        session.user,
+        device,
+        &ids,
+        category,
+        lesson.as_ref(),
+    )
+    .await?;
+    Ok(Json(serde_json::json!({ "filed": filed })))
+}
+
+/// The rule a "remember this payee" asks for, checked as input.
+fn lesson_from(
+    remember: &dto::RememberIn,
+    category_id: CategoryId,
+) -> ApiResult<mt_core::categorise::Lesson> {
+    let matched_field = match remember.matched_field.as_str() {
+        "counterparty" => mt_core::enums::MatchedField::Counterparty,
+        "label" => mt_core::enums::MatchedField::Label,
+        _ => {
+            return Err(ApiError::Invalid {
+                field: "remember.matched_field".to_owned(),
+                reason: "expected counterparty or label".to_owned(),
+            });
+        }
+    };
+    let pattern = remember.pattern.trim();
+    let length = pattern.chars().count();
+    if !(1..=mt_core::model::MAX_PATTERN_LEN).contains(&length) {
+        return Err(ApiError::Invalid {
+            field: "remember.pattern".to_owned(),
+            reason: format!(
+                "expected 1 to {} characters",
+                mt_core::model::MAX_PATTERN_LEN
+            ),
+        });
+    }
+    Ok(mt_core::categorise::Lesson {
+        matched_field,
+        pattern: pattern.to_owned(),
+        category_id,
+    })
+}
+
+/// Renames a category.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if it is not this user's, or [`ApiError::Invalid`] for a name the
+/// model refuses.
+pub async fn rename_category(
+    State(state): State<AppState>,
+    session: Session,
+    Path(id): Path<String>,
+    Json(body): Json<dto::RenameCategoryIn>,
+) -> ApiResult<Json<CategoryOut>> {
+    let id: CategoryId = dto::id("id", &id)?;
+    let device = users::web_device(&state.pool, session.user).await?;
+    let category = categories::rename(&state.pool, session.user, device, id, &body.name).await?;
+    Ok(Json(CategoryOut::from(&category)))
+}
+
+/// Deletes a category, moving its transactions to `move_to` or to no category.
+///
+/// # Errors
+/// As `categories::delete`.
+pub async fn delete_category(
+    State(state): State<AppState>,
+    session: Session,
+    Path(id): Path<String>,
+    Query(query): Query<dto::DeleteCategoryQuery>,
+) -> ApiResult<axum::http::StatusCode> {
+    let id: CategoryId = dto::id("id", &id)?;
+    let move_to = query
+        .move_to
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .map(|value| dto::id::<CategoryId>("move_to", value))
+        .transpose()?;
+    let device = users::web_device(&state.pool, session.user).await?;
+    categories::delete(&state.pool, session.user, device, id, move_to).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 /// Changes a row.
@@ -589,10 +828,14 @@ pub async fn reconcile(
                 amount: fix.amount,
                 booked_at: at,
                 category_id: None,
-                label: format!("Counted: {} {}", fix.counted, account.currency.code()),
+                label: format!(
+                    "Balance updated to {} {}",
+                    fix.counted,
+                    account.currency.code()
+                ),
                 counterparty: None,
                 note: Some(format!(
-                    "The ledger said {} {}; the count found {}.",
+                    "The balance here was {} {}; you entered {}.",
                     fix.ledger,
                     account.currency.code(),
                     fix.counted

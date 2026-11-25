@@ -8,7 +8,7 @@
 //! ## What is here
 //!
 //! The data model — [`money`], [`enums`], [`ids`] and [`model`] — describes the shape of the
-//! rows and what makes one valid. On top of it sit the five rules that turn rows into
+//! rows and what makes one valid. On top of it sit the rules that turn rows into
 //! answers:
 //!
 //! - [`ledger`] walks transactions into balances. History and forecast are one walk, because
@@ -17,6 +17,7 @@
 //! - [`recurrence`] expands a template into the concrete pending rows the walk then sees.
 //! - [`dedup`] ranks the chance that two records are the same purchase. It never merges.
 //! - [`budget`] says where spending stands against a cap, per period and per currency.
+//! - [`ingest`] reads a CSV or OFX statement into candidates for the inbox.
 //!
 //! ## What this crate will not do
 //!
@@ -46,11 +47,13 @@ pub mod categorise;
 pub mod dedup;
 pub mod enums;
 pub mod ids;
+pub mod ingest;
 pub mod ledger;
 pub mod model;
 pub mod money;
 pub mod outlook;
 pub mod recurrence;
+pub mod trend;
 pub mod zone;
 
 pub use enums::{
@@ -68,7 +71,7 @@ pub use model::{
 pub use money::{Currency, Money, MoneyError, ParseRejection};
 
 pub use budget::{BudgetError, CategoryTree, Level, Period, Status as BudgetStatus};
-pub use categorise::{Basis, HistoryIndex, RuleError, RuleSet, Subject, Verdict};
+pub use categorise::{Basis, HistoryIndex, Lesson, RuleError, RuleSet, Subject, Verdict};
 pub use dedup::{DuplicateIndex, MatchRules, Signal, Suspect};
 pub use ledger::{BalanceBasis, Entry, Flows, LedgerError, Walk};
 pub use recurrence::{Generation, RecurrenceError};

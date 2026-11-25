@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Category } from "../api/types";
-import { fullName, ordered } from "./CategoryPicker";
+import { fullName, ordered, visible } from "./CategoryPicker";
 
 const c = (id: string, name: string, kind: "income" | "expense", parent_id: string | null = null): Category => ({
   id,
@@ -34,5 +34,26 @@ describe("ordered", () => {
   it("names a child after its parent too", () => {
     expect(fullName(all[2]!, all)).toBe("Transport · Trotro");
     expect(fullName(all[5]!, all)).toBe("Lost");
+  });
+});
+
+describe("visible", () => {
+  const many = Array.from({ length: 10 }, (_, index) => ({
+    id: `c${index}`,
+    name: `Category ${index}`,
+    parent_id: null,
+    kind: "expense" as const,
+    sort_order: index,
+  }));
+
+  it("shows the first few, and everything when no limit is set or the list is short", () => {
+    expect(visible(many, null, 3).map((each) => each.id)).toEqual(["c0", "c1", "c2"]);
+    expect(visible(many, null)).toHaveLength(10);
+    expect(visible(many.slice(0, 2), null, 3)).toHaveLength(2);
+  });
+
+  it("never hides the chosen category", () => {
+    expect(visible(many, "c8", 3).map((each) => each.id)).toEqual(["c0", "c1", "c2", "c8"]);
+    expect(visible(many, "c1", 3).map((each) => each.id)).toEqual(["c0", "c1", "c2"]);
   });
 });

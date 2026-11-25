@@ -18,13 +18,18 @@ use mt_core::enums::{
 };
 use mt_core::money::Currency;
 
-const POSTGRES: &str = include_str!("../../../db/postgres/0001_init.sql");
+/// Every server migration, in order: what a fully migrated database holds.
+const POSTGRES: &str = concat!(
+    include_str!("../../../db/postgres/0001_init.sql"),
+    "\n",
+    include_str!("../../../db/postgres/0002_import.sql"),
+);
 const SQLITE: &str = include_str!("../../../db/sqlite/0001_init.sql");
 
 /// Both schemas, for the vocabulary that appears in each.
 const BOTH: &[(&str, &str)] = &[("postgres", POSTGRES), ("sqlite", SQLITE)];
-/// The device schema alone. Inbox rows never leave the handset, so the inbox enums have no
-/// Postgres column to constrain.
+/// The device schema alone, for the inbox enums in full. The server's inbox takes a subset
+/// of the sources; see `the_server_inbox_holds_only_uploaded_statements`.
 const DEVICE_ONLY: &[(&str, &str)] = &[("sqlite", SQLITE)];
 
 /// The tables that exist in both schemas and sync between them.
@@ -170,13 +175,41 @@ fn both_schemas_accept_exactly_the_currencies_the_registry_knows() {
     }
 }
 
+/// The `CREATE TABLE` statement for one table, flattened, or a panic naming it.
+fn table_definition(schema: &str, table: &str) -> String {
+    let flat = flattened(schema);
+    let opening = format!("CREATE TABLE {table} (");
+    let start = flat
+        .find(&opening)
+        .unwrap_or_else(|| panic!("no `{opening}` in the schema"));
+    let rest = flat.get(start..).unwrap_or_default();
+    let end = rest.find(");").unwrap_or(rest.len());
+    rest.get(..end).unwrap_or_default().to_owned()
+}
+
 #[test]
-fn the_inbox_is_absent_from_the_server_schema() {
-    // Only a confirmed transaction is allowed to leave the handset. An inbox table on the
-    // server would be a place for unreviewed, parsed message content to accumulate.
+fn the_server_inbox_holds_only_uploaded_statements() {
+    // An SMS is parsed and reviewed on the handset, and only a confirmed row may leave it:
+    // that is the condition the Play exception for SMS-based money management is granted
+    // on. The server's inbox exists for statements a person uploads, and its own CHECK is
+    // what keeps an SMS candidate from ever being stored in it.
+    let inbox = table_definition(POSTGRES, "inbox_items");
+    let uploaded = in_list(&[InboxSource::Csv.as_str(), InboxSource::Ofx.as_str()]);
     assert!(
-        !POSTGRES.contains("CREATE TABLE inbox_items"),
-        "inbox rows are device-only and must not exist on the server"
+        inbox.contains(&format!("source TEXT NOT NULL CHECK (source {uploaded})")),
+        "the server inbox must accept exactly the uploaded sources, {uploaded}:\n{inbox}"
+    );
+    for device_only in [InboxSource::Sms, InboxSource::Receipt] {
+        assert!(
+            !inbox.contains(&format!("'{}'", device_only.as_str())),
+            "the server inbox mentions `{device_only}`, which is parsed on the device"
+        );
+    }
+
+    let statuses: Vec<&str> = InboxStatus::ALL.iter().map(|s| s.as_str()).collect();
+    assert!(
+        inbox.contains(&in_list(&statuses)),
+        "the server inbox does not constrain status to the variants the core knows"
     );
 }
 
@@ -222,16 +255,26 @@ fn neither_schema_stores_a_balance() {
 }
 
 #[test]
-fn the_sqlite_schema_has_nowhere_to_put_a_raw_message() {
+fn neither_schema_has_anywhere_to_put_a_raw_message_or_line() {
     // On-device parsing with no retention is a Play policy requirement for the SMS-based
     // money management exception, and the cheapest way to keep it true is to have no column
-    // the text would fit in.
-    let lowered = SQLITE.to_lowercase();
-    for forbidden in ["raw_body", "message_body", "sms_body", "raw_message"] {
-        assert!(
-            !lowered.contains(forbidden),
-            "the device schema has a `{forbidden}` column; raw SMS text is never stored"
-        );
+    // the text would fit in. The server's inbox keeps what a statement parser produced and
+    // not what it read, for the same reason.
+    for (name, schema) in BOTH {
+        let lowered = without_comments(schema).to_lowercase();
+        for forbidden in [
+            "raw_body",
+            "message_body",
+            "sms_body",
+            "raw_message",
+            "raw_line",
+            "line_text",
+        ] {
+            assert!(
+                !lowered.contains(forbidden),
+                "the {name} schema has a `{forbidden}` column; raw source text is never stored"
+            );
+        }
     }
 }
 

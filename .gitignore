@@ -27,3 +27,5 @@ DerivedData/
 /android/build/
 /android/*/build/
 /android/local.properties
+node_modules/
+.history/

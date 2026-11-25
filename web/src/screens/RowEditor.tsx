@@ -82,7 +82,7 @@ export function RowEditor({
                 checked={direction === option}
                 onChange={() => pickDirection(option)}
               />
-              <span>{option === "out" ? "Out" : "In"}</span>
+              <span>{option === "out" ? "Money out" : "Money in"}</span>
             </label>
           ))}
         </div>
@@ -98,7 +98,7 @@ export function RowEditor({
           />
         </label>
         <label className="field">
-          <span className="mt-label">Day</span>
+          <span className="mt-label">Date</span>
           <input type="date" required value={date} onChange={(event) => pickDate(event.target.value)} />
         </label>
       </div>
@@ -113,7 +113,7 @@ export function RowEditor({
 
       <div className="row-editor__fields">
         <label className="field">
-          <span className="mt-label">What it was</span>
+          <span className="mt-label">Description</span>
           <input required maxLength={200} value={label} onChange={(event) => setLabel(event.target.value)} />
         </label>
         <label className="field">
@@ -133,7 +133,7 @@ export function RowEditor({
 
       <label className="check">
         <input type="checkbox" checked={expected} onChange={(event) => setExpected(event.target.checked)} />
-        <span>Expected — it has not happened yet</span>
+        <span>Planned — hasn't happened yet</span>
       </label>
 
       <FormError error={edit.error ?? remove.error} />

@@ -75,14 +75,14 @@ typography:
     lineHeight: 1.35
   label:
     fontFamily: "Archivo, Helvetica Neue, system-ui, sans-serif"
-    fontSize: "12px"
+    fontSize: "13.5px"
     fontWeight: 600
-    letterSpacing: "0.07em"
+    letterSpacing: "0"
   micro:
     fontFamily: "Archivo, Helvetica Neue, system-ui, sans-serif"
-    fontSize: "11px"
-    fontWeight: 600
-    letterSpacing: "0.14em"
+    fontSize: "12px"
+    fontWeight: 500
+    letterSpacing: "0"
   stamp:
     fontFamily: "Stardos Stencil, Archivo, sans-serif"
     fontSize: "11px"
@@ -226,13 +226,13 @@ components:
 
 The world is taken from Ghana's cocoa grading and bagging line: oat jute under near-black stencil ink, grade marks pressed in oxblood, everything ruled on a hard cell. It lends this app four things and nothing else — the type register, the palette, the density, and one signature move. It does not lend navigation, control shape, sheet behaviour, gestures or system motion. Everything a cocoa shed does not need, this app does not have.
 
-The thesis the build defends is that the act of checking should be visible. A money app's default arrangement — gradient hero balance, carousel of account cards, donut of categories — shows a total and hides which rows a human has actually verified. Here the screen is one continuous ledger running through today into future pending rows; the only coloured object above it is the strip saying machine guesses are still waiting for you; and every settled row declares how it got there, either with a pressed stamp or with a by-hand mark. Hierarchy comes from scale contrast alone: monumental tabular figures set against small uppercase labels tracked open, with no weight tricks, no boxes, no cards stacked for emphasis.
+The thesis the build defends is that the act of checking should be visible. A money app's default arrangement — gradient hero balance, carousel of account cards, donut of categories — shows a total and hides which rows a human has actually verified. Here the screen is one continuous ledger running through today into future pending rows; the only coloured object above it is the strip saying machine guesses are still waiting for you; and every settled row declares how it got there, either with a pressed stamp or with a by-hand mark. Hierarchy comes from scale contrast alone: monumental tabular figures set against small sentence-case labels, with no weight tricks, no boxes, no cards stacked for emphasis.
 
 The light scheme is the default because the confirmed usage scene is direct Ghanaian sunlight. That one fact drove the whole palette: oat ground rather than white, near-black ink rather than grey, and no state carried by a transparency. Every text and mark pair is measured against its own background and held above WCAG AA 4.5:1 in both schemes — the quietest pair in the system, the date gutter on oat, sits at 4.78:1, and future rows get their own ink colour (5.23:1) rather than a faded one. Dark is the evening sit-down review: roasted, warm-black, not an inversion.
 
 **Key Characteristics:**
 - Oat ground (#EFE7D7), never white; near-black stencil ink, never grey body text.
-- Monumental tabular figures against small uppercase labels tracked +0.07em — scale contrast is the only hierarchy device.
+- Monumental tabular figures against small sentence-case labels — scale contrast is the only hierarchy device.
 - One continuous ledger through a ruled oxblood TODAY line, not a dashboard of tiles.
 - Every past row declares its verification state: a pressed stamp or a by-hand mark.
 - A 4dp cell grid nothing sits off, and platform touch-target floors nothing falls under.
@@ -257,10 +257,10 @@ A grading-shed palette: a warm oat ground carrying near-black ink, with three ma
 - **Raised Oat** (`{colors.surface}`): the one step up — the bottom navigation bar and sheet surfaces.
 - **Sunk Oat** (`{colors.sunk}`): the one step down — recessed fields and pressed states.
 - **Stencil Ink** (`{colors.ink}`): all primary text, all amounts, the selected segment fill, the budget tiers within cap, the outlook's balance line. Hover deepens to `{colors.ink-hover}`.
-- **Counterparty Ink** (`{colors.ink-secondary}`): counterparty, meta lines, tracked labels, the small GHS beside the balance.
+- **Counterparty Ink** (`{colors.ink-secondary}`): counterparty, meta lines, labels, the small GHS beside the balance.
 - **Gutter Ink** (`{colors.ink-muted}`): the date gutter, inactive navigation labels, the by-hand mark.
 - **Future Ink** (`{colors.ink-future}`): pending and future-dated rows. Quieter than the present without being faint — a colour, never an opacity.
-- **Hairline** (`{colors.rule}`) and **Strong Rule** (`{colors.rule-strong}`): row dividers and empty budget tiers, and section rules, field borders and chip strokes respectively.
+- **Hairline** (`{colors.rule}`) and **Strong Rule** (`{colors.rule-strong}`): row dividers and empty budget tiers, and section rules and chip strokes respectively. A field's underline is its only edge, so it uses Gutter Ink (`{colors.ink-muted}`) to clear 3:1 against the page; Strong Rule measured 1.9:1 there.
 - **Backdrop** (`{colors.backdrop}`): the space outside the device frame in the HTML references only; it has no role in the app.
 
 The dark scheme re-grades every one of these roles (`{colors.ground-dark}` through `{colors.backdrop-dark}`); it is not an algorithmic inversion, and the marks are lifted rather than merely lightened.
@@ -288,8 +288,8 @@ The dark scheme re-grades every one of these roles (`{colors.ground-dark}` throu
 - **Title** (600, 19px, −0.012em): the screen name in the top bar.
 - **Body** (400, 15px, 1.42): explanatory prose; held to roughly 30–34ch at phone width.
 - **Body Small** (400, 13.5px, 1.35): review-strip copy, helper text under controls, category chips.
-- **Label** (600, 12px, +0.07em, uppercase): the tracked stencil register — the line under the balance, section labels, chips, segments, buttons.
-- **Micro** (600, 11px, +0.14em, uppercase): the hardest-tracked register — the TODAY rule, budget foot lines, navigation labels, and the by-hand mark (at 500 with label tracking). 11px is the floor, not a style choice.
+- **Label** (600, 13.5px, sentence case, no tracking): the line under the balance, field and section labels, chips, segments, buttons. These were once 12px uppercase tracked +0.07em; in use, a screen of small tracked capitals read as equally loud and slow to scan, so labels are ordinary words now. Capitals belong to the stamps alone.
+- **Micro** (500, 12px, sentence case): the quietest register — the TODAY rule, budget foot lines, menu group titles, an account's type, and the by-hand mark. 11px stays the floor, not a style choice.
 - **Stamp** (11px, +0.08em, Stardos Stencil) and **Stamp Large** (14px): only inside a stamp or an empty stamp field.
 
 Row-level text sits slightly off the named ramp by design: the row label is 14.5px/500, the counterparty sub-line 11.5px and the date gutter 11px, tuned so three pieces of information fit a one-handed row on a 5-inch screen.
@@ -299,7 +299,7 @@ Row-level text sits slightly off the named ramp by design: the row label is 14.5
 
 **The 11px Floor Rule.** Nothing that carries state is set below 11px — including the stamp, which is why the stamp face is its own token rather than whatever size happens to fit the row. Type follows the system size setting on both platforms; a mark that shrinks out of legibility is a mark that stopped working.
 
-**The Scale-Contrast Rule.** Hierarchy comes from the gap between a monumental figure and a small tracked label. No decorative weight jumps, no coloured headings, no boxes drawn around text to promote it.
+**The Scale-Contrast Rule.** Hierarchy comes from the gap between a monumental figure and a small plain label. No decorative weight jumps, no coloured headings, no boxes drawn around text to promote it.
 
 **The Tabular Rule.** Every figure, everywhere, is tabular. Amounts are right-aligned so decimal points stack.
 
@@ -363,18 +363,18 @@ The classes below are **painted stand-ins**, not a component library. `.mt-nav`,
 
 ### Buttons
 - **Shape (painted):** barely-softened rectangle (3px). On device, the platform's own corner.
-- **Primary:** stencil ink fill, oat text, full width, 15px vertical padding, 12px uppercase at 700 tracked +0.07em. Hover deepens to Ink Hover.
+- **Primary:** stencil ink fill, oat text, full width, 15px vertical padding, 13.5px sentence case at 600. Hover deepens to Ink Hover.
 - **Grade:** same geometry in oxblood, used for the act of stamping and nothing lighter. Hover deepens to Grade Hover.
 - **Ghost:** transparent with a 1px strong-rule border and ink text, for the secondary half of a pair ("Not mine", "Send a redacted sample").
 - **Disabled:** hairline fill with gutter ink.
 - **Focus:** 2px oxblood outline, 3px offset — or ink outline where the control is already oxblood. Universal across every interactive element in the system.
 
 ### Chips
-- **Filter chip:** transparent with a 1px strong-rule stroke, 2px corners, 12px uppercase tracked label in counterparty ink, 6×12px padding on a 44px minimum height. Used for the account filter and the month/currency filter. A 7px status dot in leaf green may lead.
+- **Filter chip:** transparent with a 1px strong-rule stroke, 2px corners, 13.5px sentence-case label in counterparty ink, 6×12px padding on a 44px minimum height. Used for the account filter and the month/currency filter. A 7px status dot in leaf green may lead.
 - **Category chip:** 48px minimum height, 8×14px padding, body-small at 500 in ink; selected fills oxblood with oat text; disabled drops to 40% for recurring entries that cannot be re-categorised here. Laid out with an 8px target gap.
 
 ### Segments
-- **Style:** a row of equal-width buttons at the 48px target with strong-rule strokes and uppercase label type, separated by the target gap. The pressed one inverts to full ink with oat text. Out / In / Transfer.
+- **Style:** a row of equal-width buttons at the 48px target with strong-rule strokes and sentence-case label type, separated by the target gap. The pressed one inverts to full ink with oat text. Out / In / Transfer.
 
 ### Cards / Containers
 There is deliberately no card. Content sits directly on the oat ground, separated by hairlines. The only enclosed blocks are the review strip and the unstamped review cards — both defined by a 1.5px dashed amber edge over the amber wash, with 3px corners and `{spacing.c3}`–`{spacing.c4}` padding — and the reference frames in the states screen, which use a solid hairline.
@@ -383,13 +383,13 @@ There is deliberately no card. Content sits directly on the oat ground, separate
 There is no text input in the shipped references. Amount entry is the figure itself: a 54px tabular number on the ground with a 3px oxblood caret blinking beside it. Nothing is boxed. Selection highlight is amber edge on oat.
 
 ### Navigation
-Four destinations — Ledger, Outlook, Budgets, You — on a raised oat bar with a hairline top edge, each a stroked 22px icon over an 11px uppercase micro label tracked +0.04em. Inactive is gutter ink; current is full stencil ink. The floating add control is positioned against this bar in the references. On device this is the platform's navigation bar and the platform's primary action; what this system owns is the colour, the icon weight and the label register.
+Four destinations — Ledger, Outlook, Budgets, You — on a raised oat bar with a hairline top edge, each a stroked 22px icon over a 12px micro label. Inactive is gutter ink; current is full stencil ink. The floating add control is positioned against this bar in the references. On device this is the platform's navigation bar and the platform's primary action; what this system owns is the colour, the icon weight and the label register.
 
 ### The Verification Pair (signature)
 The thesis made visible, and the reason this app is not a list of amounts. **Every settled row says how it got there.**
 
 - **The stamp** — a parsed transaction that a person has checked. A small oxblood-bordered block of stencil type reading CHECKED, 11px, 1px border, rotated −6° off square at 80% opacity, sitting inline after the counterparty. It carries no date: the date gutter is two columns to the left and already says it.
-- **The by-hand mark** — a hand-entered transaction. An 11px uppercase micro word, "By hand", in gutter ink, no border, no rotation. A hand-entered row is already a human act and needs no stamp, but it still has to declare its state or the ledger cannot answer "what has been checked?" at a glance.
+- **The by-hand mark** — a hand-entered transaction. A 12px micro word, "By hand", in gutter ink, no border, no rotation. A hand-entered row is already a human act and needs no stamp, but it still has to declare its state or the ledger cannot answer "what has been checked?" at a glance.
 - **The empty stamp field** — a 66×46px dashed amber rectangle reading AWAIT / STAMP in 11px stencil, for a parsed transaction nobody has looked at yet.
 
 Stamp means parser-sourced and checked. By-hand means entered by a person. Dashed means nobody has looked yet. Those three states cover every row, and a row without one of them is a bug.
@@ -408,7 +408,7 @@ Loading is 12px hairline-fill bars pulsing between 75% and 35% opacity over 1.5s
 ### Do:
 - **Do** give every past row a verification mark: a stamp if a parser produced it and a person checked it, "By hand" if a person typed it.
 - **Do** set every figure in tabular numerals and right-align amounts so decimals stack.
-- **Do** build hierarchy from scale contrast — a 54px figure against a 12px tracked uppercase label — rather than from weight, colour or enclosure.
+- **Do** build hierarchy from scale contrast — a 54px figure against a 13.5px sentence-case label — rather than from weight, colour or enclosure.
 - **Do** keep each mark to its single job: oxblood for the stamp, today's rule and the cap boundary; green for money in and within-budget; amber for awaiting your check.
 - **Do** give a quieter state its own colour token, the way future rows use Future Ink.
 - **Do** reserve the dashed 1.5px edge for anything unverified, and switch it to a solid stamp the moment it is checked.

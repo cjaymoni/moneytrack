@@ -1,8 +1,10 @@
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import type { Outlook, OutlookPoint } from "../api/types";
 import { useOutlook } from "../api/queries";
-import { KIND_NAMES, balance, gutterDate, isNegative, longDate, signed } from "../ui/format";
+import { KIND_NAMES, balance, gutterDate, isNegative, longDate, shortDate, signed } from "../ui/format";
 import { Failure, Loading } from "../ui/states";
+import { usePageTitle } from "../ui/title";
+import { InsightsTabs } from "../ui/InsightsTabs";
 
 const WINDOWS = [30, 90, 180] as const;
 
@@ -17,6 +19,7 @@ const WINDOWS = [30, 90, 180] as const;
  * this screen's to measure; up and down, only by the level the server sent.
  */
 export function OutlookScreen() {
+  usePageTitle("Forecast");
   const [params, setParams] = useSearchParams();
   const asked = Number(params.get("days"));
   const days = (WINDOWS as readonly number[]).includes(asked) ? asked : 90;
@@ -24,8 +27,9 @@ export function OutlookScreen() {
 
   return (
     <section className="screen">
+      <InsightsTabs />
       <header className="month-bar">
-        <h1 className="screen__title">Outlook</h1>
+        <h1 className="screen__title">Forecast</h1>
         <div className="segments window-pick" role="radiogroup" aria-label="How far ahead">
           {WINDOWS.map((option) => (
             <label key={option} className="segment">
@@ -44,16 +48,15 @@ export function OutlookScreen() {
       {outlook.isPending && <Loading />}
       {outlook.isError && <Failure error={outlook.error} retry={() => void outlook.refetch()} />}
       {outlook.data && outlook.data.length === 0 && (
-        <p className="screen__lede">Open an account to see where it is headed.</p>
+        <p className="screen__lede">Add an account to see its forecast.</p>
       )}
       {outlook.data?.map((each) => (
         <AccountOutlook key={each.account.id} outlook={each} days={days} />
       ))}
       {outlook.data && outlook.data.length > 0 && (
         <p className="field__help">
-          Counted from what each account holds now and every expected row ahead. Accounts are
-          not added together: money in one does not cover a shortfall in another until you
-          move it.
+          Worked out from each account's balance now plus every planned transaction. Each
+          account is shown on its own: money in one doesn't cover another until you move it.
         </p>
       )}
     </section>
@@ -74,7 +77,7 @@ function AccountOutlook({ outlook, days }: { outlook: Outlook; days: number }) {
       <Verdict outlook={outlook} short={short} days={days} />
 
       <div className="balance">
-        <p className="mt-label">{lowRow ? "Lowest ahead" : "Lowest ahead — today"}</p>
+        <p className="mt-label">{lowRow ? "Lowest point coming up" : "Lowest point is today"}</p>
         <p className="balance__fig">
           <span className={isNegative(outlook.low) ? "short" : undefined}>{balance(outlook.low)}</span>
           <span className="balance__cur">{account.currency}</span>
@@ -83,11 +86,11 @@ function AccountOutlook({ outlook, days }: { outlook: Outlook; days: number }) {
           {lowRow ? (
             <>
               On {gutterDate(lowRow.transaction.booked_at)}, after {lowRow.transaction.label} ·
-              holds <span className="balance__then">{balance(outlook.start)}</span> now
+              balance now <span className="balance__then">{balance(outlook.start)}</span>
             </>
           ) : (
             <>
-              Holds <span className="balance__then">{balance(outlook.start)}</span> now
+              Balance now <span className="balance__then">{balance(outlook.start)}</span>
             </>
           )}
         </p>
@@ -96,9 +99,12 @@ function AccountOutlook({ outlook, days }: { outlook: Outlook; days: number }) {
       <Line outlook={outlook} />
 
       {points.length === 0 ? (
-        <p className="field__help">Nothing expected in the next {days} days.</p>
+        <p className="field__help">
+          Nothing planned in the next {days} days. Add rent, salary and other regular payments to
+          see where your balance is heading. <Link to="/repeating">Add a regular payment</Link>
+        </p>
       ) : (
-        <ol className="ledger__rows outlook__rows" aria-label={`Expected in ${account.name}`}>
+        <ol className="ledger__rows outlook__rows" aria-label={`Planned for ${account.name}`}>
           {points.map((point) => (
             <Ahead
               key={point.transaction.id}
@@ -117,15 +123,15 @@ function Verdict({ outlook, short, days }: { outlook: Outlook; short: OutlookPoi
   if (outlook.shortfall === "already") {
     return (
       <p className="verdict verdict--short" role="alert">
-        Already short: it holds {balance(outlook.start)} {outlook.account.currency} now. An
-        expected row dated in the past may need confirming or removing.
+        Below zero now: {balance(outlook.start)} {outlook.account.currency}. A planned payment
+        with a past date may need marking as paid or deleting.
       </p>
     );
   }
   if (outlook.shortfall === "at" && short) {
     return (
       <p className="verdict verdict--short" role="alert">
-        Runs short on {longDate(short.transaction.booked_at)}: {short.transaction.label} takes it
+        Goes below zero on {longDate(short.transaction.booked_at)}: {short.transaction.label} takes it
         to {balance(short.balance_after)} {outlook.account.currency}.
       </p>
     );
@@ -137,7 +143,7 @@ function Verdict({ outlook, short, days }: { outlook: Outlook; short: OutlookPoi
  * The balance as a stepped line: flat until a row lands, then straight to where it leaves
  * the account. Decoration for sighted readers; the list beneath says everything it says.
  */
-function Line({ outlook }: { outlook: Outlook }) {
+export function Line({ outlook }: { outlook: Outlook }) {
   const from = Date.parse(outlook.from);
   const until = Date.parse(outlook.until);
   const span = Math.max(until - from, 1);
@@ -177,7 +183,7 @@ function Line({ outlook }: { outlook: Outlook }) {
       <span className="line__low" style={{ left: `${lowLeft}%`, top: `${lowTop}%` }} />
       <span className="line__ends mt-micro">
         <span>Today</span>
-        <span>{gutterDate(outlook.until)}</span>
+        <span>{shortDate(outlook.until)}</span>
       </span>
     </div>
   );
@@ -192,14 +198,14 @@ function Ahead({ point, short }: { point: OutlookPoint; short: boolean }) {
       </time>
       <div>
         <div className="label">{transaction.label}</div>
-        {short && <div className="sub outlook__flag">Runs short here</div>}
+        {short && <div className="sub outlook__flag">Goes below zero here</div>}
       </div>
       <div className="figures">
         <div className={transaction.direction === "in" ? "amt in" : "amt"}>
           {signed(transaction.amount, transaction.direction)}
         </div>
         <div className={isNegative(balance_after) ? "after short" : "after"}>
-          <span className="visually-hidden">then held </span>
+          <span className="visually-hidden">balance after </span>
           {balance(balance_after)}
         </div>
       </div>

@@ -1,6 +1,8 @@
 //! Transactions: the rows everything else is derived from. Every query is scoped to one user.
 
-use deadpool_postgres::Pool;
+use std::collections::HashMap;
+
+use deadpool_postgres::{GenericClient, Pool};
 use mt_core::enums::{Direction, TxSource, TxStatus};
 use mt_core::ids::{AccountId, CategoryId, DeviceId, TxId, UserId};
 use mt_core::model::{SyncMeta, Transaction};
@@ -16,6 +18,9 @@ use crate::repo::{accounts, categories};
 
 /// The table, for error messages.
 const ENTITY: &str = "transaction";
+
+/// The unique index on a bank's own reference, per account.
+const EXTERNAL_ID_INDEX: &str = "transactions_external";
 
 /// The columns every read selects, with the domains cast to types `sqlx` decodes.
 const COLUMNS: &str = "id, account_id, direction, amount_minor::bigint AS amount_minor,
@@ -110,46 +115,166 @@ pub async fn create(
         reason: reason.to_string(),
     })?;
 
-    let category = transaction.category_id.map(|id| *id.as_uuid());
-    // Domain parameters are cast through their base types; see the note in `repo::accounts`.
     let client = db::client(pool).await?;
-    let row = client
-        .query_one(
+    insert(&client, user, &transaction).await
+}
+
+/// Writes a validated transaction on a client the caller holds, so it can share a database
+/// transaction with whatever else the caller is writing.
+///
+/// The account and category are not re-read here: the composite foreign keys refuse a row
+/// naming either of another user's, and the caller has already read them under this user's
+/// id to give a better answer than a constraint name.
+///
+/// # Errors
+/// [`ApiError::Conflict`] if the account already holds a live row with the same bank
+/// reference, or [`ApiError::Internal`].
+pub(crate) async fn insert(
+    client: &impl GenericClient,
+    user: UserId,
+    transaction: &Transaction,
+) -> Result<Transaction, ApiError> {
+    // One statement for one row or many, so the column list and its casts exist once.
+    insert_many(client, user, core::slice::from_ref(transaction))
+        .await?
+        .pop()
+        .ok_or_else(|| ApiError::Internal {
+            operation: "insert a transaction",
+            reason: format!(
+                "transaction {} was not returned by its insert",
+                transaction.id
+            ),
+        })
+}
+
+/// Writes several validated transactions in one statement, on the caller's client, and
+/// returns them in the order given.
+///
+/// As [`insert`], the caller has already read each account and category under this user's
+/// id and settled which rows keep a bank reference; the composite foreign keys and the
+/// reference index are the backstop.
+///
+/// # Errors
+/// [`ApiError::Conflict`] if a bank reference was written to one of the accounts by another
+/// request since the caller checked, or [`ApiError::Internal`].
+pub(crate) async fn insert_many(
+    client: &impl GenericClient,
+    user: UserId,
+    transactions: &[Transaction],
+) -> Result<Vec<Transaction>, ApiError> {
+    if transactions.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids: Vec<Uuid> = transactions.iter().map(|t| *t.id.as_uuid()).collect();
+    let accounts: Vec<Uuid> = transactions
+        .iter()
+        .map(|t| *t.account_id.as_uuid())
+        .collect();
+    let directions: Vec<&str> = transactions.iter().map(|t| t.direction.as_str()).collect();
+    let amounts: Vec<i64> = transactions.iter().map(|t| t.amount.minor()).collect();
+    let currencies: Vec<String> = transactions
+        .iter()
+        .map(|t| t.amount.currency().code().to_owned())
+        .collect();
+    let booked: Vec<OffsetDateTime> = transactions.iter().map(|t| t.booked_at).collect();
+    let categories: Vec<Option<Uuid>> = transactions
+        .iter()
+        .map(|t| t.category_id.map(|id| *id.as_uuid()))
+        .collect();
+    let labels: Vec<&str> = transactions.iter().map(|t| t.label.as_str()).collect();
+    let counterparties: Vec<Option<&str>> = transactions
+        .iter()
+        .map(|t| t.counterparty.as_deref())
+        .collect();
+    let notes: Vec<Option<&str>> = transactions.iter().map(|t| t.note.as_deref()).collect();
+    let statuses: Vec<&str> = transactions.iter().map(|t| t.status.as_str()).collect();
+    let sources: Vec<&str> = transactions.iter().map(|t| t.source.as_str()).collect();
+    let source_refs: Vec<Option<&str>> = transactions
+        .iter()
+        .map(|t| t.source_ref.as_deref())
+        .collect();
+    let external_ids: Vec<Option<&str>> = transactions
+        .iter()
+        .map(|t| t.external_id.as_deref())
+        .collect();
+    let created: Vec<OffsetDateTime> = transactions.iter().map(|t| t.sync.created_at).collect();
+    let updated: Vec<OffsetDateTime> = transactions.iter().map(|t| t.sync.updated_at).collect();
+    let devices: Vec<Uuid> = transactions
+        .iter()
+        .map(|t| *t.sync.device_id.as_uuid())
+        .collect();
+
+    // Domain parameters are cast through their base types; see the note in `repo::accounts`.
+    let rows = client
+        .query(
             &format!(
                 "INSERT INTO transactions (
                      user_id, id, account_id, direction, amount_minor, currency, booked_at,
-                     category_id, label, counterparty, note, status, source,
-                     created_at, updated_at, device_id
-                 ) VALUES (
-                     $1, $2, $3, $4, $5::bigint::amount_minor, $6::text::currency_code,
-                     $7::timestamptz::ledger_instant,
-                     $8, $9, $10, $11, $12, $13,
-                     $14::timestamptz::ledger_instant, $14::timestamptz::ledger_instant, $15
+                     category_id, label, counterparty, note, status, source, source_ref,
+                     external_id, created_at, updated_at, device_id
                  )
+                 SELECT $1, row.id, row.account_id, row.direction, row.amount::amount_minor,
+                        row.currency::currency_code, row.booked_at::ledger_instant,
+                        row.category_id, row.label, row.counterparty, row.note, row.status,
+                        row.source, row.source_ref, row.external_id,
+                        row.created_at::ledger_instant, row.updated_at::ledger_instant,
+                        row.device_id
+                   FROM UNNEST($2::uuid[], $3::uuid[], $4::text[], $5::bigint[], $6::text[],
+                               $7::timestamptz[], $8::uuid[], $9::text[], $10::text[],
+                               $11::text[], $12::text[], $13::text[], $14::text[], $15::text[],
+                               $16::timestamptz[], $17::timestamptz[], $18::uuid[])
+                        AS row(id, account_id, direction, amount, currency, booked_at,
+                               category_id, label, counterparty, note, status, source,
+                               source_ref, external_id, created_at, updated_at, device_id)
                  RETURNING {COLUMNS}"
             ),
             &[
                 user.as_uuid(),
-                transaction.id.as_uuid(),
-                transaction.account_id.as_uuid(),
-                &transaction.direction.as_str(),
-                &transaction.amount.minor(),
-                &transaction.amount.currency().code(),
-                &transaction.booked_at,
-                &category,
-                &transaction.label,
-                &transaction.counterparty,
-                &transaction.note,
-                &transaction.status.as_str(),
-                &transaction.source.as_str(),
-                &now,
-                device.as_uuid(),
+                &ids,
+                &accounts,
+                &directions,
+                &amounts,
+                &currencies,
+                &booked,
+                &categories,
+                &labels,
+                &counterparties,
+                &notes,
+                &statuses,
+                &sources,
+                &source_refs,
+                &external_ids,
+                &created,
+                &updated,
+                &devices,
             ],
         )
         .await
-        .map_err(|error| ApiError::database("insert a transaction", &error))?;
+        .map_err(|error| {
+            if db::violates(&error, EXTERNAL_ID_INDEX) {
+                return ApiError::Conflict {
+                    reason: "a payment with the same bank reference is already in this \
+                             account; reload and try again"
+                        .to_owned(),
+                };
+            }
+            ApiError::database("insert transactions", &error)
+        })?;
 
-    read(&row)
+    // RETURNING promises no order, so the rows are put back in the order they were given.
+    let mut by_id: HashMap<TxId, Transaction> = rows
+        .iter()
+        .map(|row| read(row).map(|saved| (saved.id, saved)))
+        .collect::<Result<_, _>>()?;
+    transactions
+        .iter()
+        .map(|wanted| {
+            by_id.remove(&wanted.id).ok_or_else(|| ApiError::Internal {
+                operation: "insert transactions",
+                reason: format!("transaction {} was not returned by its insert", wanted.id),
+            })
+        })
+        .collect()
 }
 
 /// Every live row in one of this user's accounts, oldest first.
@@ -262,6 +387,72 @@ pub async fn set_category(
         .map_err(|error| ApiError::database("file a transaction", &error))?;
 
     read(&row)
+}
+
+/// The most rows one request may file at once.
+pub const MAX_FILED_AT_ONCE: usize = 500;
+
+/// Files several rows under one category, or under none, in one statement — and, when the
+/// person asks, remembers the payee so the next statement from it is filed the same way.
+///
+/// All or nothing: if any row is not this user's, is deleted, or is a transfer leg (which is
+/// netted, never filed), nothing changes and the request is refused.
+///
+/// # Errors
+/// [`ApiError::NotFound`] for a category, or for a row that is not this user's or not
+/// fileable, [`ApiError::Invalid`] for a repeated row, or [`ApiError::Internal`].
+pub async fn set_category_many(
+    pool: &Pool,
+    user: UserId,
+    device: DeviceId,
+    ids: &[TxId],
+    category: Option<CategoryId>,
+    remember: Option<&mt_core::categorise::Lesson>,
+) -> Result<usize, ApiError> {
+    let distinct: std::collections::HashSet<TxId> = ids.iter().copied().collect();
+    if distinct.len() != ids.len() {
+        return Err(ApiError::Invalid {
+            field: "transaction_ids".to_owned(),
+            reason: "the same transaction is listed twice".to_owned(),
+        });
+    }
+    if let Some(category) = category {
+        categories::get(pool, user, category).await?;
+    }
+
+    let mut client = db::client(pool).await?;
+    let transaction = client
+        .transaction()
+        .await
+        .map_err(|error| ApiError::database("begin filing transactions", &error))?;
+    let now = OffsetDateTime::now_utc();
+    let wanted: Vec<Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
+    let category = category.map(|id| *id.as_uuid());
+    let filed = transaction
+        .execute(
+            "UPDATE transactions
+                SET category_id = $3,
+                    updated_at = greatest($4::timestamptz, created_at::timestamptz)
+                                 ::ledger_instant,
+                    device_id = $5
+              WHERE user_id = $1 AND id = ANY($2) AND deleted_at IS NULL
+                AND transfer_id IS NULL",
+            &[user.as_uuid(), &wanted, &category, &now, device.as_uuid()],
+        )
+        .await
+        .map_err(|error| ApiError::database("file transactions", &error))?;
+    if usize::try_from(filed).ok() != Some(ids.len()) {
+        // Dropping the transaction rolls back the rows that did match.
+        return Err(ApiError::NotFound { entity: ENTITY });
+    }
+    if let Some(lesson) = remember {
+        crate::repo::rules::learn(&transaction, user, device, lesson).await?;
+    }
+    transaction
+        .commit()
+        .await
+        .map_err(|error| ApiError::database("commit filing transactions", &error))?;
+    Ok(ids.len())
 }
 
 /// What a caller may change about a row. Everything a person typed; not the account it is
@@ -506,6 +697,63 @@ pub async fn all(pool: &Pool, user: UserId) -> Result<Vec<Transaction>, ApiError
         .map_err(|error| ApiError::database("list transactions", &error))?;
 
     rows.iter().map(read).collect()
+}
+
+/// Every live row this user has booked inside a window, across every account.
+///
+/// For the work that needs the ledger around a set of dates rather than all of it: the
+/// duplicate check reads the days around the lines it is checking, and categorising an
+/// import reads recent history.
+///
+/// # Errors
+/// [`ApiError::Internal`] if the query fails or a row will not read back.
+pub async fn between(
+    pool: &Pool,
+    user: UserId,
+    from: OffsetDateTime,
+    to: OffsetDateTime,
+) -> Result<Vec<Transaction>, ApiError> {
+    let client = db::client(pool).await?;
+    let rows = client
+        .query(
+            &format!(
+                "SELECT {COLUMNS} FROM transactions
+                  WHERE user_id = $1 AND deleted_at IS NULL
+                    AND booked_at >= $2::timestamptz AND booked_at <= $3::timestamptz
+                  ORDER BY booked_at, id"
+            ),
+            &[user.as_uuid(), &from, &to],
+        )
+        .await
+        .map_err(|error| ApiError::database("list transactions in a window", &error))?;
+
+    rows.iter().map(read).collect()
+}
+
+/// One live row of this user's, locked until the caller's transaction ends.
+///
+/// # Errors
+/// [`ApiError::NotFound`] if there is no such live row of this user's.
+pub(crate) async fn lock(
+    client: &impl GenericClient,
+    user: UserId,
+    id: TxId,
+) -> Result<Transaction, ApiError> {
+    let found = client
+        .query_opt(
+            &format!(
+                "SELECT {COLUMNS} FROM transactions
+                  WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL
+                  FOR UPDATE"
+            ),
+            &[user.as_uuid(), id.as_uuid()],
+        )
+        .await
+        .map_err(|error| ApiError::database("lock a transaction", &error))?;
+    match found {
+        Some(row) => read(&row),
+        None => Err(ApiError::NotFound { entity: ENTITY }),
+    }
 }
 
 /// Reads one row.

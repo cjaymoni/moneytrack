@@ -64,7 +64,7 @@ async fn a_count_short_of_the_ledger_writes_one_row_out_and_the_ledger_agrees() 
     assert_eq!(row["amount"]["display"], "40.00");
     assert_eq!(row["source"], "adjustment");
     assert_eq!(row["status"], "confirmed");
-    assert_eq!(row["label"], "Counted: 340.00 GHS");
+    assert_eq!(row["label"], "Balance updated to 340.00 GHS");
     assert_eq!(held(&server, &cash).await, "340.00");
 }
 

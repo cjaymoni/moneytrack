@@ -74,7 +74,7 @@ describe("RowEditor", () => {
     renderEditor();
 
     expect((screen.getByLabelText(/Amount, GHS/) as HTMLInputElement).value).toBe("12.50");
-    expect((screen.getByLabelText("What it was") as HTMLInputElement).value).toBe("Waakye");
+    expect((screen.getByLabelText("Description") as HTMLInputElement).value).toBe("Waakye");
     expect(screen.getByRole("button", { name: "Food & groceries" }).getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -108,7 +108,7 @@ describe("RowEditor", () => {
     const user = userEvent.setup();
     renderEditor();
 
-    await user.click(screen.getByText("In"));
+    await user.click(screen.getByText("Money in"));
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(calls.some((call) => call.method === "PATCH")).toBe(true));

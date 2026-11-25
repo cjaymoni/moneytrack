@@ -15,10 +15,16 @@ use crate::error::ApiError;
 const MAX_CONNECTIONS: usize = 10;
 
 /// The migrations, in order. Each is applied once and recorded by name.
-const MIGRATIONS: &[(&str, &str)] = &[(
-    "0001_init",
-    include_str!("../../../db/postgres/0001_init.sql"),
-)];
+const MIGRATIONS: &[(&str, &str)] = &[
+    (
+        "0001_init",
+        include_str!("../../../db/postgres/0001_init.sql"),
+    ),
+    (
+        "0002_import",
+        include_str!("../../../db/postgres/0002_import.sql"),
+    ),
+];
 
 /// Opens the pool.
 ///
@@ -125,4 +131,15 @@ pub async fn client(pool: &Pool) -> Result<deadpool_postgres::Object, ApiError> 
         operation: "take a connection",
         reason: error.to_string(),
     })
+}
+
+/// Whether a database error is a violation of the named constraint or unique index.
+///
+/// For the few places a constraint is an answer the caller can act on — a duplicate bank
+/// reference, a fingerprint already seen — rather than a bug to report.
+#[must_use]
+pub fn violates(error: &tokio_postgres::Error, constraint: &str) -> bool {
+    error
+        .as_db_error()
+        .is_some_and(|db| db.constraint() == Some(constraint))
 }

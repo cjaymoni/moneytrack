@@ -94,14 +94,14 @@ describe("LedgerList", () => {
     );
 
     expect(screen.getAllByText("By hand")).toHaveLength(1);
-    expect(screen.getByText("expected")).toBeTruthy();
+    expect(screen.getByText("planned")).toBeTruthy();
   });
 
   it("says what an empty account opened with", () => {
     render(<LedgerList now={NOW} opening={cedis(5_000, "5000")} currency="XOF" entries={[]} />);
 
-    expect(screen.getByText("Nothing recorded yet.")).toBeTruthy();
-    expect(screen.getByText(/Opened with 5,000 XOF/)).toBeTruthy();
+    expect(screen.getByText("No transactions yet.")).toBeTruthy();
+    expect(screen.getByText(/Starting balance 5,000 XOF/)).toBeTruthy();
   });
 
   it("shows each row's category, and says so when there is none", () => {
@@ -124,15 +124,24 @@ describe("LedgerList", () => {
     );
 
     expect(screen.getByRole("button", { name: /Food & groceries · Chop bar/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Uncategorised/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "No category. Add category" })).toBeTruthy();
   });
 
   it("marks a correction to a count as counted", () => {
-    const fixed = entry("1", "Counted: 340.00 GHS", "2026-11-02T09:00:00Z", "out", cedis(4_000, "40.00"), cedis(34_000, "340.00"));
+    const fixed = entry("1", "Balance updated to 340.00 GHS", "2026-11-02T09:00:00Z", "out", cedis(4_000, "40.00"), cedis(34_000, "340.00"));
     fixed.transaction.source = "adjustment";
     render(<LedgerList now={NOW} opening={cedis(38_000, "380.00")} currency="GHS" entries={[fixed]} />);
 
-    expect(screen.getByText("Counted")).toBeTruthy();
+    expect(screen.getByText("Adjustment")).toBeTruthy();
+    expect(screen.queryByText("By hand")).toBeNull();
+  });
+
+  it("stamps a row read off a statement and checked in the inbox", () => {
+    const imported = entry("1", "POS SHOPRITE", "2026-11-02T00:00:00Z", "out", cedis(2_000, "20.00"), cedis(36_000, "360.00"));
+    imported.transaction.source = "csv";
+    render(<LedgerList now={NOW} opening={cedis(38_000, "380.00")} currency="GHS" entries={[imported]} />);
+
+    expect(screen.getByText("Imported")).toBeTruthy();
     expect(screen.queryByText("By hand")).toBeNull();
   });
 
@@ -154,10 +163,10 @@ describe("LedgerList", () => {
       render(<LedgerList now={NOW} opening={cedis(0, "0.00")} currency="GHS" entries={[due, later]} />);
 
       // Only the one that is due gets the button; both say they repeat.
-      expect(screen.getAllByRole("button", { name: "It happened" })).toHaveLength(1);
+      expect(screen.getAllByRole("button", { name: "Mark as paid" })).toHaveLength(1);
       expect(screen.getAllByText("repeats")).toHaveLength(2);
 
-      screen.getByRole("button", { name: "It happened" }).click();
+      screen.getByRole("button", { name: "Mark as paid" }).click();
       await new Promise((resolve) => setTimeout(resolve, 50));
       const sent = calls.find((call) => call.init?.method === "PATCH");
       expect(sent?.url).toBe("/api/transactions/1");
@@ -185,7 +194,50 @@ describe("LedgerList", () => {
 
     expect(screen.getByText("Market")).toBeTruthy();
     expect(screen.queryByText("Rent")).toBeNull();
-    expect(screen.getByText(/3 more expected rows after the next 45 days/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "See them in the outlook" }).getAttribute("href")).toBe("/outlook?days=180");
+    expect(screen.getByText(/3 more planned transactions after the next 45 days/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "See them in the forecast" }).getAttribute("href")).toBe("/outlook?days=180");
+  });
+
+  it("opens on the most recent transactions, with the rest a click away", async () => {
+    const many = Array.from({ length: 25 }, (_, index) =>
+      entry(String(index), `Row ${index}`, `2026-10-${String(index + 1).padStart(2, "0")}T09:00:00Z`, "out", cedis(100, "1.00"), cedis(0, "0.00")),
+    );
+    render(<LedgerList now={NOW} opening={cedis(0, "0.00")} currency="GHS" entries={many} />);
+    expect(screen.queryByText("Row 0")).toBeNull();
+    expect(screen.getByText("Row 24")).toBeTruthy();
+
+    screen.getByRole("button", { name: "Show 5 earlier transactions" }).click();
+
+    expect(await screen.findByText("Row 0")).toBeTruthy();
+    expect(screen.getByText("Starting balance")).toBeTruthy();
+  });
+
+  it("shows only what matches a search, or says nothing does", () => {
+    const rows = [
+      entry("1", "Waakye", "2026-11-02T09:00:00Z", "out", cedis(100, "1.00"), cedis(0, "0.00")),
+      entry("2", "Trotro", "2026-11-03T09:00:00Z", "out", cedis(100, "1.00"), cedis(0, "0.00")),
+    ];
+    const { rerender } = render(
+      <LedgerList now={NOW} opening={cedis(0, "0.00")} currency="GHS" entries={rows} filter={{ text: "waak", show: "all" }} />,
+    );
+    expect(screen.getByText("Waakye")).toBeTruthy();
+    expect(screen.queryByText("Trotro")).toBeNull();
+
+    rerender(
+      <LedgerList now={NOW} opening={cedis(0, "0.00")} currency="GHS" entries={rows} filter={{ text: "kenkey", show: "all" }} />,
+    );
+    expect(screen.getByText(/No transactions match/)).toBeTruthy();
+  });
+
+  it("says a row can be edited without needing a hover", () => {
+    render(
+      <LedgerList
+        now={NOW}
+        opening={cedis(0, "0.00")}
+        currency="GHS"
+        entries={[entry("1", "Waakye", "2026-11-02T09:00:00Z", "out", cedis(100, "1.00"), cedis(0, "0.00"))]}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Waakye, edit" })).toBeTruthy();
   });
 });

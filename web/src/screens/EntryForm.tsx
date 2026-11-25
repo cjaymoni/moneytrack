@@ -5,6 +5,9 @@ import { CategoryPicker, kindFor } from "../ui/CategoryPicker";
 import { FormError } from "../ui/states";
 import { localDate, middayOn } from "../ui/dates";
 
+/** How many categories the form shows before "More categories". */
+const CHIPS_AT_FIRST = 7;
+
 /** Today means now — the server's own default, so it is left out. Any other day is midday. */
 function bookedAt(picked: string, today: string): string | undefined {
   if (!picked || picked === today) return undefined;
@@ -32,6 +35,7 @@ export function EntryForm({ account }: { account: Account }) {
   const [date, setDate] = useState(today);
   const [expected, setExpected] = useState(false);
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const chosen = categories.data?.find((category) => category.id === categoryId) ?? null;
 
@@ -45,6 +49,8 @@ export function EntryForm({ account }: { account: Account }) {
     setDate(value);
     // A day still to come is a row still expected. The box stays the person's to change.
     setExpected(value > today);
+    // Show the box it ticked, so a planned row is never a surprise.
+    if (value > today) setMoreOpen(true);
   }
 
   function submit(event: FormEvent) {
@@ -78,7 +84,7 @@ export function EntryForm({ account }: { account: Account }) {
   }
 
   return (
-    <form className="entry" onSubmit={submit} aria-label="Record a row">
+    <form className="entry" onSubmit={submit} aria-label="Add a transaction">
       <div className="entry__top">
         <div className="segments segments--pair" role="radiogroup" aria-label="Direction">
           {(["out", "in"] as const).map((option) => (
@@ -90,7 +96,7 @@ export function EntryForm({ account }: { account: Account }) {
                 checked={direction === option}
                 onChange={() => pickDirection(option)}
               />
-              <span>{option === "out" ? "Out" : "In"}</span>
+              <span>{option === "out" ? "Money out" : "Money in"}</span>
             </label>
           ))}
         </div>
@@ -120,12 +126,13 @@ export function EntryForm({ account }: { account: Account }) {
           value={categoryId}
           onChange={setCategoryId}
           label="Category"
+          shown={CHIPS_AT_FIRST}
         />
       )}
 
       <div className="entry__fields">
         <label className="field">
-          <span className="mt-label">What it was</span>
+          <span className="mt-label">Description</span>
           <input
             required={!chosen}
             maxLength={200}
@@ -134,32 +141,40 @@ export function EntryForm({ account }: { account: Account }) {
             onChange={(event) => setLabel(event.target.value)}
           />
         </label>
-        <label className="field">
-          <span className="mt-label">{direction === "out" ? "Paid to" : "From"}</span>
-          <input
-            maxLength={120}
-            placeholder="Optional"
-            value={counterparty}
-            onChange={(event) => setCounterparty(event.target.value)}
-          />
-        </label>
         <label className="field field--date">
-          <span className="mt-label">Day</span>
+          <span className="mt-label">Date</span>
           <input type="date" required value={date} onChange={(event) => pickDate(event.target.value)} />
         </label>
       </div>
 
+      <details className="entry__more" open={moreOpen} onToggle={(event) => setMoreOpen(event.currentTarget.open)}>
+        <summary>More: who it was with, or planned for later</summary>
+        <div className="entry__more-fields">
+          <label className="field">
+            <span className="mt-label">{direction === "out" ? "Paid to" : "Received from"}</span>
+            <input
+              maxLength={120}
+              placeholder="Optional"
+              value={counterparty}
+              onChange={(event) => setCounterparty(event.target.value)}
+            />
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={expected}
+              onChange={(event) => setExpected(event.target.checked)}
+            />
+            <span>Planned — hasn't happened yet</span>
+          </label>
+          <p className="field__help">A date in the future is marked planned for you.</p>
+        </div>
+      </details>
+
       <div className="entry__foot">
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={expected}
-            onChange={(event) => setExpected(event.target.checked)}
-          />
-          <span>Expected — it has not happened yet</span>
-        </label>
+        <span />
         <button type="submit" className="btn btn--primary entry__submit" disabled={create.isPending}>
-          {create.isPending ? "Recording" : "Record"}
+          {create.isPending ? "Adding" : "Add"}
         </button>
       </div>
 

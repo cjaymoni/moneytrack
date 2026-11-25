@@ -35,6 +35,7 @@ pub mod repo;
 pub mod session;
 
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
 use axum::routing::{get, patch, post};
 use deadpool_postgres::Pool;
@@ -47,13 +48,16 @@ use tower_http::trace::TraceLayer;
 use crate::config::Config;
 use crate::limit::Attempts;
 
-/// The largest request body the server will read. Generous for a transaction, nowhere near
-/// enough to be interesting as a way to use up memory. Import will raise it on its own
-/// route when it exists.
+/// The largest request body the server will read, outside the two upload routes. Generous
+/// for a transaction, nowhere near enough to be interesting as a way to use up memory. The
+/// upload routes take [`api::imports::MAX_UPLOAD_BODY`] instead, and nothing else does.
 const MAX_BODY: usize = 64 * 1024;
 
 /// How long a request may take before it is cut off.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long an upload may take, body included.
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// What every handler is given.
 #[derive(Clone)]
@@ -106,15 +110,22 @@ pub fn router(state: AppState) -> Router {
             "/transactions/{id}/category",
             post(api::ledger::set_category),
         )
+        .route("/transactions/category", post(api::ledger::file_many))
         .route(
             "/categories",
             get(api::ledger::list_categories).post(api::ledger::create_category),
+        )
+        .route(
+            "/categories/{id}",
+            patch(api::ledger::rename_category).delete(api::ledger::delete_category),
         )
         .route("/accounts/{id}/reconcile", post(api::ledger::reconcile))
         .route("/ledger", get(api::ledger::account_ledger))
         .route("/totals", get(api::ledger::currency_totals))
         .route("/breakdown", get(api::ledger::breakdown))
         .route("/outlook", get(api::ledger::outlook))
+        .route("/trend", get(api::ledger::trend))
+        .route("/daily", get(api::ledger::daily))
         .route(
             "/recurring",
             get(api::recurring::list).post(api::recurring::create),
@@ -132,6 +143,33 @@ pub fn router(state: AppState) -> Router {
             patch(api::budgets::change).delete(api::budgets::delete),
         )
         .route("/currencies", get(api::ledger::currencies))
+        .route("/inbox", get(api::inbox::list))
+        .route("/inbox/count", get(api::inbox::count))
+        .route("/inbox/accept", post(api::inbox::accept))
+        .route("/inbox/{id}/merge", post(api::inbox::merge))
+        .route("/inbox/{id}/reject", post(api::inbox::reject))
+        .layer(RequestBodyLimitLayer::new(MAX_BODY))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            REQUEST_TIMEOUT,
+        ));
+
+    // A statement is the one thing a browser sends that is bigger than a form. Its routes
+    // get their own limit, and the extractor's own default is lifted to match.
+    let uploads = Router::new()
+        .route("/imports/preview", post(api::imports::preview))
+        .route("/imports", post(api::imports::import))
+        .layer(DefaultBodyLimit::max(api::imports::MAX_UPLOAD_BODY))
+        .layer(RequestBodyLimitLayer::new(api::imports::MAX_UPLOAD_BODY))
+        // The timeout covers reading the body, and 7 MB of base64 takes a minute on a slow
+        // mobile link.
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            UPLOAD_TIMEOUT,
+        ));
+
+    let api = api
+        .merge(uploads)
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             csrf::guard,
@@ -141,9 +179,4 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .nest("/api", api)
         .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            REQUEST_TIMEOUT,
-        ))
-        .layer(RequestBodyLimitLayer::new(MAX_BODY))
 }

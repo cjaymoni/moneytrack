@@ -87,8 +87,8 @@ describe("OutlookScreen", () => {
     renderAt("/outlook");
 
     const verdict = await screen.findByRole("alert");
-    expect(verdict.textContent).toMatch(/Runs short on .*Rent takes it to −200\.00 GHS/);
-    expect(screen.getByText("Runs short here")).toBeTruthy();
+    expect(verdict.textContent).toMatch(/Goes below zero on .*Rent takes it to −200\.00 GHS/);
+    expect(screen.getByText("Goes below zero here")).toBeTruthy();
   });
 
   it("prints the low and every balance as the server sent them", async () => {
@@ -119,12 +119,15 @@ describe("OutlookScreen", () => {
 
     expect(await screen.findByText("Stays above zero for the next 30 days.")).toBeTruthy();
     expect(asked[0]).toBe("/api/outlook?days=30");
+    // With nothing planned, the page says what to do next, and the low point reads plainly.
+    expect(screen.getByRole("link", { name: "Add a regular payment" }).getAttribute("href")).toBe("/repeating");
+    expect(screen.getByText("Lowest point is today")).toBeTruthy();
   });
 
   it("says when an account is short already", async () => {
     answer = [{ ...SHORT, shortfall: "already", shortfall_transaction_id: null, start: cedis(-2_000, "-20.00") }];
     renderAt("/outlook");
 
-    expect((await screen.findByRole("alert")).textContent).toMatch(/Already short: it holds −20\.00 GHS now/);
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Below zero now: −20\.00 GHS/);
   });
 });

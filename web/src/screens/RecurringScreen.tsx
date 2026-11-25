@@ -5,13 +5,13 @@ import { CategoryPicker, kindFor } from "../ui/CategoryPicker";
 import { localDate } from "../ui/dates";
 import { longDate, signed } from "../ui/format";
 import { Failure, FormError, Loading } from "../ui/states";
+import { usePageTitle } from "../ui/title";
 
-const FREQUENCIES: { value: Frequency; name: string }[] = [
-  { value: "weekly", name: "Weekly" },
-  { value: "monthly", name: "Monthly" },
-  { value: "yearly", name: "Yearly" },
-  { value: "daily", name: "Daily" },
-];
+/** "Repeats every [n] [unit]": the units in the order people think of them. */
+const FREQUENCY_ORDER: Frequency[] = ["daily", "weekly", "monthly", "yearly"];
+const INTERVALS = [1, 2, 3, 4, 6];
+/** How many categories show before "More categories". */
+const CHIPS_AT_FIRST = 7;
 
 const UNITS: Record<Frequency, [string, string]> = {
   daily: ["day", "days"],
@@ -60,27 +60,38 @@ export function cadence(freq: Frequency, interval: number, startsOn: string): st
  * see them. Every date and amount here is the server's; this screen names the cadence.
  */
 export function RecurringScreen() {
+  usePageTitle("Regular payments");
   const series = useRecurring();
+  // The form opens by itself only when there are no regular payments to show yet.
+  const [adding, setAdding] = useState<boolean | null>(null);
 
   return (
     <section className="screen">
       <div className="screen__head">
-        <h1 className="screen__title">Repeating</h1>
+        <h1 className="screen__title">Regular payments</h1>
         <p className="screen__lede">
-          Rows that come round again. Each is written into the ledger a year ahead as expected,
-          so the outlook and the budgets can see it coming.
+          Things that happen on a schedule, like rent or salary. Each is added as a planned
+          transaction for the year ahead, so your forecast and budgets know it's coming.
         </p>
       </div>
 
-      <StartSeries />
+      {series.data && (adding ?? series.data.length === 0) ? (
+        <StartSeries onClose={series.data.length > 0 ? () => setAdding(false) : undefined} />
+      ) : (
+        series.data && (
+          <button type="button" className="btn btn--primary screen__action" onClick={() => setAdding(true)}>
+            Add a regular payment
+          </button>
+        )
+      )}
 
       {series.isPending && <Loading />}
       {series.isError && <Failure error={series.error} retry={() => void series.refetch()} />}
       {series.data && series.data.length === 0 && (
-        <p className="screen__lede">Nothing repeats yet.</p>
+        <p className="screen__lede">No regular payments yet.</p>
       )}
       {series.data && series.data.length > 0 && (
-        <ol className="series" aria-label="Repeating rows">
+        <ol className="series" aria-label="Regular payments">
           {series.data.map((each) => (
             <Series key={each.id} series={each} />
           ))}
@@ -113,7 +124,7 @@ function Series({ series }: { series: Recurring }) {
       <div className="series__actions">
         {asking ? (
           <>
-            <span className="field__help">Its expected rows still to come will go. What has happened stays.</span>
+            <span className="field__help">Its future planned payments will be removed. Past ones stay.</span>
             <button type="button" className="btn btn--quiet" onClick={() => setAsking(false)}>
               Keep it
             </button>
@@ -123,7 +134,7 @@ function Series({ series }: { series: Recurring }) {
               disabled={stop.isPending}
               onClick={() => stop.mutate(series.id)}
             >
-              {stop.isPending ? "Stopping" : "Stop repeating"}
+              {stop.isPending ? "Stopping" : "Stop it"}
             </button>
           </>
         ) : (
@@ -137,7 +148,7 @@ function Series({ series }: { series: Recurring }) {
   );
 }
 
-function StartSeries() {
+function StartSeries({ onClose }: { onClose?: (() => void) | undefined }) {
   const start = useStartRecurring();
   const accounts = useAccounts();
   const categories = useCategories();
@@ -157,7 +168,7 @@ function StartSeries() {
   const chosen = categories.data?.find((category) => category.id === categoryId);
 
   if (accounts.data && accounts.data.length === 0) {
-    return <p className="screen__lede">Open an account first: a repeating row goes into one.</p>;
+    return <p className="screen__lede">Add an account first, so the payment has somewhere to go.</p>;
   }
 
   function pickDirection(value: Direction) {
@@ -193,13 +204,13 @@ function StartSeries() {
   }
 
   return (
-    <form className="entry start-series" onSubmit={submit} aria-label="Start a repeating row">
+    <form className="entry start-series" onSubmit={submit} aria-label="Add a regular payment">
       <div className="entry__top">
         <div className="segments segments--pair" role="radiogroup" aria-label="Direction">
           {(["out", "in"] as const).map((option) => (
             <label key={option} className="segment">
               <input type="radio" name="series-direction" checked={direction === option} onChange={() => pickDirection(option)} />
-              <span>{option === "out" ? "Out" : "In"}</span>
+              <span>{option === "out" ? "Money out" : "Money in"}</span>
             </label>
           ))}
         </div>
@@ -227,12 +238,13 @@ function StartSeries() {
           value={categoryId}
           onChange={setCategoryId}
           label="Category"
+          shown={CHIPS_AT_FIRST}
         />
       )}
 
       <div className="start-series__fields">
         <label className="field">
-          <span className="mt-label">What it is</span>
+          <span className="mt-label">Description</span>
           <input
             required={!chosen}
             maxLength={200}
@@ -253,32 +265,40 @@ function StartSeries() {
         </label>
       </div>
 
-      <div className="segments start-series__freq" role="radiogroup" aria-label="How often">
-        {FREQUENCIES.map((option) => (
-          <label key={option.value} className="segment">
-            <input type="radio" name="series-freq" checked={freq === option.value} onChange={() => setFreq(option.value)} />
-            <span>{option.name}</span>
-          </label>
-        ))}
-      </div>
-
       <div className="start-series__fields start-series__when">
+        <fieldset className="field start-series__repeat">
+          <legend className="mt-label">Repeats every</legend>
+          <div className="start-series__every">
+            <select
+              aria-label="How many"
+              value={interval}
+              onChange={(event) => setInterval(Number(event.target.value))}
+            >
+              {INTERVALS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Unit"
+              value={freq}
+              onChange={(event) => setFreq(event.target.value as Frequency)}
+            >
+              {FREQUENCY_ORDER.map((option) => (
+                <option key={option} value={option}>
+                  {interval === 1 ? UNITS[option][0] : UNITS[option][1]}
+                </option>
+              ))}
+            </select>
+          </div>
+        </fieldset>
         <label className="field">
-          <span className="mt-label">First on</span>
+          <span className="mt-label">First date</span>
           <input type="date" required value={startsOn} onChange={(event) => setStartsOn(event.target.value)} />
         </label>
         <label className="field">
-          <span className="mt-label">Every</span>
-          <select value={interval} onChange={(event) => setInterval(Number(event.target.value))}>
-            {[1, 2, 3, 4, 6].map((n) => (
-              <option key={n} value={n}>
-                {n === 1 ? UNITS[freq][0] : `${n} ${UNITS[freq][1]}`}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span className="mt-label">Until</span>
+          <span className="mt-label">Until (optional)</span>
           <input type="date" value={endsOn} min={startsOn} onChange={(event) => setEndsOn(event.target.value)} />
         </label>
       </div>
@@ -286,15 +306,21 @@ function StartSeries() {
       <p className="field__help" aria-live="polite">
         {cadence(freq, interval, startsOn)}, from {longDate(`${startsOn}T12:00:00`)}
         {endsOn ? ` until ${longDate(`${endsOn}T12:00:00`)}` : ""}.
-        {startsOn < today ? " Days already gone are written as expected rows for you to confirm." : ""}
+        {startsOn < today ? " Dates already past are added as planned, for you to mark as paid." : ""}
       </p>
 
       <FormError error={start.error} />
 
       <div className="entry__foot">
-        <span />
+        {onClose ? (
+          <button type="button" className="btn btn--quiet" onClick={onClose}>
+            Done
+          </button>
+        ) : (
+          <span />
+        )}
         <button type="submit" className="btn btn--primary entry__submit" disabled={start.isPending}>
-          {start.isPending ? "Starting" : "Start repeating"}
+          {start.isPending ? "Adding" : "Add regular payment"}
         </button>
       </div>
     </form>

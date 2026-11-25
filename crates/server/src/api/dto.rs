@@ -211,6 +211,40 @@ pub struct SetCategoryIn {
     pub category_id: Option<String>,
 }
 
+/// Several rows to file under one category at once.
+#[derive(Debug, Deserialize)]
+pub struct FileManyIn {
+    /// The rows, at most `transactions::MAX_FILED_AT_ONCE`.
+    pub transaction_ids: Vec<String>,
+    /// The category, or null to leave them uncategorised.
+    pub category_id: Option<String>,
+    /// A payee to file the same way next time, if the person asked.
+    pub remember: Option<RememberIn>,
+}
+
+/// What to remember about the payee.
+#[derive(Debug, Deserialize)]
+pub struct RememberIn {
+    /// `counterparty` or `label`: where the payee's name appears.
+    pub matched_field: String,
+    /// The text to look for, as it appears on the rows.
+    pub pattern: String,
+}
+
+/// A rename.
+#[derive(Debug, Deserialize)]
+pub struct RenameCategoryIn {
+    /// The new name.
+    pub name: String,
+}
+
+/// Where a deleted category's transactions go.
+#[derive(Debug, Deserialize)]
+pub struct DeleteCategoryQuery {
+    /// The category to move them to; absent leaves them uncategorised.
+    pub move_to: Option<String>,
+}
+
 /// One period's earning and spending in one currency, by category.
 #[derive(Debug, Clone, Serialize)]
 pub struct BreakdownOut {
@@ -323,6 +357,137 @@ pub fn breakdown_out(
         income: side(&breakdown.income),
         net: breakdown.net.into(),
     }
+}
+
+/// Several months of money in and out in one currency, on one scale.
+#[derive(Debug, Clone, Serialize)]
+pub struct TrendOut {
+    /// ISO 4217 code.
+    pub currency: String,
+    /// Oldest first.
+    pub months: Vec<TrendMonthOut>,
+    /// The gridlines, from zero up to the top of the scale.
+    pub ticks: Vec<TickOut>,
+}
+
+/// One month's money in and out, and where each sits on the trend's scale.
+#[derive(Debug, Clone, Serialize)]
+pub struct TrendMonthOut {
+    /// `YYYY-MM`.
+    pub month: String,
+    /// First local date counted, `YYYY-MM-DD`.
+    pub starts_on: String,
+    /// Last local date counted, inclusive.
+    pub ends_on: String,
+    /// Money that arrived.
+    pub income: MoneyOut,
+    /// Money that left, as a positive amount.
+    pub spending: MoneyOut,
+    /// Income less spending.
+    pub net: MoneyOut,
+    /// `income` on the scale, 0 to 10 000. For drawing and nothing else.
+    pub income_level_bps: u16,
+    /// `spending` on the scale, 0 to 10 000.
+    pub spending_level_bps: u16,
+}
+
+/// A gridline: the amount it marks and its height on the scale.
+#[derive(Debug, Clone, Serialize)]
+pub struct TickOut {
+    /// The amount at this line.
+    pub amount: MoneyOut,
+    /// 0 to 10 000.
+    pub level_bps: u16,
+}
+
+/// Renders a trend for the wire, each figure with its height on the shared scale.
+#[must_use]
+pub fn trend_out(trend: &mt_core::trend::Trend) -> TrendOut {
+    let scale = &trend.scale;
+    TrendOut {
+        currency: trend.currency.code().to_owned(),
+        months: trend
+            .months
+            .iter()
+            .map(|month| TrendMonthOut {
+                month: format!(
+                    "{:04}-{:02}",
+                    month.period.starts_on.year(),
+                    u8::from(month.period.starts_on.month())
+                ),
+                starts_on: date(month.period.starts_on),
+                ends_on: date(month.period.ends_on),
+                income: month.income.into(),
+                spending: month.spending.into(),
+                net: month.net.into(),
+                income_level_bps: scale.level_bps(month.income),
+                spending_level_bps: scale.level_bps(month.spending),
+            })
+            .collect(),
+        ticks: ticks_out(scale),
+    }
+}
+
+/// One month's spending, day by day, on one scale.
+#[derive(Debug, Clone, Serialize)]
+pub struct DailyOut {
+    /// ISO 4217 code.
+    pub currency: String,
+    /// First local date counted, `YYYY-MM-DD`.
+    pub starts_on: String,
+    /// Last local date counted, inclusive.
+    pub ends_on: String,
+    /// Everything spent in the month.
+    pub total: MoneyOut,
+    /// One per date, in order, days with nothing spent included.
+    pub days: Vec<DayOut>,
+    /// The gridlines, from zero up to the top of the scale.
+    pub ticks: Vec<TickOut>,
+}
+
+/// What left on one date, and its height on the month's scale.
+#[derive(Debug, Clone, Serialize)]
+pub struct DayOut {
+    /// `YYYY-MM-DD`, on the reader's clock.
+    pub date: String,
+    /// Money that left, as a positive amount.
+    pub spending: MoneyOut,
+    /// `spending` on the scale, 0 to 10 000. For drawing and nothing else.
+    pub level_bps: u16,
+}
+
+/// Renders a month's daily spending for the wire.
+#[must_use]
+pub fn daily_out(daily: &mt_core::trend::Daily) -> DailyOut {
+    let scale = &daily.scale;
+    DailyOut {
+        currency: daily.currency.code().to_owned(),
+        starts_on: date(daily.period.starts_on),
+        ends_on: date(daily.period.ends_on),
+        total: daily.total.into(),
+        days: daily
+            .days
+            .iter()
+            .map(|day| DayOut {
+                date: date(day.date),
+                spending: day.spending.into(),
+                level_bps: scale.level_bps(day.spending),
+            })
+            .collect(),
+        ticks: ticks_out(scale),
+    }
+}
+
+/// A scale's gridlines, each with its height on the scale.
+fn ticks_out(scale: &mt_core::trend::Scale) -> Vec<TickOut> {
+    scale
+        .ticks
+        .iter()
+        .map(|tick| TickOut {
+            amount: (*tick).into(),
+            level_bps: scale.level_bps(*tick),
+        })
+        .collect()
 }
 
 /// Basis points as a whole percentage a person can read.
